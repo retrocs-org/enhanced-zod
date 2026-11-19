@@ -1,0 +1,41 @@
+name: Zod PHP cloud
+on:
+  push:
+  pull_request:
+jobs:
+  php-mariadb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install PHP and MariaDB tooling
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y php-cli php-mysql php-mbstring mariadb-server
+      - name: PHP syntax
+        run: find web-service/php -name '*.php' -exec php -l {} \;
+      - name: Real MariaDB API and migration tests
+        run: web-service/tests/run-local.sh
+  agent:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: web-service/go.mod
+          cache: false
+      - run: go -C web-service test -race ./...
+      - run: go -C web-service vet ./...
+      - name: Linux agents
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go -C web-service build -o ../build-web/linux-amd64/zod-agent ./cmd/zod-agent
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go -C web-service build -o ../build-web/linux-arm64/zod-agent ./cmd/zod-agent
+  linux-headless:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: PHP/MariaDB + engine integration
+        run: docker build --target cloud-test -t zod-cloud-test .
+      - name: Dedicated server image
+        run: docker build --target dedicated-runtime -t zod-dedicated .
+      - name: Independent PHP image
+        run: docker build --target web-runtime -t zod-php .

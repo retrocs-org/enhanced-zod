@@ -1,0 +1,55 @@
+services:
+  web:
+    build:
+      context: ../..
+      target: web-runtime
+    ports:
+      - "127.0.0.1:8088:80"
+    environment:
+      ZOD_DB_HOST: db
+      ZOD_DB_NAME: zod
+      ZOD_DB_USER: zod
+      ZOD_DB_PASSWORD_FILE: /run/secrets/db_password
+      ZOD_PUBLIC_URL: ${ZOD_PUBLIC_URL:?Set the public HTTPS website URL}
+      # The host-local HTTPS proxy reaches this private published port via the
+      # fixed bridge gateway. It MUST overwrite X-Real-IP, as in nginx.conf.example.
+      ZOD_TRUSTED_PROXIES: 172.28.0.1/32
+    secrets:
+      - db_password
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    networks: [zod]
+  db:
+    image: mariadb:11.4
+    environment:
+      MARIADB_DATABASE: zod
+      MARIADB_USER: zod
+      MARIADB_PASSWORD_FILE: /run/secrets/db_password
+      MARIADB_ROOT_PASSWORD_FILE: /run/secrets/db_root_password
+    secrets: [db_password, db_root_password]
+    volumes:
+      - cloud-database:/var/lib/mysql
+      - ../../web-service/php/sql/001_initial.sql:/docker-entrypoint-initdb.d/001-zod.sql:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    networks: [zod]
+secrets:
+  db_password:
+    file: ./secrets/db-password
+  db_root_password:
+    file: ./secrets/db-root-password
+volumes:
+  cloud-database:
+networks:
+  zod:
+    ipam:
+      config:
+        - subnet: 172.28.0.0/24
+          gateway: 172.28.0.1

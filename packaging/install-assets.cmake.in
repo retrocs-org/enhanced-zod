@@ -1,0 +1,3 @@
+set(SOURCE "@CMAKE_CURRENT_SOURCE_DIR@/assets")
+set(DESTINATION "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}/share/zod/assets")
+include("@CMAKE_CURRENT_SOURCE_DIR@/packaging/copy-runtime-assets.cmake")

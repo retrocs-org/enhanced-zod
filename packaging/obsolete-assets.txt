@@ -1,0 +1,22 @@
+# Unused legacy exports/backups, not required importer outputs.
+# Runtime-loading rationale: docs/Asset-Cleanup.md (Unused exports).
+buildings/fort_old/fort_jungle_back.bmp
+buildings/fort_old/fort_jungle_back_destroyed.bmp
+buildings/fort_old/fort_jungle_front.bmp
+buildings/fort_old/fort_jungle_front_destroyed.bmp
+fonts/font13/SPRITES_4885.png
+fonts/font13/SPRITES_4887.png
+fonts/small_white/SPRITES_4885.png
+fonts/small_white/SPRITES_4887.png
+other/factory_gui/defragen_sidebarpreview2.png
+other/hud/health_empty_orig.png
+other/hud/health_full_orig.png
+other/hud/health_lost_orig.png
+other/main_menu_gui/menu_center_orig.png
+other/null_0.png
+other/null_1.png
+other/null_2.png
+other/null_3.png
+teams/Copy of blue_palette.bmp
+teams/Copy of green_palette.bmp
+teams/Copy of yellow_palette.bmp

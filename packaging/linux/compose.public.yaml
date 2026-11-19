@@ -1,0 +1,28 @@
+services:
+  dedicated:
+    build:
+      context: ../..
+      target: dedicated-runtime
+    ports:
+      - "2137:2137/tcp"
+    volumes:
+      - game-state:/data
+      - ./secrets/server-key:/run/secrets/server-key:ro
+    command:
+      - --mode
+      - public
+      - --state
+      - /data
+      - --hub
+      - ${ZOD_HUB_URL:?Set ZOD_HUB_URL to your Zod HTTPS website}
+      - --id
+      - ${ZOD_SERVER_ID:?Set the approved Zod server ID}
+      - --key-file
+      - /run/secrets/server-key
+      - --name
+      - ${ZOD_SERVER_NAME:-Public Zod server}
+    restart: unless-stopped
+    stop_grace_period: 15s
+    security_opt: ["no-new-privileges:true"]
+volumes:
+  game-state:

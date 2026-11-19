@@ -1,0 +1,21 @@
+[Unit]
+Description=Zod dedicated game server
+After=network-online.target
+Wants=network-online.target
+[Service]
+User=zod
+Group=zod
+WorkingDirectory=/opt/zod
+StateDirectory=zod
+StateDirectoryMode=0700
+ExecStart=/opt/zod/zod-agent --mode private --engine /opt/zod/zod --data /opt/zod --state /var/lib/zod
+Restart=on-failure
+KillMode=control-group
+TimeoutStopSec=15
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+Environment=HOME=/var/lib/zod
+[Install]
+WantedBy=multi-user.target

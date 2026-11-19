@@ -1,0 +1,12 @@
+name: Windows release entry point
+on: workflow_dispatch
+permissions: {actions: write, contents: read}
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Start the verified zod-ee pipeline
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: gh workflow run release.yml --ref "$GITHUB_REF_NAME" -f platform=windows -f publish=false

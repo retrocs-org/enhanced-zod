@@ -1,0 +1,34 @@
+# Keep the build context small + reproducible. assets/, maps/, src/,
+# CMakeLists.txt and orchestrator/ are needed and intentionally NOT ignored.
+
+.git
+.github
+
+# build outputs
+build/
+build-*/
+**/*.o
+/zod
+/zod_map_editor
+orchestrator/orchestrator
+
+# logs / runtime junk / screenshots
+zod_diag.log
+zod_path*.log
+zod_screenshot_*.png
+*.log
+
+# archives + OS junk
+*.zip
+*.rar
+.DS_Store
+Thumbs.db
+
+web-service/data/
+packaging/linux/secrets/
+build-web/
+
+.lima/
+
+# Original-disc extraction sources and backups stay local
+assets/original-z/

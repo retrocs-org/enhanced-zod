@@ -1,0 +1,592 @@
+#ifndef _ZPLAYER_H_
+#define _ZPLAYER_H_
+
+#include "zclient.h"
+#include "zsdl.h"
+#include "zsdl_opengl.h"
+#include "cursor.h"
+#include "zmini_map.h"
+#include "zfont_engine.h"
+#include "zeffect.h"
+#include "zcomp_message_engine.h"
+#include "zgui_window.h"
+#include "zgui_main_menu_base.h"
+#include "zteam.h"
+#include "zmusic_engine.h"
+#include "zfrontend.h"
+//#include "zgfile.h"
+
+#include "gwproduction.h"
+#include "gwfactory_list.h"
+#include "gwlogin.h"
+#include "gwcreateuser.h"
+
+#include "gmm_main_menu.h"
+#include "gmm_change_teams.h"
+#include "gmm_manage_bots.h"
+#include "gmm_player_list.h"
+#include "gmm_select_map.h"
+#include "gmm_generate_map.h"
+#include "gmm_options.h"
+#include "gmm_warning.h"
+#include "gmm_multiplayer.h"
+#include "gmm_multiplayer_create.h"
+#include "gmm_lobby.h"
+
+struct news_entry
+{
+   public:
+      char r,g,b;
+      string message;
+      double death_time;
+      ZSDL_Surface text_image;
+};
+
+struct key_event
+{
+	int the_key;
+	int the_unicode;
+};
+
+class selection_info
+{
+public:
+	void SetZTime(ZTime *ztime_) { ztime = ztime_;}
+
+	void Clear()
+	{
+		have_explosives = false;
+		can_pickup_grenades = false;
+		can_move = false;
+		can_equip = false;
+		can_attack = false;
+		can_repair = false;
+		can_be_repaired = false;
+		selected_list.clear();
+	}
+	void ClearAll()
+	{
+		Clear();
+		for(int i=0;i<10;i++)
+			quick_group[i].clear();
+	}
+	void LoadGroup(int group);
+	void SetGroup(int group);
+	bool GroupIsSelected(int group);
+	bool UpdateGroupMember(ZObject *obj);
+	void SetupGroupDetails(bool show_waypoints = true);
+	void DeleteObject(ZObject *obj);
+	void RemoveFromSelected(ZObject *obj);
+	bool AverageCoordsOfSelected(int &x, int &y);
+	bool ObjectIsSelected(ZObject *obj);
+
+	bool have_explosives;
+	bool can_pickup_grenades;
+	bool can_move;
+	bool can_equip;
+	bool can_attack;
+	bool can_repair;
+	bool can_be_repaired;
+	vector<ZObject*> selected_list;
+	vector<ZObject*> quick_group[10];
+
+	ZTime *ztime;
+};
+
+class mouse_button_info
+{
+public:
+	mouse_button_info() : x(0), y(0), map_x(0), map_y(0), down(false),
+		started_over_hud(false), started_over_gui(false), dragged(false) {}
+	int x, y;
+	int map_x, map_y;
+	bool down;
+	bool started_over_hud;
+	bool started_over_gui;
+	bool dragged;
+};
+
+#define MAX_STORED_SPACE_BAR_EVENTS 5
+#define SPACE_BAR_EVENT_LIFETIME 10
+
+class SpaceBarEvent
+{
+public:
+	SpaceBarEvent(int ref_id_ = -1, bool select_obj_ = false, bool open_gui_ = false) 
+	{ 
+		clear();
+		ref_id = ref_id_;
+		select_obj = select_obj_;
+		open_gui = open_gui_;
+
+		creation_time = current_time();
+	}
+
+	void clear()
+	{
+		ref_id = -1;
+		select_obj = false;
+		open_gui = false;
+	}
+
+	bool past_lifetime()
+	{
+		return current_time() > creation_time + SPACE_BAR_EVENT_LIFETIME;
+	}
+
+	int ref_id;
+	bool select_obj;
+	bool open_gui;
+	double creation_time;
+
+	bool operator==(const SpaceBarEvent &other) const 
+	{
+		if(this == &other) return true;
+
+		if(other.ref_id != ref_id) return false;
+		//if(other.select_obj != select_obj) return false;
+		//if(other.open_gui != open_gui) return false;
+		//if(other.creation_time != creation_time) return false;
+
+		return true;
+	}
+};
+
+#define ASCII_DOWN_MAX (('z'-'a')+1)
+
+class ZPlayer : public ZClient
+{
+	public:
+		ZPlayer();
+		
+		void SetAutoAspect(bool b) { auto_aspect = b; }
+		bool splash_dismissed;
+		bool intro_played;
+		void SetDimensions(int w, int h);
+		void SetSoundsOff(bool setoff);
+		void SetMusicOff(bool setoff);
+		void SetPlayerTeam(team_type player_team);
+		void DisableCursor(bool disable_zcursor_);
+		void SetWindowed(bool is_windowed_);
+		void SetUseOpenGL(bool use_opengl_);
+		void SetLoginName(string login_name_);
+		void SetLoginPassword(string login_password_);
+		void Setup();
+		void Run();
+		vector<ZEffect*> &GetEffectList() { return effect_list; }
+	private:
+		static int Load_Graphics(void *nothing);
+		void InitSDL();
+		void SetupEHandler();
+		void SetupSelectionImages();
+		void DoSplash();
+		void ProcessSDL();
+		void RenderScreen();
+		void RenderObjects();
+		void RenderSmallMapFiller();
+		void RenderPreviousCursor();
+		void RenderMouse();
+		void RenderNews();
+		void BackFromMenu();
+        void CloseMainMenus();		//#79
+        friend class ZPlayerUIRegression;
+        void ChooseMatchAction(int action);
+        void AttachMainMenu(ZGuiMainMenuBase *menu);
+        int MatchActionAt(int x, int y) const;
+        void SelectNextIdleUnit();
+        bool IsIdleUnit(ZObject *object) const;
+        void RenderSelectionReadout();
+        bool summary_menu_ready=false;void CompleteMenuReturn();
+        void BattleFeedback(const std::string &text);void RenderBattleFeedback();void SelectNextIdleFactory();
+        std::string battle_notice;Uint64 battle_notice_until=0;int last_factory_ref=-1;
+        void RenderObjectiveHUD();void ReceiveObjective(const std::string &packet);
+        std::string objective_text;int objective_step=0,objective_total=0,objective_remaining=-1,objective_x=-1,objective_y=-1;double objective_received=0;
+        int last_idle_ref = -1;
+        bool hosted_setup_available = false, match_result_known = false;
+        SkirmishPreferences hosted_setup;
+        int match_zones_captured = 0;
+        std::map<int,int> seen_zone_owners;
+        string selection_readout_text;
+        ZSDL_Surface selection_readout_img;
+		void RenderMatchSummary();	//#88
+		void BuildMatchSummary();	//#88
+		void EnsureSummaryScaled();	//#88
+		void RenderMenuBackground();	//#79
+		void ResetMatchStats();		//#88
+		void SendContinueAfterEnd();	//#120
+		void ReturnToMenu();	//#136
+		bool ConnectToServer(string address, int port);	//MP-prep: runtime (re)connect seam
+		void CloseAllMenus();
+		//Z-style front-end (zfrontend.cpp)
+		void OpenStartMenu();
+		bool FrontEndWanted();
+		void ProcessFrontEndActions();
+		void RecordHighScore();
+		void SendSaveGame(int slot);
+		void CheckAutosave();
+		double MatchElapsed();	//drop the whole GMM menu stack (e.g. when entering the lobby)
+		bool LobbyOpen();	//matchmaking: is the pre-match lobby an open GMM menu?
+		void RecenterLobby();
+        int lobby_countdown=-1;
+        bool lobby_pause_confirmed=false;
+        std::string cloud_disconnect_reason;
+        bool managed_dedicated=false;
+        static void cloud_required_event(ZPlayer *p,char *data,int size,int dummy);
+        static void cloud_result_event(ZPlayer *p,char *data,int size,int dummy);
+        static void lobby_countdown_event(ZPlayer *p, char *data, int size, int dummy);	//matchmaking: center the lobby on the map view rect
+		void RenderGUI();
+		void RenderMainMenu();
+		void ProcessSocketEvents();
+		void ProcessGame();
+		void JoinHostedMatch(const string &host, int port, int team, ZGuiMainMenuBase *origin);
+        struct PendingJoin {
+            std::shared_ptr<ZConnectedSocket> connection;
+            string host, error;
+            int port = 0, team = -1, origin = GMM_MULTIPLAYER;
+            std::uint64_t menu_id = 0;
+        };
+        ZMPAsync<PendingJoin> join_task,deployment_connect;bool deployment_handshake=false;Uint64 deployment_deadline=0;
+        std::uint64_t join_origin_id = 0;
+        bool PollHostedJoin();
+		void ProcessVerbalWarnings();
+		void CollectSelectables();
+		// Cursor drift up to this many logical pixels still counts as a click.
+		static const int CLICK_DRAG_SLOP = 5;
+		bool DragExceedsSlop();		//#102: is the held drag past the click slop?
+		bool CouldCollectSelectables();
+		void SelectZObject(ZObject *obj);
+		void SelectAllOfType(int type = -1);
+		void DetermineCursor();
+		void ClearDevWayPointsOfSelected();
+		void AddDevWayPointToSelected();
+		void SendDevWayPointsOfSelected();
+		void SendDevWayPointsOfObj(ZObject *obj);
+		bool DevWayPointsNoWay();
+		void ClearAsciiStates();
+		void SetAsciiState(int c, bool is_down);
+		bool AsciiDown(int c);
+		bool ShiftDown();
+		bool CtrlDown();
+		bool AltDown();
+		void ShowPcursor(int x, int y);
+		void SetPcursor();
+		void GiveHudSelected();
+		void ProcessScroll();
+		void ProcessResetGame();
+		bool DoKeyScrollRight();
+		bool DoKeyScrollLeft();
+		bool DoKeyScrollUp();
+		bool DoKeyScrollDown();
+		bool DoMouseScrollRight();
+		bool DoMouseScrollLeft();
+		bool DoMouseScrollUp();
+		bool DoMouseScrollDown();
+		void StartMouseScrolling(int new_mouse_x, int new_mouse_y);
+		void MissileObjectParticles(int x_, int y_, int radius, int particles);
+		void DeleteObjectCleanUp(ZObject *obj);
+		bool IsOverHUD(int x, int y, int w, int h);
+		bool MainMenuMotion();
+		bool MainMenuWheelUp();
+		bool MainMenuWheelDown();
+		void ApplyMenuWheelFlags(gmm_flag &the_flags);
+		bool MainMenuKeyPress(int c);
+		bool MainMenuAbsorbLClick();
+		bool MainMenuAbsorbLUnClick();
+		void MainMenuMove(double px, double py);
+		bool GuiAbsorbLClick();
+		bool GuiAbsorbLUnClick();
+		void DeleteCurrentGuiWindow();
+		void ProcessChangeObjectAmount();
+		void ProcessUnicode(int key);
+		void PlayBuildingSounds();
+		void FocusCameraTo(int map_x, int map_y);
+		void ProcessFocusCamerato();
+		void FocusCameraToFort();
+		void MapCoordsOfMouseWithHud(int &map_x, int &map_y);
+		void InitAnimals();
+		void ClearAnimals();
+		void ProcessDisconnect();
+		void AddNewsEntry(string message, int r = 255, int g = 255, int b = 255);
+		void DisplayPlayerList();
+		void DisplayFactoryProductionList();
+		void DisplayFactoryProductionListUnit(ZObject *obj);
+		void SendVoteYes();
+		void SendVoteNo();
+		void SendVotePass();
+		void SendLogin();
+		void SendCreateUser(string username, string lname, string lpass, string email);
+		void SendSetPaused(bool paused);
+		void InitMenus();
+		void RefindOurFortRefID();
+		void SetNextSoundSetting();
+		void SetSoundSetting(int sound_setting_);
+		void ApplyVolume();
+		bool UnitNearHostiles(ZObject *obj);
+		void LoadControlGroup(int n);
+		void LoadMainMenu(int menu_type, bool kill_if_open = false, gmm_warning_flag warning_flags = gmm_warning_flag());
+		void ExitProgram();
+		void AddSpaceBarEvent(SpaceBarEvent new_event);
+		void DoSpaceBarEvent();
+		bool ObjectMakeGuiWindow(ZObject *obj);
+
+		//place cannon stuff
+		void InitPlaceCannon();
+		void SetPlaceCannonCords();
+		void RenderPlaceCannon();
+		bool DoPlaceCannon();
+		
+		//button stuff
+		void ReSetupButtons();
+		void HandleButton(hud_buttons button);
+		void RandomlySelectUnitType(int type);
+		void OrderlySelectUnitType(int type);
+		void A_Button();
+		void B_Button();
+		void D_Button();
+		void G_Button();
+		void Menu_Button();
+		void R_Button();
+		void T_Button();
+		void V_Button();
+		void Z_Button();
+
+		EventHandler<ZPlayer> ehandler;
+		
+		//tcp events
+		static void test_event(ZPlayer *p, char *data, int size, int dummy);
+		static void connect_event(ZPlayer *p, char *data, int size, int dummy);
+		static void disconnect_event(ZPlayer *p, char *data, int size, int dummy);
+		static void store_map_event(ZPlayer *p, char *data, int size, int dummy);
+		static void add_new_object_event(ZPlayer *p, char *data, int size, int dummy);
+		static void set_zone_info_event(ZPlayer *p, char *data, int size, int dummy);
+		static void display_news_event(ZPlayer *p, char *data, int size, int dummy);
+		static void set_object_waypoints_event(ZPlayer *p, char *data, int size, int dummy);
+		static void set_object_route_event(ZPlayer *p, char *data, int size, int dummy);
+		static void set_object_rallypoints_event(ZPlayer *p, char *data, int size, int dummy);
+		static void set_object_loc_event(ZPlayer *p, char *data, int size, int dummy);
+		static void set_object_team_event(ZPlayer *p, char *data, int size, int dummy);
+		static void set_object_attack_object_event(ZPlayer *p, char *data, int size, int dummy);
+		static void delete_object_event(ZPlayer *p, char *data, int size, int dummy);
+		static void set_object_health_event(ZPlayer *p, char *data, int size, int dummy);
+		static void end_game_event(ZPlayer *p, char *data, int size, int dummy);
+		static void return_to_menu_event(ZPlayer *p, char *data, int size, int dummy);	//#136
+		static void reset_game_event(ZPlayer *p, char *data, int size, int dummy);
+		static void fire_object_missile_event(ZPlayer *p, char *data, int size, int dummy);
+		static void destroy_object_event(ZPlayer *p, char *data, int size, int dummy);
+		static void set_building_state_event(ZPlayer *p, char *data, int size, int dummy);
+		static void set_building_cannon_list_event(ZPlayer *p, char *data, int size, int dummy);
+		static void set_computer_message_event(ZPlayer *p, char *data, int size, int dummy);
+		static void set_object_group_info_event(ZPlayer *p, char *data, int size, int dummy);
+		static void do_crane_anim_event(ZPlayer *p, char *data, int size, int dummy);
+		static void set_repair_building_anim_event(ZPlayer *p, char *data, int size, int dummy);
+		static void set_settings_event(ZPlayer *p, char *data, int size, int dummy);
+		static void set_lid_open_event(ZPlayer *p, char *data, int size, int dummy);
+		static void snipe_object_event(ZPlayer *p, char *data, int size, int dummy);
+		static void driver_hit_effect_event(ZPlayer *p, char *data, int size, int dummy);
+		static void clear_player_list_event(ZPlayer *p, char *data, int size, int dummy);
+		static void add_player_event(ZPlayer *p, char *data, int size, int dummy);
+		static void delete_player_event(ZPlayer *p, char *data, int size, int dummy);
+		static void set_player_name_event(ZPlayer *p, char *data, int size, int dummy);
+		static void set_player_team_event(ZPlayer *p, char *data, int size, int dummy);
+		static void set_player_mode_event(ZPlayer *p, char *data, int size, int dummy);
+		static void set_player_ignored_event(ZPlayer *p, char *data, int size, int dummy);
+		static void set_player_ready_event(ZPlayer *p, char *data, int size, int dummy);   //matchmaking lobby
+		static void set_player_voteinfo_event(ZPlayer *p, char *data, int size, int dummy);
+		static void set_player_loginfo_event(ZPlayer *p, char *data, int size, int dummy);
+		static void update_game_paused_event(ZPlayer *p, char *data, int size, int dummy);
+		static void update_game_speed_event(ZPlayer *p, char *data, int size, int dummy);
+		static void set_vote_info_event(ZPlayer *p, char *data, int size, int dummy);
+		static void set_player_id_event(ZPlayer *p, char *data, int size, int dummy);
+		static void set_selectable_map_list_event(ZPlayer *p, char *data, int size, int dummy);
+		static void set_campaign_unlock_event(ZPlayer *p, char *data, int size, int dummy);   //#77
+		static void set_map_name_event(ZPlayer *p, char *data, int size, int dummy);   //#93
+		string game_map_name;   //#93: the map filename the server is running, for the F12 dump
+		static void display_login_event(ZPlayer *p, char *data, int size, int dummy);
+		static void set_grenade_amount_event(ZPlayer *p, char *data, int size, int dummy);
+		static void pickup_grenade_event(ZPlayer *p, char *data, int size, int dummy);
+		static void do_portrait_anim_event(ZPlayer *p, char *data, int size, int dummy);
+		static void team_ended_event(ZPlayer *p, char *data, int size, int dummy);
+		static void set_team_event(ZPlayer *p, char *data, int size, int dummy);
+		static void poll_buy_regkey(ZPlayer *p, char *data, int size, int dummy);
+		static void set_regkey(ZPlayer *p, char *data, int size, int dummy);
+		static void set_build_queue_list_event(ZPlayer *p, char *data, int size, int dummy);
+		static void request_version_event(ZPlayer *p, char *data, int size, int dummy);
+		static void get_version_event(ZPlayer *p, char *data, int size, int dummy);
+		
+		//sdl events
+		static void resize_event(ZPlayer *p, char *data, int size, int dummy);
+		bool ClassicLeftClickOrder();
+		void DumpDiagnostics();   //F12: append selected units' state to zod_diag.log (bug reports)
+		void DumpRenderOrder(bool dedupe = false);   //#206: wreck depth-order trace (ZOD_RENDER_DUMP / F12)
+		static void lclick_event(ZPlayer *p, char *data, int size, int dummy);
+		static void lunclick_event(ZPlayer *p, char *data, int size, int dummy);
+		static void rclick_event(ZPlayer *p, char *data, int size, int dummy);
+		static void runclick_event(ZPlayer *p, char *data, int size, int dummy);
+		static void mclick_event(ZPlayer *p, char *data, int size, int dummy);
+		static void munclick_event(ZPlayer *p, char *data, int size, int dummy);
+		static void wheelup_event(ZPlayer *p, char *data, int size, int dummy);
+		static void wheeldown_event(ZPlayer *p, char *data, int size, int dummy);
+		static void keydown_event(ZPlayer *p, char *data, int size, int dummy);
+		static void keyup_event(ZPlayer *p, char *data, int size, int dummy);
+		static void motion_event(ZPlayer *p, char *data, int size, int dummy);
+		
+		int init_w, init_h;
+		int prev_w, prev_h;
+
+		// Adapt the logical width to the renderer's real output aspect (only
+		// when the resolution wasn't forced with -r); startup=true skips the
+		// HUD/map rebuild steps that need loaded graphics.
+		void AdaptViewAspect(bool startup = false);
+		void RebuildView(int new_w, int new_h);
+		bool auto_aspect;
+		// View zoom: rebuilds the logical framebuffer at base_w/zoom so the same
+		// window shows more/less of the map (Ctrl+wheel or +/- keys).
+		int base_w, base_h;     // startup -r resolution (zoom == 1.0)
+		double view_zoom;       // >1 = zoomed in, <1 = zoomed out
+		double view_min_zoom;   // per-map floor: the zoom that fills the map (no black past its edge)
+		void AutoZoomToFillMap();
+		void ApplyZoom(double new_zoom);
+
+		SDL_Surface *screen;
+		TTF_Font *ttf_font;
+		TTF_Font *ttf_font_7;
+		int mouse_x, mouse_y;
+		mouse_button_info lbutton, rbutton, mbutton;
+
+		// --- touch / gesture input (Android): tap = left-click, one-finger
+		// drag = pan the camera, two-finger pinch = zoom ---
+		int touch_count;                    // fingers we're tracking (0/1/2)
+		SDL_FingerID touch_id1, touch_id2;
+		float touch_x1, touch_y1, touch_x2, touch_y2;
+		float touch_start_x, touch_start_y; // primary finger's down position
+		bool touch_moved;                   // moved past the tap threshold
+		float touch_pinch0;                 // two-finger distance at pinch start
+		double touch_zoom0;                 // zoom level at pinch start
+		//#111: a pinch fires many FINGER_MOTION events; each ApplyZoom->RebuildView
+		//is heavy (recreates the framebuffer, re-renders the HUD), and ProcessSDL
+		//drains the whole queue in one frame - so a pinch did dozens of rebuilds
+		//before rendering once, freezing for seconds on Android. Record the target
+		//here and apply it at most once per frame in ProcessGame.
+		double pinch_pending_zoom;
+		bool pinch_zoom_dirty;
+		void HandleFingerDown(const SDL_TouchFingerEvent &t);
+		void HandleFingerMotion(const SDL_TouchFingerEvent &t);
+		void HandleFingerUp(const SDL_TouchFingerEvent &t);
+		void TapAsLeftClick(int x, int y);
+		ZCursor cursor;
+		ZCursor Pcursor;
+		double pcursor_death_time;
+		int pcursor_x, pcursor_y;
+		bool disable_zcursor;
+		bool lshift_down, rshift_down;
+		bool right_down, left_down, up_down, down_down;
+		bool lctrl_down, rctrl_down, lalt_down, ralt_down;
+		bool ascii_down[ASCII_DOWN_MAX];
+		double last_vert_scroll_time, last_horz_scroll_time;
+		double vert_scroll_over, horz_scroll_over;
+		bool collect_chat_message;
+		string chat_message;
+		int focus_to_x, focus_to_y;
+		bool do_focus_to;
+		double last_focus_to_time;
+		double focus_to_original_distance;
+		double final_focus_to_time;
+		bool is_windowed;
+		bool window_has_focus;
+		bool use_opengl;
+		//bool music_on;
+		int loaded_percent;
+		bool show_chat_history;
+		string login_name;
+		string login_password;
+		int fort_ref_id;
+		int sound_setting;
+
+		//#88: post-match summary shown during the server's end-of-game pause.
+		//Stats are tallied client-side (no protocol change); win/loss is decided
+		//locally at END_GAME because wiped-out players get no TEAM_ENDED.
+		bool show_match_summary;
+		//#120: the summary waits for the end-of-game explosion to finish, then
+		//stays up until the player dismisses it with a click/Enter.
+		bool summary_pending;
+		double summary_show_time;   //scheduled reveal time; 0 = still waiting for explosions (#180)
+		double summary_end_time;    //when the match ended (for the explosion wait + safety cap)
+		bool summary_continue_sent;
+		bool match_won;
+		ZFrontEnd frontend;
+		bool frontend_presenting;   //the front-end currently owns the window
+		//this battle's clock and tally: ztime is never reset, and a loaded
+		//save carries what was played before it
+		double match_start_ztime;
+		double match_base_elapsed;
+		bool restore_pending;       //a save is being loaded: apply its tally at the reset
+		double restore_elapsed;
+		int restore_kills, restore_lost;
+		double next_autosave_elapsed;   //battle time of the next autosave
+		double match_duration;
+		int match_enemies_killed;
+		int match_units_lost;
+		int summary_line_count;
+		ZSDL_Surface summary_line_img[5];
+		ZSDL_Surface summary_strip_img;		//translucent backing for the stats
+		ZSDL_Surface summary_won_img;		//#88 win art, scaled to current res
+		ZSDL_Surface summary_lost_img;		//#88 loss art, scaled to current res
+		SDL_Surface *summary_won_raw;		//#88 unscaled source (zoom re-scales)
+		SDL_Surface *summary_lost_raw;		//#88 unscaled source
+		int summary_scaled_w, summary_scaled_h;	//res the art was last scaled to
+
+		//#79: banner background for the menu-first / idle screen (lazy-loaded)
+		bool menu_bg_loaded;
+		SDL_Surface *menu_bg_raw;
+		ZSDL_Surface menu_bg_img;
+		int menu_bg_scaled_w, menu_bg_scaled_h;
+
+		ZSDL_Surface splash_screen;
+		ZAudio_Music *splash_music;
+		SDL_Surface *game_icon;
+		SDL_Thread *gload_thread;
+		ZHud zhud;
+		GWFactoryList *gui_factory_list;
+		ZGuiWindow *gui_window;
+		vector<ZGuiMainMenuBase*> gui_menu_list;
+		float splash_fade;
+		vector<news_entry*> news_list;
+		selection_info select_info;
+		vector<ZEffect*> effect_list;
+		vector<ZEffect*> new_effect_list;
+		vector<ZObject*> bird_list;
+		vector<SpaceBarEvent> space_event_list;
+		ZCompMessageEngine zcomp_msg;
+
+		bool place_cannon;
+		int place_cannon_ref_id;
+		unsigned char place_cannon_oid;
+		ZSDL_Surface place_cannon_ok_img;
+		ZSDL_Surface place_cannon_nok_img;
+		int place_cannon_tx, place_cannon_ty;
+		int place_cannon_left, place_cannon_right;
+		int place_cannon_top, place_cannon_bottom;
+
+		ZSDL_Surface  selection_img[MAX_TEAM_TYPES];
+
+		ZObject *hover_object;
+		bool hover_object_can_attack;
+		bool hover_object_can_enter_fort;
+
+		//menus
+		ZGuiWindow *active_menu;
+		GWLogin *login_menu;
+		GWCreateUser *create_user_menu;
+
+		bool graphics_loaded;
+
+		//#254: server-silence watchdog. If the server never answers the connect
+		//handshake (classic cause: a stale zod still holding the port, so we
+		//connected to a zombie), warn the player instead of showing empty menus.
+		void CheckServerSilence();
+		double connect_attempt_time;
+		bool server_response_seen;
+		bool server_silence_warned;
+};
+
+#endif

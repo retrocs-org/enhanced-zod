@@ -1,0 +1,5977 @@
+#include "zobject.h"
+#include "packet_io.h"
+#include "zpath_debug.h"
+#include "common.h"
+#include "zfont_engine.h"
+
+using namespace COMMON;
+
+//#134: ceiling (game-seconds) on client-side dead-reckoning past the last
+//authoritative position update. The server re-syncs moving units every
+//loc_update_int (~0.3s), so this never clips a live prediction - it only stops a
+//unit with a lost stop/turn update from extrapolating across the whole map.
+static const double MAX_EXTRAP_TIME = 1.0;
+
+// Render-only movement smoothing toggle (set from ZOD_SMOOTH env at startup,
+// flipped live with 'Y'). Default on.
+bool zod_render_smoothing = true;
+
+ZSettings ZObject::default_zsettings;
+
+ZSDL_Surface ZObject::group_tag[10];
+
+//vector<ZEffect*> *ZObject::effect_list = NULL;
+vector<damage_missile> *ZObject::damage_missile_list = NULL;
+
+ZObject::ZObject(ZTime *ztime_, ZSettings *zsettings_)
+{
+	if(!zsettings_)
+		zsettings = &default_zsettings;
+	else
+		zsettings = zsettings_;
+
+	ztime = ztime_;
+
+	zmap = NULL;
+	effect_list = NULL;
+
+	double &the_time = ztime->ztime;
+
+	object_name = "object";
+	owner = NULL_TEAM;
+	last_process_time = the_time;
+
+	//render-only smoothing state
+	render_off_x = 0;
+	render_off_y = 0;
+	render_prev_x = 0;
+	render_prev_y = 0;
+	render_smooth_time = the_time;
+	render_inited = false;
+	//pathfinding debug log trackers
+	pathlog_last_x = 0;
+	pathlog_last_y = 0;
+	pathlog_progress_time = the_time;
+	pathlog_stall_reported = false;
+	pathlog_last_block_time = 0;
+	pathlog_next_violation_time = 0;
+	next_diag_event_time = 0;
+	slide_start_time = 0;
+	width = 0;
+	height = 0;
+	width_pix = 0;
+	height_pix = 0;
+	mode = NULL_MODE;
+	destroyed = false;
+	direction = 4;
+	selectable = false;
+	ref_id = -1;
+	waypoint_i = 0;
+	attack_i = 0;
+	next_waypoint_time = 0;
+	render_death_time = 0;
+	show_waypoints = false;
+	loc.x = loc.y = 0;
+	loc.dx = loc.dy = 0;
+	center_x = center_y = 0;
+	move_speed = 0;
+	real_move_speed = 0;
+	xover = yover = 0;
+	last_process_server_time = last_process_time;
+	last_radius_time = last_process_time;
+	last_loc_set_time = last_process_time;
+	spin_ref_cx = spin_ref_cy = 0;
+	spin_dir_changes = 0;
+	waypoint_cursor.SetTeam(NULL_TEAM);
+	group_num = -1;
+	//hover_name_img = NULL;
+	//hover_name_star_img = NULL;
+	attack_radius = 0;
+	radius_i = 0;
+	max_health = 1;
+	health = max_health;
+	last_wp.mode = -1;
+	next_check_passive_attack_time = 0;
+	next_opportunistic_grab_time = 0;
+	next_trail_time = 0;
+	trail_issued = false;
+	trail_tx = trail_ty = 0;
+	buildlist = NULL;
+	connected_zone = NULL;
+	unit_limit_reached = NULL;
+	dont_stamp = false;
+	do_auto_repair = false;
+	can_be_destroyed = true;
+	has_explosives = false;
+	attacked_by_explosives = false;
+	do_hit_effect = false;
+	do_driver_hit_effect = false;
+	can_snipe = false;
+	has_lid = false;
+	processed_death = false;
+	can_be_sniped = false;
+	last_damaged_by_fire_time = 0;
+	last_damaged_by_missile_time = 0;
+	just_left_cannon = false;
+	initial_health_percent = 100;
+	next_drop_track_time = 0;
+	max_stamina = 0;
+	stamina = max_stamina;
+	//never initialized before - a fresh unit read garbage and could think
+	//it was already running (found by UBSan: 'load of value 190 for bool')
+	is_running = false;
+
+	driver_type = GRUNT;
+
+	//to make sure loc updates from the server are not over frequent
+	//#134: re-sync interval for a moving unit's position (game-seconds). Small so
+	//client dead-reckoning drift stays sub-tile; the jitter staggers units so they
+	//don't all relay on the same frame.
+	loc_update_int = 0.3 + (0.001 * (rand() % 25));
+	next_loc_update_time = 0;
+
+	//attack stuff
+	attack_object = NULL;
+	next_damage_time = 0;
+	damage_int_time = 0;
+	damage_chance = 0;
+	damage = 0;
+	damage_is_missile = false;
+	damage_radius = 1;
+	snipe_chance = 0;
+
+	//needed for when an object needs to be removed after some time
+	killme = false;
+	killme_time = 0;
+
+	ClearGroupInfo();
+}
+
+ZObject::~ZObject()
+{
+	//kill any pathfinding threads
+	if(zmap) cur_wp_info.clear_and_kill(*zmap);
+
+	//alittle mem mangement
+	//if(hover_name_img) SDL_DestroySurface(hover_name_img);
+	//if(hover_name_star_img) SDL_DestroySurface(hover_name_star_img);
+}
+
+void ZObject::InitTypeId(unsigned char ot, unsigned char oid)
+{
+	object_type = ot;
+	object_id = oid;
+
+	if(!zsettings)
+	{
+		printf("ZObject::InitTypeId:zsettings not set\n");
+		return;
+	}
+
+	if(ot == BUILDING_OBJECT)
+	{
+		switch(oid)
+		{
+		case FORT_FRONT:
+		case FORT_BACK:
+			max_health = zsettings->fort_building_health * MAX_UNIT_HEALTH;
+			break;
+		case RADAR:
+			max_health = zsettings->radar_building_health * MAX_UNIT_HEALTH;
+			break;
+		case REPAIR:
+			max_health = zsettings->repair_building_health * MAX_UNIT_HEALTH;
+			break;
+		case ROBOT_FACTORY:
+			max_health = zsettings->robot_building_health * MAX_UNIT_HEALTH;
+			break;
+		case VEHICLE_FACTORY:
+			max_health = zsettings->vehicle_building_health * MAX_UNIT_HEALTH;
+			break;
+		case BRIDGE_VERT:
+		case BRIDGE_HORZ:
+			max_health = zsettings->bridge_building_health * MAX_UNIT_HEALTH;
+			break;
+		}
+	}
+	else if (ot == MAP_ITEM_OBJECT)
+	{
+		switch(oid)
+		{
+		case ROCK_ITEM:
+			max_health = zsettings->rock_item_health * MAX_UNIT_HEALTH;
+			break;
+		case GRENADES_ITEM:
+			max_health = zsettings->grenades_item_health * MAX_UNIT_HEALTH;
+			break;
+		case ROCKETS_ITEM:
+			max_health = zsettings->rockets_item_health * MAX_UNIT_HEALTH;
+			break;
+		case HUT_ITEM:
+			max_health = zsettings->hut_item_health * MAX_UNIT_HEALTH;
+			break;
+		}
+
+		if(oid >= MAP0_ITEM && oid < MAP0_ITEM + MAP_ITEMS_AMOUNT)
+			max_health = zsettings->map_item_health * MAX_UNIT_HEALTH;
+	}
+	else
+	{
+		ZUnit_Settings &unit_settings = zsettings->GetUnitSettings(object_type, object_id);
+
+		move_speed = unit_settings.move_speed;
+		attack_radius = unit_settings.attack_radius;
+		damage = unit_settings.attack_damage * MAX_UNIT_HEALTH;
+		damage_chance = unit_settings.attack_damage_chance;
+		damage_radius = unit_settings.attack_damage_radius;
+		missile_speed = unit_settings.attack_missile_speed;
+		snipe_chance = unit_settings.attack_snipe_chance;
+		damage_int_time = unit_settings.attack_speed;
+		max_health = unit_settings.health * MAX_UNIT_HEALTH;
+		max_stamina = unit_settings.max_run_time;
+	}
+
+	//set health and stamina to full
+	health = max_health;
+	stamina = max_stamina;
+}
+
+void ZObject::Init(TTF_Font *ttf_font)
+{
+	int i;
+	char filename_c[500];
+	SDL_Color textcolor;
+
+	for(i=0;i<10;i++)
+	{
+		textcolor.r = 200;
+		textcolor.g = 200;
+		textcolor.b = 200;
+
+		sprintf(filename_c, "%d", i);
+		//group_tag[i] = TTF_RenderText_Solid(ttf_font, filename_c, 0, textcolor);
+		group_tag[i].LoadBaseImage(TTF_RenderText_Solid(ttf_font, filename_c, 0, textcolor));
+	}
+
+	//for(i=0;i<6;i++)
+	//{
+	//	sprintf(filename_c, "assets/sounds/selected_%02d.wav", i);
+	//	selected_wav[i] = ZSDL_LoadSound(filename_c);
+	//}
+
+	//for(i=0;i<MAX_ROBOT_TYPES;i++)
+	//{
+	//	sprintf(filename_c, "assets/sounds/selected_%s.wav", robot_type_string[i].c_str());
+	//	selected_robot_wav[i] = ZSDL_LoadSound(filename_c);
+	//}
+
+	//for(i=0;i<12;i++)
+	//{
+	//	sprintf(filename_c, "assets/sounds/acknowledge_%02d.wav", i);
+	//	acknowledge_wav[i] = ZSDL_LoadSound(filename_c);
+	//}
+}
+
+void ZObject::InitRealMoveSpeed(ZMap &tmap)
+{
+	int &x = loc.x;
+	int &y = loc.y;
+
+	//real_move_speed = move_speed * tmap.GetTileWalkSpeed(x + (width_pix >> 1), y + (height_pix >> 1));
+	real_move_speed = move_speed * tmap.GetTileWalkSpeed(center_x, center_y);
+}
+
+void ZObject::SetMap(ZMap *zmap_)
+{
+	zmap = zmap_;
+}
+
+void ZObject::DontStamp(bool dont_stamp_)
+{
+	dont_stamp = dont_stamp_;
+}
+
+void ZObject::DoDeathEffect(bool do_fire_death, bool do_missile_death)
+{
+
+}
+
+void ZObject::DoReviveEffect()
+{
+
+}
+
+void ZObject::FireMissile(int x_, int y_)
+{
+
+}
+
+bool ZObject::KillMe(double the_time)
+{
+	return (killme && the_time >= killme_time);
+}
+
+void ZObject::DoKillMe(double killtime)
+{
+	//they were already set to die
+	//make sure they die at their original time
+	if(killme) return;
+
+	killme = true;
+	killme_time = killtime;
+}
+
+bool ZObject::IsDestroyed()
+{
+	return (health <= 0 && max_health > 0);
+}
+
+int ZObject::GetHealth()
+{
+	return health;
+}
+
+int ZObject::GetMaxHealth()
+{
+	return max_health;
+}
+
+void ZObject::SetHealthPercent(int health_percent, ZMap &tmap)
+{
+	if(health_percent > 100) health_percent = 100;
+	if(health_percent < 0) health_percent = 0;
+
+	//for the map editor
+	initial_health_percent = health_percent;
+
+	SetHealth(health_percent * max_health / 100, tmap);
+}
+
+void ZObject::SetHealth(int new_health, ZMap &tmap)
+{
+	bool was_destroyed;
+
+	was_destroyed = IsDestroyed();
+
+	health = new_health;
+
+	if(health < 0) health = 0;
+	if(health > max_health) health = max_health;
+
+	if(was_destroyed && !IsDestroyed())
+	{
+		DoReviveEffect();
+		UnSetDestroyMapImpassables(tmap);
+	}
+	else if(!was_destroyed && IsDestroyed())
+	{
+		SetDestroyMapImpassables(tmap);
+		ProcessKillObject();
+	}
+
+	//if(!health) DoDeathEffect();
+}
+
+int ZObject::DamageDriverHealth(int damage_amount)
+{
+	if(!driver_info.size()) return 0;
+
+	driver_info_s &the_driver = *driver_info.begin();
+
+	if(the_driver.driver_health <= 0) return 0;
+
+	the_driver.driver_health -= damage_amount;
+
+	if(the_driver.driver_health <= 0)
+	{
+		//we killed the driver
+
+		//clear drivers
+		ClearDrivers();
+
+		//go to NULL_TEAM
+		SetOwner(NULL_TEAM);
+
+		//disengage, clear waypoints, and stop movement
+		//done at the server level
+	}
+	
+	return 1;
+}
+
+int ZObject::DamageHealth(int damage_amount, ZMap &tmap)
+{
+	//already dead foo
+	if(health <= 0) return health;
+
+	SetHealth(health - damage_amount, tmap);
+
+	//health -= damage_amount;
+
+	//if(health <= 0)
+	//{
+	//	health = 0;
+	//	ProcessKillObject(current_time());
+	//}
+	//if(health > max_health) health = max_health;
+
+	//got to recalc the build time if this is a building
+	RecalcBuildTime();
+
+	return health;
+}
+
+void ZObject::SetGroup(int group_num_)
+{
+	group_num = group_num_;
+}
+
+void ZObject::PlaySelectedWav()
+{
+	//int ch;
+
+	//ch = rand() % 6;
+
+	//ZSDL_PlayChannel(-1, selected_wav[ch], 0);
+}
+
+void ZObject::PlaySelectedAnim(ZPortrait &portrait)
+{
+	switch(rand() % 4)
+	{
+	case 0: portrait.StartAnim(YES_SIR_ANIM); break;
+	case 1: portrait.StartAnim(YES_SIR3_ANIM); break;
+	case 2: portrait.StartAnim(UNIT_REPORTING1_ANIM); break;
+	case 3: portrait.StartAnim(UNIT_REPORTING2_ANIM); break;
+	}
+}
+
+void ZObject::PlayAcknowledgeWav()
+{
+	//int ch;
+
+	//ch = rand() % 12;
+
+	//ZSDL_PlayChannel(-1, acknowledge_wav[ch], 0);
+}
+
+void ZObject::PlayAcknowledgeAnim(ZPortrait &portrait, bool no_way)
+{
+	if(no_way)
+	{
+		switch(rand() % 3)
+		{
+		case 0: portrait.StartAnim(FORGET_IT_ANIM); break;
+		case 1: portrait.StartAnim(GET_OUTTA_HERE_ANIM); break;
+		case 2: portrait.StartAnim(NO_WAY_ANIM); break;
+		}
+	}
+	else
+	{
+		switch(rand() % 12)
+		{
+		case 0: portrait.StartAnim(WERE_ON_OUR_WAY_ANIM); break;
+		case 1: portrait.StartAnim(HERE_WE_GO_ANIM); break;
+		case 2: portrait.StartAnim(YOUVE_GOT_IT_ANIM); break;
+		case 3: portrait.StartAnim(MOVING_IN_ANIM); break;
+		case 4: portrait.StartAnim(OKAY_ANIM); break;
+		case 5: portrait.StartAnim(ALRIGHT_ANIM); break;
+		case 6: portrait.StartAnim(NO_PROBLEM_ANIM); break;
+		case 7: portrait.StartAnim(OVER_N_OUT_ANIM); break;
+		case 8: portrait.StartAnim(AFFIRMATIVE_ANIM); break;
+		case 9: portrait.StartAnim(GOING_IN_ANIM); break;
+		case 10: portrait.StartAnim(LETS_DO_IT_ANIM); break;
+		case 11: portrait.StartAnim(LETS_GET_EM_ANIM); break;
+		}
+	}
+}
+
+vector<waypoint> &ZObject::GetWayPointList()
+{
+	return waypoint_list;
+}
+
+vector<waypoint> &ZObject::GetWayPointDevList()
+{
+	return waypoint_dev_list;
+}
+
+void ZObject::SetRefID(int id)
+{
+	ref_id = id;
+}
+
+int ZObject::GetRefID()
+{
+	return ref_id;
+}
+
+ZSDL_Surface &ZObject::GetHoverNameImg()
+{
+	if(hover_name_img.GetBaseSurface()) return hover_name_img;
+
+	//make it?
+	if(hover_name.size())
+	{
+		hover_name_img.Unload();
+		hover_name_star_img.Unload();
+
+		hover_name_img.LoadBaseImage(ZFontEngine::GetFont(SMALL_WHITE_FONT).Render(hover_name.c_str()));
+		hover_name_star_img.LoadBaseImage(ZFontEngine::GetFont(SMALL_WHITE_FONT).Render((hover_name + " *").c_str()));
+
+		if(hover_name_img.GetBaseSurface())
+			hover_name_x_shift = (width_pix - hover_name_img.GetBaseSurface()->w) >> 1;
+
+		if(hover_name_star_img.GetBaseSurface())
+			hover_name_star_x_shift = (width_pix - hover_name_star_img.GetBaseSurface()->w) >> 1;
+	}
+
+	return hover_name_img;
+}
+
+ZSDL_Surface &ZObject::GetHoverNameImgStatic(unsigned char ot, unsigned char oid)
+{
+	const int max_units_in_type = 7;
+	static ZSDL_Surface static_hover_name_img[MAX_MAP_OBJECT_TYPES][max_units_in_type];
+	static ZSDL_Surface null_return;
+
+	if(ot < 0) return null_return;
+	if(ot >= MAX_MAP_OBJECT_TYPES) return null_return;
+	if(oid < 0) return null_return;
+	if(oid >= max_units_in_type) return null_return;
+
+	if(!static_hover_name_img[ot][oid].GetBaseSurface())
+	{
+		string render_str;
+
+		render_str = GetHoverName(ot, oid);
+		if(render_str.length())
+			static_hover_name_img[ot][oid].LoadBaseImage(ZFontEngine::GetFont(SMALL_WHITE_FONT).Render(render_str.c_str()));
+	}
+
+	return static_hover_name_img[ot][oid];
+}
+
+string ZObject::GetHoverName(unsigned char ot, unsigned char oid)
+{
+	switch(ot)
+	{
+		case CANNON_OBJECT:
+			switch(oid)
+			{
+				case GATLING: return "Gatling"; break;
+				case GUN: return "Gun"; break;
+				case HOWITZER: return "Howitzer"; break;
+				case MISSILE_CANNON: return "Missile"; break;
+			}
+			break;
+		case VEHICLE_OBJECT:
+			switch(oid)
+			{
+				case JEEP: return "Jeep"; break;
+				case LIGHT: return "Light"; break;
+				case MEDIUM: return "Medium"; break;
+				case HEAVY: return "Heavy"; break;
+				case APC: return "APC"; break;
+				case MISSILE_LAUNCHER: return "M Missile"; break;
+				case CRANE: return "Crane"; break;
+			}
+			break;
+		case ROBOT_OBJECT:
+			switch(oid)
+			{
+				case GRUNT: return "Grunt"; break;
+				case PSYCHO: return "Psychos"; break;
+				case SNIPER: return "Sniper"; break;
+				case TOUGH: return "Tough"; break;
+				case PYRO: return "Pyros"; break;
+				case LASER: return "Laser"; break;
+			}
+			break;
+	}
+
+	return "";
+}
+
+void ZObject::RenderHover(ZMap &zmap, SDL_Surface *dest, team_type viewers_team)
+{
+	int &x = loc.x;
+	int &y = loc.y;
+	SDL_Rect from_rect, to_rect;
+	const int hover_name_y_shift = -19;
+
+	if(hover_name_img.GetBaseSurface())
+	{
+		if(viewers_team == owner && viewers_team != NULL_TEAM)
+		{
+			zmap.RenderZSurface(&hover_name_star_img, x + hover_name_star_x_shift, y + hover_name_y_shift);
+			//if(zmap.GetBlitInfo(hover_name_star_img, x + hover_name_star_x_shift, y + hover_name_y_shift, from_rect, to_rect))
+			//	SDL_BlitSurface( hover_name_star_img, &from_rect, dest, &to_rect);
+		}
+		else
+		{
+			zmap.RenderZSurface(&hover_name_star_img, x + hover_name_x_shift, y + hover_name_y_shift);
+			//if(zmap.GetBlitInfo(hover_name_img, x + hover_name_x_shift, y + hover_name_y_shift, from_rect, to_rect))
+			//	SDL_BlitSurface( hover_name_img, &from_rect, dest, &to_rect);
+		}
+	}
+	else if(hover_name.size())
+	{
+		hover_name_img.Unload();
+		hover_name_star_img.Unload();
+
+		hover_name_img.LoadBaseImage( ZFontEngine::GetFont(SMALL_WHITE_FONT).Render(hover_name.c_str()));
+		hover_name_star_img.LoadBaseImage( ZFontEngine::GetFont(SMALL_WHITE_FONT).Render((hover_name + " *").c_str()));
+
+		if(hover_name_img.GetBaseSurface())
+			hover_name_x_shift = (width_pix - hover_name_img.GetBaseSurface()->w) >> 1;
+
+		if(hover_name_star_img.GetBaseSurface())
+			hover_name_star_x_shift = (width_pix - hover_name_star_img.GetBaseSurface()->w) >> 1;
+
+		if(viewers_team == owner && viewers_team != NULL_TEAM)
+		{
+			if(hover_name_star_img.GetBaseSurface())
+				zmap.RenderZSurface(&hover_name_star_img, x + hover_name_star_x_shift, y + hover_name_y_shift);
+			//if(zmap.GetBlitInfo(hover_name_star_img, x + hover_name_star_x_shift, y + hover_name_y_shift, from_rect, to_rect))
+			//	SDL_BlitSurface( hover_name_star_img, &from_rect, dest, &to_rect);
+		}
+		else
+		{
+			if(hover_name_img.GetBaseSurface())
+				zmap.RenderZSurface(&hover_name_img, x + hover_name_x_shift, y + hover_name_y_shift);
+			//if(zmap.GetBlitInfo(hover_name_img, x + hover_name_x_shift, y + hover_name_y_shift, from_rect, to_rect))
+			//	SDL_BlitSurface( hover_name_img, &from_rect, dest, &to_rect);
+		}
+	}
+
+	//if you are rendering the hover name, then you are also rendering the health
+	RenderHealth(zmap, dest);
+}
+
+void ZObject::RenderHealth(ZMap &zmap, SDL_Surface *dest)
+{
+	int &x = loc.x;
+	int &y = loc.y;
+	SDL_Rect the_box;
+	SDL_Rect from_rect, to_rect;
+	//int shift_x, shift_y, view_w, view_h;
+	const unsigned char g_r = 82, g_g = 190, g_b = 33;
+	const unsigned char y_r = 247, y_g = 203, y_b = 107;
+	const unsigned char b_r = 0, b_g = 0, b_b = 0;
+	//int green_map = SDL_MapRGB(SDL_GetPixelFormatDetails(dest->format), SDL_GetSurfacePalette(dest), 82, 190, 33);
+	//int yellow_map = SDL_MapRGB(SDL_GetPixelFormatDetails(dest->format), SDL_GetSurfacePalette(dest), 247, 203, 107);
+	//int black_map = SDL_MapRGB(SDL_GetPixelFormatDetails(dest->format), SDL_GetSurfacePalette(dest), 0, 0, 0);
+	const int bar_x_shift = -3;
+	const int bar_y_shift = -8;
+	const int max_dist = 30 + 6;
+	int green_dist, yellow_dist, total_dist;
+
+
+	if(!hover_name.size()) return;
+
+	//calculate
+	green_dist = max_dist * (1.0 * health / MAX_UNIT_HEALTH);
+	yellow_dist = max_dist * (1.0 * max_health / MAX_UNIT_HEALTH);
+
+	if(green_dist <= 0) green_dist = 1;
+	if(yellow_dist <= 0) yellow_dist = 1;
+	total_dist = yellow_dist + 2;
+
+	//zmap.GetViewShiftFull(shift_x, shift_y, view_w, view_h);
+
+	//draw black
+	//the_box.x = (x - shift_x) + bar_x_shift;
+	//the_box.y = (y - shift_y) + bar_y_shift;
+	//the_box.w = total_dist;
+	//the_box.h = 4;
+
+	//SDL_FillSurfaceRect(dest, &the_box, black_map);
+
+	if(zmap.GetBlitInfo(x + bar_x_shift, y + bar_y_shift, total_dist, 4, from_rect, to_rect))
+	{
+		the_box.x = to_rect.x;
+		the_box.y = to_rect.y;
+		the_box.w = from_rect.w;
+		the_box.h = from_rect.h;
+
+		//SDL_FillSurfaceRect(dest, &the_box, black_map);
+		ZSDL_FillSurfaceRect(&the_box, b_r, b_g, b_b);
+	}
+
+	//draw green
+	//the_box.x = (x - shift_x) + bar_x_shift + 1;
+	//the_box.y = (y - shift_y) + bar_y_shift + 1;
+	//the_box.w = green_dist;
+	//the_box.h = 2;
+
+	//SDL_FillSurfaceRect(dest, &the_box, green_map);
+
+	if(zmap.GetBlitInfo(x + bar_x_shift + 1, y + bar_y_shift + 1, green_dist, 2, from_rect, to_rect))
+	{
+		the_box.x = to_rect.x;
+		the_box.y = to_rect.y;
+		the_box.w = from_rect.w;
+		the_box.h = from_rect.h;
+
+		//SDL_FillSurfaceRect(dest, &the_box, green_map);
+		ZSDL_FillSurfaceRect(&the_box, g_r, g_g, g_b);
+	}
+
+	//draw yellow
+	//the_box.x = (x - shift_x) + bar_x_shift + 1 + green_dist;
+	//the_box.y = (y - shift_y) + bar_y_shift + 1;
+	//the_box.w = yellow_dist - green_dist;
+	//the_box.h = 2;
+
+	//if(the_box.w)
+	//	SDL_FillSurfaceRect(dest, &the_box, yellow_map);
+
+	if(yellow_dist - green_dist)
+	if(zmap.GetBlitInfo(x + bar_x_shift + 1 + green_dist, y + bar_y_shift + 1, yellow_dist - green_dist, 2, from_rect, to_rect))
+	{
+		the_box.x = to_rect.x;
+		the_box.y = to_rect.y;
+		the_box.w = from_rect.w;
+		the_box.h = from_rect.h;
+
+		//SDL_FillSurfaceRect(dest, &the_box, yellow_map);
+		ZSDL_FillSurfaceRect(&the_box, y_r, y_g, y_b);
+	}
+}
+
+void ZObject::RenderAttackRadius(ZMap &zmap, SDL_Surface *dest, vector<ZObject*> &avoid_list)
+{
+	int &x = loc.x;
+	int &y = loc.y;
+	int cx, cy;
+	int mx, my;
+	int shift_x, shift_y, view_w, view_h;
+	SDL_Rect to_rect;
+	//int rgb_map;
+	int i;
+	const int dots = 10;
+	const double PI_shift = (PI / 2) / dots;
+	double deg;
+
+	if(!attack_radius) return;
+
+	zmap.GetViewShiftFull(shift_x, shift_y, view_w, view_h);
+
+	//find the center
+	cx = (x - shift_x) + (width_pix >> 1);
+	cy = (y - shift_y) + (height_pix >> 1);
+
+	//is any of this even on the map?
+	if(cx + attack_radius < 0) return;
+	if(cy + attack_radius < 0) return;
+	if(cx - attack_radius > view_w) return;
+	if(cy - attack_radius > view_h) return;
+
+	//init stuff
+	//team_type &t = owner;
+	//rgb_map = SDL_MapRGB(SDL_GetPixelFormatDetails(dest->format), SDL_GetSurfacePalette(dest), team_color[t].r, team_color[t].g, team_color[t].b); 
+	to_rect.w = 3;
+	to_rect.h = 3;
+
+	deg = radius_i;
+	for(i=0;i<dots && deg <= PI / 2;i++,deg+=PI_shift)
+	{
+		mx = (attack_radius + 3) * sin(deg);
+		my = (attack_radius + 3) * cos(deg);
+
+		to_rect.x = mx + cx;
+		to_rect.y = my + cy;
+		to_rect.w = 2;
+		to_rect.h = 2;
+		if((to_rect.x >= 0 && to_rect.x + 2 < view_w) && (to_rect.y >= 0 && to_rect.y + 2 < view_h))
+			if(!WithinAttackRadiusOf(avoid_list, to_rect.x + shift_x, to_rect.y + shift_y))
+				ZSDL_FillSurfaceRect(&to_rect, team_color[owner].r, team_color[owner].g, team_color[owner].b);
+				//SDL_FillSurfaceRect(dest, &to_rect, rgb_map);
+
+		to_rect.x = -mx + cx;
+		to_rect.y = -my + cy;
+		to_rect.w = 2;
+		to_rect.h = 2;
+		if((to_rect.x >= 0 && to_rect.x + 2 < view_w) && (to_rect.y >= 0 && to_rect.y + 2 < view_h))
+			if(!WithinAttackRadiusOf(avoid_list, to_rect.x + shift_x, to_rect.y + shift_y))
+				ZSDL_FillSurfaceRect(&to_rect, team_color[owner].r, team_color[owner].g, team_color[owner].b);
+				//SDL_FillSurfaceRect(dest, &to_rect, rgb_map);
+
+		to_rect.x = -mx + cx;
+		to_rect.y = my + cy;
+		to_rect.w = 2;
+		to_rect.h = 2;
+		if((to_rect.x >= 0 && to_rect.x + 2 < view_w) && (to_rect.y >= 0 && to_rect.y + 2 < view_h))
+			if(!WithinAttackRadiusOf(avoid_list, to_rect.x + shift_x, to_rect.y + shift_y))
+				ZSDL_FillSurfaceRect(&to_rect, team_color[owner].r, team_color[owner].g, team_color[owner].b);
+				//SDL_FillSurfaceRect(dest, &to_rect, rgb_map);
+
+		to_rect.x = mx + cx;
+		to_rect.y = -my + cy;
+		to_rect.w = 2;
+		to_rect.h = 2;
+		if((to_rect.x >= 0 && to_rect.x + 2 < view_w) && (to_rect.y >= 0 && to_rect.y + 2 < view_h))
+			if(!WithinAttackRadiusOf(avoid_list, to_rect.x + shift_x, to_rect.y + shift_y))
+				ZSDL_FillSurfaceRect(&to_rect, team_color[owner].r, team_color[owner].g, team_color[owner].b);
+				//SDL_FillSurfaceRect(dest, &to_rect, rgb_map);
+	}
+}
+
+void ZObject::RenderSelection(ZMap &zmap, SDL_Surface *dest)
+{
+	int &x = loc.x;
+	int &y = loc.y;
+	int shift_x, shift_y, view_w, view_h;
+	SDL_Rect dim;
+
+	zmap.GetViewShiftFull(shift_x, shift_y, view_w, view_h);
+
+	dim.x = x - shift_x;
+	dim.y = y - shift_y;
+	dim.w = width_pix;
+	dim.h = height_pix;
+
+	draw_selection_box(dest, dim, team_color[owner], view_w, view_h);
+
+	//draw group number
+	if(group_num != -1)
+	{
+		zmap.RenderZSurface(&group_tag[group_num], x-2, y-3);
+		//dim.x -= 2;
+		//dim.y -= 3;
+
+		//SDL_BlitSurface(group_tag[group_num], NULL, dest, &dim);
+	}
+
+	//render health too
+	RenderHealth(zmap, dest);
+}
+
+bool ZObject::WithinAutoEnterRadius(int ox, int oy)
+{
+	int ae_radius = zsettings->auto_grab_vehicle_distance;
+	int &x = center_x;
+	int &y = center_y;
+
+	return points_within_distance(x, y, ox, oy, ae_radius);
+}
+
+bool ZObject::WithinAutoGrabFlagRadius(int ox, int oy)
+{
+	int agf_radius = zsettings->auto_grab_flag_distance;
+	int &x = center_x;
+	int &y = center_y;
+
+	return points_within_distance(x, y, ox, oy, agf_radius);
+}
+
+bool ZObject::WithinAgroRadius(ZObject *obj)
+{
+	if(!obj) return false;
+
+	int &x = center_x;
+	int &y = center_y;
+	int &ox = obj->center_x;
+	int &oy = obj->center_y;
+
+	if(!WithinAgroRadius(ox, oy)) return false;
+
+	if(!obj->IsDestroyableImpass() && zmap && zmap->EngageBarrierBetweenCoords(x,y,ox,oy)) return false;
+
+	return true;
+}
+
+bool ZObject::WithinAgroRadius(int ox, int oy)
+{
+	int agro_radius = attack_radius + zsettings->agro_distance;
+	int &x = center_x;
+	int &y = center_y;
+
+	return points_within_distance(x, y, ox, oy, agro_radius);
+}
+
+bool ZObject::WithinAttackRadius(ZObject *obj)
+{
+	if(!obj) return false;
+
+	int &x = center_x;
+	int &y = center_y;
+	int &ox = obj->center_x;
+	int &oy = obj->center_y;
+
+	if(!WithinAttackRadius(ox, oy)) return false;
+
+	if(!obj->IsDestroyableImpass() && zmap && zmap->EngageBarrierBetweenCoords(x,y,ox,oy)) return false;
+
+	return true;
+}
+
+bool ZObject::WithinAttackRadius(int ox, int oy)
+{
+	int &x = center_x;
+	int &y = center_y;
+
+	return points_within_distance(x, y, ox, oy, attack_radius);
+}
+
+bool ZObject::WithinAttackRadiusOf(vector<ZObject*> &avoid_list, int ox, int oy)
+{
+	vector<ZObject*>::iterator i;
+
+	for(i=avoid_list.begin();i!=avoid_list.end();i++)
+		if(*i != this && (*i)->WithinAttackRadius(ox, oy))
+			return true;
+
+	return false;
+}
+
+bool ZObject::Selectable()
+{
+	//minions are not selectable
+	if(leader_obj) return false;
+
+	return selectable;
+}
+
+bool ZObject::BoxSelectable()
+{
+	//a rubber-band box drag must not sweep up cannons (stationary turrets):
+	//they can't take movement orders, so including them only pollutes a unit
+	//selection and you end up issuing commands they can't execute (issue #40).
+	//A direct click still selects one (the single-unit path uses Selectable()).
+	if(object_type == CANNON_OBJECT) return false;
+
+	return Selectable();
+}
+
+bool ZObject::UnderCursor(int &map_x, int &map_y)
+{
+	int &x = loc.x;
+	int &y = loc.y;
+	if(map_x < x) return false;
+	if(map_y < y) return false;
+	if(map_x > x + width_pix) return false;
+	if(map_y > y + height_pix) return false;
+
+	return true;
+}
+
+bool ZObject::UnderCursorMargin(int map_x, int map_y, int margin)
+{
+	//#205: same box test as UnderCursor, grown by 'margin' on every side. At
+	//margin 0 this is exactly UnderCursor.
+	if(map_x < loc.x - margin) return false;
+	if(map_y < loc.y - margin) return false;
+	if(map_x > loc.x + width_pix + margin) return false;
+	if(map_y > loc.y + height_pix + margin) return false;
+
+	return true;
+}
+
+double ZObject::DistanceFromCoords(int x, int y)
+{
+	int dx, dy;
+
+	dx = loc.x - x;
+	dy = loc.y - y;
+
+	return sqrt((double)((dx * dx) + (dy * dy)));
+}
+
+double ZObject::DistanceFromObject(ZObject &obj)
+{
+	int dx, dy;
+
+	dx = loc.x - obj.loc.x;
+	dy = loc.y - obj.loc.y;
+
+	return sqrt((double)((dx * dx) + (dy * dy)));
+}
+
+bool ZObject::IntersectsObject(ZObject &obj)
+{
+	int &x = loc.x;
+	int &y = loc.y;
+	if(obj.loc.x >= x + width_pix) return false;
+	if(obj.loc.x + obj.width_pix <= x) return false;
+	if(obj.loc.y >= y + height_pix) return false;
+	if(obj.loc.y + obj.height_pix <= y) return false;
+
+	return true;
+}
+
+bool ZObject::WithinSelection(int &map_left, int &map_right, int &map_top, int &map_bottom)
+{
+	int &x = loc.x;
+	int &y = loc.y;
+
+	if(map_left >= x + width_pix) return false;
+	if(map_right <= x) return false;
+	if(map_top >= y + height_pix) return false;
+	if(map_bottom <= y) return false;
+
+	return true;
+}
+
+bool ZObject::CannonNotPlacable(int &map_left, int &map_right, int &map_top, int &map_bottom)
+{
+	return WithinSelection(map_left, map_right, map_top, map_bottom);
+}
+
+string ZObject::GetObjectName()
+{
+	return object_name;
+}
+
+void ZObject::SetDirection(int direction_)
+{
+	direction = direction_;
+}
+
+void ZObject::SetCords(int x_, int y_)
+{
+	int &x = loc.x;
+	int &y = loc.y;
+
+	//#134: teleport detector. A position jump far bigger than any normal move
+	//(>6 tiles in a single update) for an already-placed unit is almost certainly
+	//a "teleporting unit" bug. Log it to zod_diag.log so the transient event is
+	//captured even if F12 is pressed afterward (a snapshot alone misses it).
+	//Skips initial placement (old position 0,0 = not on the map yet).
+	if((x || y) && (abs(x_ - x) + abs(y_ - y) > 96))
+		ZDiag("TELEPORT? %s ref#%d jumped tile(%d,%d) -> tile(%d,%d)  [%d px]",
+			GetObjectName().c_str(), GetRefID(), x / 16, y / 16, x_ / 16, y_ / 16,
+			abs(x_ - x) + abs(y_ - y));
+
+	x = x_;
+	y = y_;
+
+	//set centers
+	center_x = x + (width_pix >> 1);
+	center_y = y + (height_pix >> 1);
+}
+
+//void ZObject::GetCords(int &x_, int &y_)
+//{
+//	x_ = loc.x;
+//	y_ = loc.y;
+//}
+
+//void ZObject::GetCenterCords(int &x_, int &y_)
+//{
+//	//int &x = loc.x;
+//	//int &y = loc.y;
+//	//x_ = x + (width_pix >> 1);
+//	//y_ = y + (height_pix >> 1);
+//	x_ = center_x;
+//	y_ = center_y;
+//}
+
+void ZObject::SetOwner(team_type owner_)
+{
+	owner = owner_;
+}
+
+// SDL_Surface *ZObject::GetRender()
+// {
+// 	return NULL;
+// }
+
+//void ZObject::GetDimensionsPixel(int &w_pix, int &h_pix)
+//{
+//	w_pix = width_pix;
+//	h_pix = height_pix;
+//}
+
+//void ZObject::GetDimensions(int &w, int &h)
+//{
+//	w = width;
+//	h = height;
+//}
+
+int ZObject::Process()
+{
+	printf("ZObject::Process:%s\n", object_name.c_str());
+	return 0;
+}
+
+int ZObject::ProcessObject()
+{
+	double &the_time = ztime->ztime;
+	double time_dif;
+
+	//smooth the walk because of lag
+	SmoothMove(the_time);
+
+	//render-only smoothing of position snaps (visual only, after loc is final)
+	ProcessRenderSmoothing(the_time);
+
+	//attack radius
+	{
+		const int dots = 10;
+		const double PI_shift = (PI / 2) / dots;
+
+		time_dif = the_time - last_radius_time;
+		last_radius_time = the_time;
+
+		radius_i += (PI_shift) * time_dif;
+
+		//pull it back down
+		while(radius_i > PI_shift)
+			radius_i -= PI_shift;
+	}
+
+	if(the_time >= next_waypoint_time)
+	{
+		waypoint_i++;
+		if(waypoint_i >= 4) waypoint_i = 0;
+
+		next_waypoint_time = the_time + 0.1;
+	}
+
+	if(show_waypoints)
+	{
+		waypoint_cursor.Process(the_time);
+
+		if(the_time >= render_death_time)
+			show_waypoints = false;
+	}
+
+	TryDropTracks();
+
+	return 1;
+}
+
+void ZObject::ShowWaypoints()
+{
+	double &the_time = ztime->ztime;
+	vector<waypoint>::iterator i;
+
+	render_death_time = the_time + 3.0;
+	show_waypoints = true;
+
+	//set cursor
+	if(waypoint_list.size())
+	{
+		i=waypoint_list.end();
+		i--;
+
+		switch(i->mode)
+		{
+		case MOVE_WP:
+		case FORCE_MOVE_WP:
+		case ENTER_FORT_WP:
+		case DODGE_WP:
+			waypoint_cursor.SetCursor(PLACED_C);
+			break;
+		case PICKUP_GRENADES_WP:
+			waypoint_cursor.SetCursor(GRABBED_C);
+			break;
+		case ENTER_WP:
+			waypoint_cursor.SetCursor(ENTERED_C);
+			break;
+		case ATTACK_WP:
+		case AGRO_WP:
+			waypoint_cursor.SetCursor(ATTACKED_C);
+			break;
+		case CRANE_REPAIR_WP:
+		case UNIT_REPAIR_WP:
+			waypoint_cursor.SetCursor(REPAIRED_C);
+			break;
+		default:
+			waypoint_cursor.SetCursor(PLACED_C);
+			break;
+		}
+	}
+	else
+		waypoint_cursor.SetCursor(PLACED_C);
+}
+
+void ZObject::DoRenderWaypoints(ZMap &the_map, SDL_Surface *dest, vector<ZObject*> &object_list, bool is_rally_points, int shift_x, int shift_y)
+{
+	int x, y;
+	int nx, ny;
+	const int glvl = 170;
+	SDL_Rect the_box;
+	vector<waypoint>::iterator i;
+	//Uint32 mappedrgb = SDL_MapRGB(SDL_GetPixelFormatDetails(dest->format), SDL_GetSurfacePalette(dest), glvl, glvl, glvl);
+	double tx,ty;
+	double txp, typ;
+	double dx, dy;
+	double dist;
+	int ox, oy;
+	int maxj;
+	int j;
+	int mshift_x, mshift_y;
+	int view_h, view_w;
+	ZObject *target_object;
+	vector<waypoint> *render_waypoint_list;
+
+	if(!is_rally_points && !show_waypoints) return;
+
+	if(is_rally_points)
+	{
+		if(!GetBuildingCreationPoint(x, y))
+		{
+			x = center_x;
+			y = center_y;
+		}
+		render_waypoint_list = &rallypoint_list;
+	}
+	else
+	{
+		x = center_x;
+		y = center_y;
+		render_waypoint_list = &waypoint_list;
+	}
+
+	//do we even have waypoints to render?
+	if(!render_waypoint_list->size()) return;
+
+	the_map.GetViewShiftFull(mshift_x, mshift_y, view_w, view_h);
+
+	view_w -= 2;
+	view_h -= 2;
+
+	tx = x - mshift_x;
+	ty = y - mshift_y;
+
+	//center
+	//tx += width_pix >> 1;
+	//ty += height_pix >> 1;
+
+	//draw from inside
+	if(is_rally_points && GetBuildingCreationMovePoint(nx, ny))
+	{
+		dx = nx - x;
+		dy = ny - y;
+
+		dist = sqrt((dx * dx) + (dy * dy));
+
+		txp = 4 * dx / dist;
+		typ = 4 * dy / dist;
+
+		tx += txp * (waypoint_i / 4.0);
+		ty += typ * (waypoint_i / 4.0);
+
+		maxj = dist / 4;
+		maxj++;
+
+		if(waypoint_i) maxj--;
+
+		//draw this segments points
+		for(j=0;j<maxj;j++)
+		{
+			if((int)tx < view_w && (int)ty < view_h)
+			{
+				the_box.x = (int)tx;
+				the_box.y = (int)ty;
+				the_box.w = 2;
+				the_box.h = 2;
+
+				//SDL_FillSurfaceRect(dest, &the_box, mappedrgb);
+				ZSDL_FillSurfaceRect(&the_box, glvl, glvl, glvl);
+			}
+
+			tx += txp;
+			ty += typ;
+		}
+
+		//setup for next round
+		tx = (nx - mshift_x);
+		ty = (ny - mshift_y);
+	}
+	
+	//for(i=waypoint_list.begin();i!=waypoint_list.end();i++)
+	for(i=render_waypoint_list->begin();i!=render_waypoint_list->end();i++)
+	{
+		switch(i->mode)
+		{
+		case MOVE_WP:
+		case FORCE_MOVE_WP:
+		case ENTER_WP:
+		case CRANE_REPAIR_WP:
+		case UNIT_REPAIR_WP:
+		case ENTER_FORT_WP:
+		case DODGE_WP:
+		case PICKUP_GRENADES_WP:
+			//dx = (i->x - mshift_x) - tx;
+			//dy = (i->y - mshift_y) - ty;
+			nx = (i->x - mshift_x);
+			ny = (i->y - mshift_y);
+			break;
+		
+			//dx = (i->x - mshift_x) - tx;
+			//dy = (i->y - mshift_y) - ty;
+			//break;
+		case ATTACK_WP:
+		case AGRO_WP:
+			target_object = GetObjectFromID(i->ref_id, object_list);
+
+			if(target_object)
+			{
+				target_object->GetCenterCords(ox, oy);
+
+				//dx = (ox - mshift_x) - tx;
+				//dy = (oy - mshift_y) - ty;
+				nx = (ox - mshift_x);
+				ny = (oy - mshift_y);
+			}
+			else
+			{
+				//dx = (i->x - mshift_x) - tx;
+				//dy = (i->y - mshift_y) - ty;
+				nx = (i->x - mshift_x);
+				ny = (i->y - mshift_y);
+			}
+			
+			break;
+		}
+
+		//first leg: thread the line through the actual A* route the server
+		//relayed (SEND_UNIT_ROUTE), so the path bends around terrain like in
+		//the original Z instead of beelining to the destination
+		if(!is_rally_points && i == render_waypoint_list->begin())
+			for(vector<ZPath_Finding_AStar::pf_point>::iterator r=client_route.begin(); r!=client_route.end(); ++r)
+			{
+				int rx = r->x - mshift_x;
+				int ry = r->y - mshift_y;
+
+				RenderWaypointLine(tx, ty, rx, ry, view_h, view_w);
+
+				tx = rx;
+				ty = ry;
+			}
+
+		//render
+		RenderWaypointLine(tx, ty, nx, ny, view_h, view_w);
+
+		//set old to new
+		tx = nx;
+		ty = ny;
+
+		/*
+		//dx = (i->x - mshift_x) - tx;
+		//dy = (i->y - mshift_y) - ty;
+		dist = sqrt((dx * dx) + (dy * dy));
+
+		txp = 4 * dx / dist;
+		typ = 4 * dy / dist;
+
+		tx += txp * (waypoint_i / 4.0);
+		ty += typ * (waypoint_i / 4.0);
+
+		maxj = dist / 4;
+		maxj++;
+
+		if(waypoint_i) maxj--;
+
+		//draw this segments points
+		for(j=0;j<maxj;j++)
+		{
+			if((int)tx < view_w && (int)ty < view_h)
+			{
+				the_box.x = (int)tx;
+				the_box.y = (int)ty;
+				the_box.w = 2;
+				the_box.h = 2;
+
+				//SDL_FillSurfaceRect(dest, &the_box, mappedrgb);
+				ZSDL_FillSurfaceRect(&the_box, glvl, glvl, glvl);
+			}
+
+			tx += txp;
+			ty += typ;
+		}
+
+		//setup for next round
+		tx = (i->x - mshift_x);
+		ty = (i->y - mshift_y);
+		*/
+	}
+
+	//render cursor
+	//if(waypoint_list.size())
+	if(render_waypoint_list->size())
+	{
+		int kx, ky;
+		//i=waypoint_list.end();
+		i=render_waypoint_list->end();
+		i--;
+
+		switch(i->mode)
+		{
+		case MOVE_WP:
+		case FORCE_MOVE_WP:
+			kx = (i->x);// - mshift_x;
+			ky = (i->y);// - mshift_y;
+			// a move whose target is a flag is really a capture order: show the
+			// grab/hand cursor instead of the plain placement marker (issue #17)
+			{
+				ZObject *t = (i->ref_id != -1) ? GetObjectFromID(i->ref_id, object_list) : NULL;
+				unsigned char tot = 0, toid = 0;
+				if(t) t->GetObjectID(tot, toid);
+				waypoint_cursor.SetCursor(
+					(t && tot == MAP_ITEM_OBJECT && toid == FLAG_ITEM) ? GRABBED_C : PLACED_C);
+			}
+			break;
+		case ENTER_FORT_WP:
+		case DODGE_WP:
+			kx = (i->x);// - mshift_x;
+			ky = (i->y);// - mshift_y;
+			waypoint_cursor.SetCursor(PLACED_C);
+			break;
+		case ENTER_WP:
+			kx = (i->x);// - mshift_x;
+			ky = (i->y);// - mshift_y;
+			waypoint_cursor.SetCursor(ENTERED_C);
+			break;
+		case PICKUP_GRENADES_WP:
+			kx = (i->x);// - mshift_x;
+			ky = (i->y);// - mshift_y;
+			waypoint_cursor.SetCursor(GRABBED_C);
+			break;
+		case CRANE_REPAIR_WP:
+		case UNIT_REPAIR_WP:
+			kx = (i->x);// - mshift_x;
+			ky = (i->y);// - mshift_y;
+			waypoint_cursor.SetCursor(REPAIRED_C);
+			break;
+		case ATTACK_WP:
+		case AGRO_WP:
+			target_object = GetObjectFromID(i->ref_id, object_list);
+
+			if(target_object)
+			{
+				target_object->GetCenterCords(ox, oy);
+
+				kx = ox;// - mshift_x;
+				ky = oy;// - mshift_y;
+
+				waypoint_cursor.SetCursor(ATTACKED_C);
+			}
+			else
+			{
+				kx = (i->x);// - mshift_x;
+				ky = (i->y);// - mshift_y;
+				waypoint_cursor.SetCursor(PLACED_C);
+			}
+			
+			break;
+		}
+
+		waypoint_cursor.Render(the_map, dest, kx, ky, true);
+	}
+}
+
+void ZObject::RenderWaypointLine(int sx, int sy, int ex, int ey, int view_h, int view_w)
+{
+	const int glvl = 170;
+	double tx, ty;
+	double txp, typ;
+	double dx, dy;
+	double dist;
+	int maxj;
+	SDL_Rect the_box;
+
+	tx = sx;
+	ty = sy;
+
+	dx = ex - sx;
+	dy = ey - sy;
+
+	dist = sqrt((dx * dx) + (dy * dy));
+
+	txp = 4 * dx / dist;
+	typ = 4 * dy / dist;
+
+	tx += txp * (waypoint_i / 4.0);
+	ty += typ * (waypoint_i / 4.0);
+
+	maxj = dist / 4;
+	maxj++;
+
+	if(waypoint_i) maxj--;
+
+	//draw this segments points
+	for(int j=0;j<maxj;j++)
+	{
+		if((int)tx < view_w && (int)ty < view_h)
+		{
+			the_box.x = (int)tx;
+			the_box.y = (int)ty;
+			the_box.w = 2;
+			the_box.h = 2;
+
+			//SDL_FillSurfaceRect(dest, &the_box, mappedrgb);
+			ZSDL_FillSurfaceRect(&the_box, glvl, glvl, glvl);
+		}
+
+		tx += txp;
+		ty += typ;
+	}
+}
+
+void ZObject::DoRender(ZMap &the_map, SDL_Surface *dest, int shift_x, int shift_y)
+{
+	printf("ZObject::DoRender:%s\n", object_name.c_str());
+}
+
+void ZObject::DoAfterEffects(ZMap &the_map, SDL_Surface *dest, int shift_x, int shift_y)
+{
+// 	printf("ZObject::DoAfterEffects:%s\n", object_name.c_str());
+}
+
+void ZObject::SetDestroyed(bool is_destroyed)
+{
+	destroyed = is_destroyed;
+}
+
+void ZObject::GetObjectID(unsigned char &object_type_, unsigned char &object_id_)
+{
+   object_type_ = object_type;
+   object_id_ = object_id;
+}
+
+//team_type ZObject::GetOwner()
+//{
+//   return owner;
+//}
+
+int ZObject::ProcessServer(ZMap &tmap, ZOLists &ols)
+{
+	double &the_time = ztime->ztime;
+	double time_dif;
+	vector<waypoint>::iterator wp;
+	bool is_new_waypoint;
+	bool attack_player_given = false;
+
+	time_dif = the_time - last_process_server_time;
+	last_process_server_time = the_time;
+
+	sflags.clear();
+
+	//it being repaired?
+	sflags.auto_repair = DoAutoRepair(tmap, ols);
+
+	//increase / decrease stamina
+	ProcessRunStamina(time_dif);
+
+	if(IsDestroyed()) return 0;
+
+	//was a unit created?
+	sflags.build_unit = BuildUnit(the_time, sflags.bot, sflags.boid);
+
+	//repair unit
+	sflags.repair_unit = RepairUnit(the_time, sflags.rot, sflags.roid, sflags.rdriver_type, sflags.rdriver_info, sflags.rwaypoint_list);
+
+	//lid business
+	ProcessServerLid();
+
+	//go through waypoints
+	if(waypoint_list.size())
+	{
+		wp = waypoint_list.begin();
+
+		if(*wp != last_wp)
+		{
+			is_new_waypoint = true;
+			last_wp = *wp;
+			xover = yover = 0;
+
+			cur_wp_info.clear_and_kill(tmap);
+			sflags.updated_route = true;
+
+			//because all waypoints use cur_wp_info.x+y for movement
+			//we set it to our current location to set ourselves to
+			//an initial "stop"
+			//cur_wp_info.x = loc.x + (width_pix >> 1);
+			//cur_wp_info.y = loc.y + (height_pix >> 1);
+			//cur_wp_info.x = center_x;
+			//cur_wp_info.y = center_y;
+			SetTarget(center_x, center_y);
+
+			//stop running
+			is_running = false;
+		}
+		else
+			is_new_waypoint = false;
+
+		switch(wp->mode)
+		{
+		case MOVE_WP:
+			ProcessMoveWP(wp, time_dif, is_new_waypoint, ols, tmap, true);
+			break;
+		case FORCE_MOVE_WP:
+			ProcessMoveWP(wp, time_dif, is_new_waypoint, ols, tmap, false);
+			break;
+		case DODGE_WP:
+			ProcessDodgeWP(wp, time_dif, is_new_waypoint, ols, tmap);
+			break;
+		case ENTER_WP:
+			ProcessEnterWP(wp, time_dif, is_new_waypoint, ols, tmap);
+			break;
+		case ATTACK_WP:
+			attack_player_given = wp->player_given;
+			ProcessAttackWP(wp, time_dif, is_new_waypoint, ols, tmap);
+			break;
+		case AGRO_WP:
+			ProcessAgroWP(wp, time_dif, is_new_waypoint, ols, tmap);
+			break;
+		case CRANE_REPAIR_WP:
+			ProcessCraneRepairWP(wp, time_dif, is_new_waypoint, ols, tmap);
+			break;
+		case UNIT_REPAIR_WP:
+			ProcessUnitRepairWP(wp, time_dif, is_new_waypoint, ols, tmap);
+			break;
+		case ENTER_FORT_WP:
+			ProcessEnterFortWP(wp, time_dif, is_new_waypoint, ols, tmap);
+			break;
+		case PICKUP_GRENADES_WP:
+			ProcessPickupWP(wp, time_dif, is_new_waypoint, ols, tmap);
+			break;
+		default:
+			printf("ZObject::ProcessServer::killing unknown waypoint:%d\n", wp->mode);
+			KillWP(wp);
+			break;
+		}
+	}
+	else
+	{
+		//!waypoint_list.size()
+		//StopMove();
+	}
+
+	//pathfinding debug: flag units stalled on a move order or overlapping
+	//impassable terrain (after the switch: KillWP may have erased the
+	//waypoint just processed)
+	//always runs now: the stall watchdog emits a release ZDiag (the impassable
+	//VIOLAT scan inside stays dev-only / ZPATH_LOG gated)
+	ProcessPathLogStallCheck(the_time, tmap);
+
+	//see if they want to attack someone nearby
+	CheckPassiveEngage(the_time, ols, tmap);
+
+	//#60: while moving on a player order, grab capturable objects passed close to
+	CheckOpportunisticGrab(the_time, ols);
+
+	//squad cohesion: a minion trails its leader (column) instead of pathing to the
+	//order's destination on its own - keeps the group together, rejoins stragglers
+	CheckMinionTrail(the_time);
+
+	//let them do their damage
+	ProcessAttackDamage(tmap, attack_player_given);
+
+	//#134: the old "update location in intervals" throttle on the updated_location
+	//flag was dead (the flag was never set) - the server relayed only on velocity
+	//change, so a unit blocked/re-pathed near terrain never got a correction and
+	//clients dead-reckoned it across the map. ZServer::ProcessObjects now drives
+	//next_loc_update_time directly to re-sync moving units every loc_update_int.
+
+	return 1;
+}
+
+void ZObject::Engage(ZObject *attack_object_)
+{
+	//are we really disengaging by chance?
+	if(!attack_object_)
+	{
+		Disengage();
+		return;
+	}
+
+	//attack then
+	if(attack_object != attack_object_)
+	{
+		attack_object = attack_object_;
+		sflags.updated_attack_object = true;
+
+		//if we can be sniped by the target, we should open our lid!
+		if(attack_object->CanSnipe())
+			SignalLidShouldOpen();
+	}
+}
+
+bool ZObject::Disengage()
+{
+	if(attack_object)
+	{
+		attack_object = NULL;
+		sflags.updated_attack_object = true;
+
+		//we only open our lid while we're engaged.
+		SignalLidShouldClose();
+
+		return true;
+	}
+
+	return false;
+}
+
+bool ZObject::IsMoving()
+{
+	const double z = 0.00001;
+
+	return !((loc.dx > -z && loc.dx < z) && (loc.dy > -z && loc.dy < z));
+}
+
+void ZObject::CheckPassiveEngage(double &the_time, ZOLists &ols, ZMap &tmap)
+{
+	//is it time, since this is a "tiny bit intensive"
+	if(the_time < next_check_passive_attack_time) return;
+
+	//set for next time
+	next_check_passive_attack_time = the_time + 0.5;
+
+	//can we even attack
+	if(!CanAttack()) return;
+	if(owner == NULL_TEAM) return;
+	if(!(object_type == CANNON_OBJECT || object_type == VEHICLE_OBJECT || object_type == ROBOT_OBJECT)) return;
+	if(object_type == ROBOT_OBJECT && IsMoving()) return;
+
+	//are we already attacking someone?
+	if(attack_object) 
+	{
+		int ox, oy;
+
+		//is it still within range?
+		attack_object->GetCenterCords(ox, oy);
+
+		//if(!WithinAttackRadius(ox, oy))
+		if(!WithinAttackRadius(attack_object))
+			Disengage();
+		
+		return;
+	}
+
+	vector<ZObject*>::iterator obj;
+
+	vector<ZObject*> agro_choices;
+	vector<ZObject*> enter_vehicle_choices;
+	vector<ZObject*> grab_flag_choices;
+	vector<ZObject*> grab_grenades_choices;
+
+	//lets see if there are any enemies to attack..
+	if(CanAttack())
+	for(obj=ols.passive_engagable_olist.begin();obj!=ols.passive_engagable_olist.end();obj++)
+	{
+		int ox, oy;
+		unsigned char ot, oid;
+
+		(*obj)->GetObjectID(ot, oid);
+		(*obj)->GetCenterCords(ox, oy);
+
+		if((*obj)->GetOwner() != NULL_TEAM && (*obj)->GetOwner() != owner && CanAttackObject((*obj)))
+		{
+			//do not auto attack buildings
+			if(!(ot == CANNON_OBJECT || ot == VEHICLE_OBJECT || ot == ROBOT_OBJECT)) continue;
+
+			//#132: a crane is a passive (non-combat) vehicle. Don't break off a
+			//current order to shoot one - the command should take priority. An idle
+			//unit (no waypoints) may still engage it.
+			if(ot == VEHICLE_OBJECT && oid == CRANE && waypoint_list.size()) continue;
+
+			//if(WithinAttackRadius(ox, oy))
+			if(WithinAttackRadius(*obj))
+			{
+				Engage(*obj);
+				//attack_object = *obj;
+				//sflags.updated_attack_object = true;
+				return;
+			}
+
+			//start an agro waypoint?
+			//if we have no waypoints and are "not a cannon" / "able to move"
+			if(!waypoint_list.size() && object_type != CANNON_OBJECT)
+			{
+				//#71: only chase an attacker we can actually path to. An enemy
+				//across water (or otherwise in a different pathfinding region) can
+				//plink at us from a place we'll never reach; without this guard we
+				//start an AGRO_WP and shuffle toward it forever instead of holding
+				//the commanded position. We still shoot back from the Engage path
+				//above if it comes within attack range (that has no region check),
+				//so this only suppresses the futile pursuit.
+				if(WithinAgroRadius(*obj))
+				{
+					if(tmap.GetPathFinder().InSameRegion(loc.x + 8, loc.y + 8, ox, oy, (object_type == ROBOT_OBJECT)))
+						agro_choices.push_back(*obj);
+					else if(DiagThrottleReady())
+						ZDiag("agro-skip: %s can't reach attacker ref#%d (different region) - holding position (#71)",
+							ZPathLog_UnitDesc(this).c_str(), (*obj)->GetRefID());
+				}
+			}
+		}
+
+		//add to the auto enter or grab lists?
+		if(!waypoint_list.size() && object_type != CANNON_OBJECT)
+		{
+			if(!IsMinion() && !agro_choices.size())
+			{
+				//auto enter vehicle (not apc though)?
+				if(object_type == ROBOT_OBJECT && (*obj)->CanBeEntered() && WithinAutoEnterRadius(ox, oy) && !(ot == VEHICLE_OBJECT && oid == APC) && !(this->just_left_cannon && ot == CANNON_OBJECT))
+					enter_vehicle_choices.push_back(*obj);
+				//else if((ot == MAP_ITEM_OBJECT && oid == FLAG_ITEM) && (*obj)->GetOwner() != owner && WithinAutoGrabFlagRadius(ox, oy))
+				//	grab_flag_choices.push_back(*obj);
+				//else if((ot == MAP_ITEM_OBJECT && oid == GRENADES_ITEM) && CanPickupGrenades() && WithinAutoEnterRadius(ox, oy))
+				//	grab_grenades_choices.push_back(*obj);
+			}
+		}
+	}
+
+	if(!IsMinion() && !agro_choices.size() && !waypoint_list.size())
+	{
+		//collect grabbable flags
+		if(CanMove())
+		for(obj=ols.flag_olist.begin();obj!=ols.flag_olist.end();obj++)
+		{
+			int ox, oy;
+			unsigned char ot, oid;
+
+			(*obj)->GetObjectID(ot, oid);
+			(*obj)->GetCenterCords(ox, oy);
+
+			if(ot != MAP_ITEM_OBJECT) continue;
+			if(oid != FLAG_ITEM) continue;
+			if((*obj)->GetOwner() == owner) continue;
+			if(!WithinAutoGrabFlagRadius(ox, oy)) continue;
+
+			grab_flag_choices.push_back(*obj);
+		}
+
+		//collect grenades list
+		if(CanPickupGrenades())
+		for(obj=ols.grenades_olist.begin();obj!=ols.grenades_olist.end();obj++)
+		{
+			int ox, oy;
+			unsigned char ot, oid;
+
+			(*obj)->GetObjectID(ot, oid);
+			(*obj)->GetCenterCords(ox, oy);
+
+			//if((ot == MAP_ITEM_OBJECT && oid == GRENADES_ITEM) && CanPickupGrenades() && WithinAutoEnterRadius(ox, oy))
+			if(ot != MAP_ITEM_OBJECT) continue;
+			if(oid != GRENADES_ITEM) continue;
+			if(!WithinAutoEnterRadius(ox, oy)) continue;
+
+			grab_grenades_choices.push_back(*obj);
+		}
+	}
+
+	if(agro_choices.size())
+	{
+		ZObject *agro_choice;
+		int ox, oy;
+		double least_distance;
+
+		//find choice (closest)
+		agro_choice = agro_choices[0];
+		least_distance = DistanceFromObject(*agro_choice);
+		for(obj=agro_choices.begin()++;obj!=agro_choices.end();obj++)
+		{
+			double this_distance = DistanceFromObject(**obj);
+
+			if(this_distance < least_distance)
+			{
+				least_distance = this_distance;
+				agro_choice = *obj;
+			}
+		}
+		
+
+		agro_choice->GetCenterCords(ox, oy);
+
+		waypoint new_movepoint;
+
+		new_movepoint.mode = AGRO_WP;
+		new_movepoint.ref_id = agro_choice->GetRefID();
+		new_movepoint.x = ox;
+		new_movepoint.y = oy;
+
+		waypoint_list.push_back(new_movepoint);
+	}
+	else
+	{
+		vector<ZObject*> *obj_choices = NULL;
+		int waypoint_mode = MOVE_WP;
+		bool do_auto_enter = false;
+		bool do_auto_grab_flag = false;
+		bool do_auto_grab_grenades = false;
+
+		if(enter_vehicle_choices.size() && grab_flag_choices.size() && grab_grenades_choices.size())
+		{
+			switch(rand() % 3)
+			{
+				case 0: do_auto_enter = true; break;
+				case 1: do_auto_grab_flag = true; break;
+				case 2: do_auto_grab_grenades = true; break;
+			}
+		}
+		else if(enter_vehicle_choices.size() && grab_flag_choices.size())
+		{
+			if(rand() % 2) do_auto_enter = true;
+			else do_auto_grab_flag = true;
+		}
+		else if(enter_vehicle_choices.size() && grab_grenades_choices.size())
+		{
+			if(rand() % 2) do_auto_enter = true;
+			else do_auto_grab_grenades = true;
+		}
+		else if(grab_flag_choices.size() && grab_grenades_choices.size())
+		{
+			if(rand() % 2) do_auto_grab_flag = true;
+			else do_auto_grab_grenades = true;
+		}
+		else if(enter_vehicle_choices.size())
+			do_auto_enter = true;
+		else if(grab_flag_choices.size())
+			do_auto_grab_flag = true;
+		else if(grab_grenades_choices.size())
+			do_auto_grab_grenades = true;
+
+		if(do_auto_enter)
+		{
+			obj_choices = &enter_vehicle_choices;
+			waypoint_mode = ENTER_WP;
+		}
+		else if(do_auto_grab_flag)
+		{
+			obj_choices = &grab_flag_choices;
+			waypoint_mode = MOVE_WP;
+		}
+		else if(do_auto_grab_grenades)
+		{
+			obj_choices = &grab_grenades_choices;
+			waypoint_mode = PICKUP_GRENADES_WP;
+		}
+
+		if(obj_choices && obj_choices->size())
+		{
+			//vector<ZObject*> &obj_choices = enter_vehicle_choices;
+			ZObject *obj_choice;
+			int ox, oy;
+			double least_distance;
+
+			//find choice (closest)
+			obj_choice = *obj_choices->begin();
+			least_distance = DistanceFromObject(*obj_choice);
+			for(obj=obj_choices->begin()++;obj!=obj_choices->end();obj++)
+			{
+				double this_distance = DistanceFromObject(**obj);
+
+				if(this_distance < least_distance)
+				{
+					least_distance = this_distance;
+					obj_choice = *obj;
+				}
+			}
+
+			//peel off exactly one member - the nearest free minion, or ourself
+			//if lone - rather than sending the whole group at one object (#48),
+			//and only if nobody is already claiming this object
+			if(!TargetAlreadyClaimed(obj_choice->GetRefID(), ols))
+			{
+				ZObject *grabber = ClosestGrabMember(obj_choice, ols);
+				if(grabber)
+					GiveGrabWaypoint(grabber, obj_choice, waypoint_mode);
+			}
+		}
+	}
+}
+
+// #60: a robot executing a normal player MOVE order should grab capturable
+// objects it passes close to (empty vehicles/cannons to crew, enemy/neutral
+// flags to take, grenades to pick up) instead of walking past them. We insert
+// the grab as a FRONT-of-queue waypoint, so the unit diverts to it and then
+// resumes the original move once the grab waypoint is done ("divert & resume").
+// Only fires on a player MOVE_WP (the engine's internal FORCE_MOVE_WP repositions
+// and grab waypoints themselves are skipped), within the same small auto-grab
+// radii used when idle, so it only triggers for things genuinely on the way.
+// A "grab detour" is an engine-inserted grab/enter/pickup waypoint (not a player
+// order) that a single group member peels off to perform. They carry attack_to
+// with player_given false; that signature distinguishes a member mid-detour from
+// one following the leader's shared path, so the leader's re-clones leave it be.
+bool ZObject::IsOnGrabDetour()
+{
+	//scan the WHOLE list, not just the front: while navigating, ProcessMove
+	//front-inserts internal DODGE_WP/FORCE_MOVE_WP waypoints ahead of the grab.
+	//If we only checked the front we'd briefly read "not detouring" during those,
+	//and the leader's next re-clone would clobber the detour - causing the unit
+	//to oscillate between the grab target and the group's path.
+	for(vector<waypoint>::iterator i=waypoint_list.begin(); i!=waypoint_list.end(); i++)
+	{
+		if(i->player_given) continue;       //a player order, not an engine grab
+		if(!i->attack_to) continue;         //grabs carry attack_to; dodges/agro don't
+
+		if(i->mode == ENTER_WP || i->mode == MOVE_WP || i->mode == PICKUP_GRENADES_WP)
+			return true;
+	}
+
+	return false;
+}
+
+// Is any friendly unit already on its way to grab this target? Scans their grab
+// waypoints (engine grabs: attack_to set, player_given clear) by ref_id. This is
+// the deterministic guard against several units piling onto one object - it works
+// even after a grabber has been detached from its group (unlike a member check),
+// and unlike a distance check it doesn't flicker while the first grabber is still
+// pulling ahead of the pack.
+bool ZObject::TargetAlreadyClaimed(int target_ref, ZOLists &ols)
+{
+	for(vector<ZObject*>::iterator o=ols.mobile_olist.begin(); o!=ols.mobile_olist.end(); o++)
+	{
+		if(*o == this) continue;
+		if((*o)->GetOwner() != owner) continue;
+
+		vector<waypoint> &wl = (*o)->GetWayPointList();
+		for(vector<waypoint>::iterator w=wl.begin(); w!=wl.end(); w++)
+			if(!w->player_given && w->attack_to && w->ref_id == target_ref
+				&& (w->mode == ENTER_WP || w->mode == MOVE_WP || w->mode == PICKUP_GRENADES_WP))
+				return true;
+	}
+
+	return false;
+}
+
+// Is a friendly robot that is NOT in our group closer to this target than `dist`?
+// If so, that other unit/group should take it. Our own minions are excluded so
+// the group's internal "closest member" choice stands (#48/#60).
+bool ZObject::NonGroupFriendlyCloser(ZObject *target, double dist, ZOLists &ols)
+{
+	for(vector<ZObject*>::iterator o=ols.mobile_olist.begin(); o!=ols.mobile_olist.end(); o++)
+	{
+		if(*o == this) continue;
+		if((*o)->GetGroupLeader() == this) continue;   //our own minion
+
+		if((*o)->GetOwner() != owner) continue;
+
+		unsigned char ot, oid;
+		(*o)->GetObjectID(ot, oid);
+		if(ot != ROBOT_OBJECT) continue;
+
+		if((*o)->DistanceFromObject(*target) < dist) return true;
+	}
+
+	return false;
+}
+
+// Pick the single group member that should peel off to grab `target`: the nearest
+// free minion, or ourself when we are a lone unit. We never pick the leader of a
+// non-empty group, because the server re-clones a leader's waypoints to all its
+// minions - which is exactly the "whole group piles onto one object" bug (#48/#60).
+// Returns NULL if no eligible member, or if another group is closer.
+ZObject* ZObject::ClosestGrabMember(ZObject *target, ZOLists &ols)
+{
+	int tref = target->GetRefID();
+	ZObject *best = NULL;
+	double best_d = 0;
+
+	if(minion_list.empty())
+	{
+		//a lone unit grabs for itself (no minions to wrongly clone to)
+		if(CanMove()) { best = this; best_d = DistanceFromObject(*target); }
+	}
+	else
+	{
+		//a group: peel off the nearest free minion, never the leader
+		for(vector<ZObject*>::iterator i=minion_list.begin(); i!=minion_list.end(); i++)
+		{
+			if(!*i) continue;
+
+			//a member is already detouring to this exact target: leave it to
+			//them, so we don't keep sending fresh minions over successive scans
+			if((*i)->IsOnGrabDetour() && (*i)->GetWayPointList().front().ref_id == tref)
+				return NULL;
+
+			if(!(*i)->CanMove()) continue;
+			if((*i)->IsOnGrabDetour()) continue;   //already busy with another grab
+
+			double d = (*i)->DistanceFromObject(*target);
+			if(!best || d < best_d) { best = *i; best_d = d; }
+		}
+	}
+
+	if(!best) return NULL;
+	if(NonGroupFriendlyCloser(target, best_d, ols)) return NULL;
+
+	return best;
+}
+
+// Hand `grabber` a front-of-queue grab/enter/pickup waypoint for `target` and flag
+// it for relay. Front-inserting means: a moving minion diverts then resumes the
+// group's path (rejoining at the destination - or becoming the vehicle if it
+// entered one); an idle minion simply has the grab as its only waypoint.
+void ZObject::GiveGrabWaypoint(ZObject *grabber, ZObject *target, int mode)
+{
+	int ox, oy;
+	target->GetCenterCords(ox, oy);
+
+	waypoint grab;
+	grab.mode = mode;
+	grab.ref_id = target->GetRefID();
+	grab.x = ox;
+	grab.y = oy;
+	grab.attack_to = true;
+	grab.player_given = false;   //engine grab, not a player order
+
+	vector<waypoint> &wl = grabber->GetWayPointList();
+	wl.insert(wl.begin(), grab);
+
+	//Keep the grabber in its group. It still peels off and does the grab
+	//undisturbed, because CloneMinionWayPoints skips a minion while it
+	//IsOnGrabDetour() - the grab waypoint sits at the front, shielded from the
+	//leader's re-clones, so it can't be oscillated back onto the group's path.
+	//Once the grab is done the minion re-syncs to the leader and rejoins.
+	//
+	//We used to detach it outright (SetGroupLeader(NULL)) so it owned the detour
+	//and walked its own route copy on independently. But that orphaned the unit:
+	//it dropped out of the group's selection, so once a couple of robots peeled
+	//off to grab flags the player could only steer the leader and the grabbers sat
+	//stranded at their flags. Staying a minion means a single order to the group
+	//reaches them again. (A vehicle entry deletes the robot anyway - group
+	//membership is cleaned up on removal; a flag/grenade grab leaves it as a
+	//normal minion. grabber==this only for a lone unit, which has no group.)
+
+	//redirect now; we deliberately do NOT set updated_waypoints, so this
+	//automatic grab does not flash a path line on the client (matching how the
+	//original idle auto-grab moved silently via location updates). Movement still
+	//syncs because ProcessMove relays velocity/location as the unit walks.
+	//Point cur_wp_info at the grab BEFORE setting velocity: otherwise a unit that
+	//was already moving elsewhere keeps its old heading for a tick (SetVelocity
+	//aims at the stale previous leg) until ProcessMove re-paths - a visible
+	//wrong-way twitch when it peels off to grab.
+	grabber->SetTarget(ox, oy);
+	grabber->SetVelocity();
+
+	//timeline: who was sent to grab what. Same target ref# appearing for several
+	//grabbers = a piling-on bug; different refs = each unit on its own side-quest.
+	ZDiag("GRAB %s -> %s ref#%d (mode %s)%s", ZPathLog_UnitDesc(grabber).c_str(),
+		ZPathLog_UnitDesc(target).c_str(), target->GetRefID(), ZPathLog_WPModeName(mode),
+		grabber == this ? " [lone]" : " [peeled from group]");
+}
+
+void ZObject::CheckOpportunisticGrab(double &the_time, ZOLists &ols)
+{
+	if(object_type != ROBOT_OBJECT) return;
+	if(owner == NULL_TEAM) return;
+	if(IsMinion()) return;
+	if(!CanMove()) return;
+
+	//already boarding a vehicle this tick: ProcessServer runs the enter waypoint
+	//(which sets entered_target_ref_id and then exposes the resumed move order)
+	//BEFORE this scan, and the actual entry/delete only happens after the object
+	//loop - so without this guard we'd re-issue a phantom grab for the very
+	//vehicle we just boarded, the tick before we vanish into it.
+	if(sflags.entered_target_ref_id != -1) return;
+
+	//only while carrying out a player move order (not internal force-moves, and
+	//not while already diverting to a grab - those waypoints are not player_given)
+	if(waypoint_list.empty()) return;
+	waypoint &front = *waypoint_list.begin();
+	if(front.mode != MOVE_WP || !front.player_given) return;
+
+	//throttle: this scan walks the object lists
+	if(the_time < next_opportunistic_grab_time) return;
+	next_opportunistic_grab_time = the_time + 0.5;
+
+	ZObject *best = NULL;
+	int best_mode = MOVE_WP;
+	double best_dist = 0;
+
+	//empty vehicles / cannons to crew (same rule as the idle auto-enter)
+	for(vector<ZObject*>::iterator o=ols.passive_engagable_olist.begin(); o!=ols.passive_engagable_olist.end(); o++)
+	{
+		unsigned char ot, oid;
+		int ox, oy;
+		(*o)->GetObjectID(ot, oid);
+		(*o)->GetCenterCords(ox, oy);
+
+		if((*o)->CanBeEntered() && WithinAutoEnterRadius(ox, oy)
+			&& !(ot == VEHICLE_OBJECT && oid == APC) && !(just_left_cannon && ot == CANNON_OBJECT))
+		{
+			double d = DistanceFromObject(**o);
+			if(!best || d < best_dist) { best = *o; best_mode = ENTER_WP; best_dist = d; }
+		}
+	}
+
+	//capturable flags
+	for(vector<ZObject*>::iterator o=ols.flag_olist.begin(); o!=ols.flag_olist.end(); o++)
+	{
+		unsigned char ot, oid;
+		int ox, oy;
+		(*o)->GetObjectID(ot, oid);
+		if(ot != MAP_ITEM_OBJECT || oid != FLAG_ITEM) continue;
+		if((*o)->GetOwner() == owner) continue;
+		(*o)->GetCenterCords(ox, oy);
+		if(!WithinAutoGrabFlagRadius(ox, oy)) continue;
+
+		double d = DistanceFromObject(**o);
+		if(!best || d < best_dist) { best = *o; best_mode = MOVE_WP; best_dist = d; }
+	}
+
+	//grenades
+	if(CanPickupGrenades())
+	for(vector<ZObject*>::iterator o=ols.grenades_olist.begin(); o!=ols.grenades_olist.end(); o++)
+	{
+		unsigned char ot, oid;
+		int ox, oy;
+		(*o)->GetObjectID(ot, oid);
+		if(ot != MAP_ITEM_OBJECT || oid != GRENADES_ITEM) continue;
+		(*o)->GetCenterCords(ox, oy);
+		if(!WithinAutoEnterRadius(ox, oy)) continue;
+
+		double d = DistanceFromObject(**o);
+		if(!best || d < best_dist) { best = *o; best_mode = PICKUP_GRENADES_WP; best_dist = d; }
+	}
+
+	if(!best) return;
+
+	//someone (group member or already-peeled unit) is on it: don't pile on
+	if(TargetAlreadyClaimed(best->GetRefID(), ols)) return;
+
+	//peel off exactly one member - the nearest free minion, or ourself if lone.
+	//the rest of the group keeps marching to the player's destination.
+	ZObject *grabber = ClosestGrabMember(best, ols);
+	if(!grabber) return;
+
+	GiveGrabWaypoint(grabber, best, best_mode);
+}
+
+//defined with CloneMinionWayPoints below
+static void FormationSlotOffset(int slot, int &ox, int &oy);
+static bool minion_trail_on();
+
+// Squad cohesion: a minion trails its leader rather than pathing to the order's
+// destination itself. Only the leader navigates to the goal; each minion keeps a
+// short, terrain-aware path toward its formation slot beside the leader and so
+// follows him as a column. Because the target is always next to the leader the
+// path is a short hop that can't diverge across the map - that was the whole bug.
+// Also handles rejoin: a unit that fell behind or finished a grab walks back.
+void ZObject::CheckMinionTrail(double &the_time)
+{
+	if(!minion_trail_on()) return;
+	if(object_type != ROBOT_OBJECT) return;
+	if(!IsMinion()) return;
+	if(!CanMove()) return;
+
+	ZObject *leader = GetGroupLeader();
+	if(!leader) return;
+	if(leader->IsDestroyed()) return;   //a dead leader is handled by promotion elsewhere
+	if(IsOnGrabDetour()) return;        //let the grab finish, then trailing resumes
+	if(attack_object) return;           //don't yank a minion out of a fight
+
+	//my slot beside the leader's current centre
+	int lx, ly; leader->GetCenterCords(lx, ly);
+	int slot = GetMyFormationSlot();
+	int ox, oy; FormationSlotOffset(slot, ox, oy);
+	int tx = lx + ox, ty = ly + oy;
+
+	int sx, sy; GetCenterCords(sx, sy);
+	double dist = sqrt((double)((tx-sx)*(tx-sx) + (ty-sy)*(ty-sy)));
+
+	//in formation already: leave it be (any in-flight follow move settles us in).
+	//ZOD_TRAIL_RADIUS (tiles) is how far it may drift before catching up.
+	static double outer = -1;
+	if(outer < 0)
+	{
+		const char *e = getenv("ZOD_TRAIL_RADIUS");
+		outer = (e ? atof(e) : 1.5) * 16.0;   //tiles -> pixels
+		if(outer < 8.0) outer = 8.0;
+	}
+	if(dist < outer) { trail_issued = false; return; }   //home: clear any block state
+
+	if(the_time < next_trail_time) return;
+
+	//Anti-thrash: our last follow move is gone (killed) but we're still far from
+	//the slot. If we never reached what we aimed at, ProcessMove walked us into a
+	//non-destroyable tile and aborted the move (the old behaviour re-issued the
+	//same doomed move every 0.25s forever). Distinguish that from a move that
+	//SUCCEEDED - reached its target, the leader has since moved on - and only back
+	//off on a real abort. The leader is normally moving, so a short wait lets it
+	//reach a spot from which our slot is actually reachable, then we catch up.
+	if(trail_issued && waypoint_list.empty())
+	{
+		int dtx = trail_tx - sx, dty = trail_ty - sy;
+		bool reached = (double)(dtx*dtx + dty*dty) < outer*outer;
+		trail_issued = false;
+		if(!reached)
+		{
+			next_trail_time = the_time + 1.5;   //blocked - stop hammering, wait it out
+			if(ZPATH_LOG_ON)
+				ZPathLog("TRAIL  %s blocked reaching slot of %s - backing off 1.5s",
+					ZPathLog_UnitDesc(this).c_str(), ZPathLog_UnitDesc(leader).c_str());
+			return;
+		}
+		//reached it; fall through to re-issue toward the leader's new position
+	}
+
+	next_trail_time = the_time + 0.25;
+
+	//already heading to essentially this spot (leader barely moved)? don't reset
+	//the path every tick - keep a steady heading while trailing smoothly.
+	if(!waypoint_list.empty())
+	{
+		waypoint &f = waypoint_list.front();
+		if(f.mode == MOVE_WP && !f.player_given && abs(f.x - tx) <= 8 && abs(f.y - ty) <= 8)
+			return;
+	}
+
+	//silent terrain-aware move toward the slot (ProcessMoveWP paths it next tick).
+	//Not player_given, no updated_waypoints flag - movement relays via velocity/
+	//location like the auto-grab, so no path line flashes.
+	waypoint w;
+	w.clear();
+	w.mode = MOVE_WP;
+	w.x = tx;
+	w.y = ty;
+	w.player_given = false;
+	waypoint_list.clear();
+	waypoint_list.push_back(w);
+
+	trail_issued = true;
+	trail_tx = tx;
+	trail_ty = ty;
+
+	if(ZPATH_LOG_ON)
+		ZPathLog("TRAIL  %s -> slot %d of leader %s (%.1f tiles)",
+			ZPathLog_UnitDesc(this).c_str(), slot,
+			ZPathLog_UnitDesc(leader).c_str(), dist / 16.0);
+}
+
+bool ZObject::EstimateMissileTarget(ZObject *target, int &tx, int &ty)
+{
+	//some checks
+	if(missile_speed <= 0) return false;
+
+	//don't need to estimate if
+	//the target isn't moving
+	if(isz(target->loc.dx) && isz(target->loc.dy)) return false;
+
+	double dx, dy;
+	double dx2, dy2;
+	int ixo, iyo;
+	double xo, yo;
+	double x2o, y2o;
+	double Cu, Cd;
+
+	dx = target->loc.dx;
+	dy = target->loc.dy;
+	target->GetCenterCords(ixo, iyo);
+	xo = ixo;
+	yo = iyo;
+
+	x2o = center_x;
+	y2o = center_y;
+
+	Cu = yo - y2o;
+	Cd = xo - x2o;
+
+	double a, b, c, d;
+
+	a = (Cu * Cu) + (Cd * Cd);
+	b = (2 * Cu * Cd * dy) - (2 * Cu * Cu * dx);
+	c = (Cd * Cd * dy * dy) - (2 * Cu * Cd * dx) + (Cu * Cu * dx * dx) - (Cd * Cd * missile_speed * missile_speed);
+	d = (b * b) - (4 * a * c);
+
+	if(d <= 0.00001) 
+	{
+		printf("EstimateMissileTarget::not solvable\n");
+		return false;
+	}
+	if(isz(a))
+	{
+		printf("EstimateMissileTarget::a is zero?\n");
+		return false;
+	}
+
+	dx2 = (-1 * b - sqrt(d)) / (2 * a);
+
+	double dy2_guts;
+
+	dy2_guts = (double)(missile_speed * missile_speed) - (dx2 * dx2);
+
+	//printf("dy2_guts:m:%d dx2_1:%lf\n", missile_speed, (-1 * b - sqrt(d)) / (2 * a));
+	//printf("dy2_guts:m:%d dx2_2:%lf\n", missile_speed, (-1 * b + sqrt(d)) / (2 * a));
+
+	if(dy2_guts <= 0.00001) 
+	{
+		//printf("EstimateMissileTarget::trying other dx2\n");
+
+		dx2 = (-1 * b + sqrt(d)) / (2 * a);
+
+		dy2_guts = (missile_speed * missile_speed) - (dx2 * dx2);
+
+		if(dy2_guts <= 0.00001) 
+		{
+			printf("EstimateMissileTarget::bad dy2_guts value\n");
+			return false;
+		}
+	}
+
+	dy2 = sqrt(dy2_guts);
+
+	double t;
+	double dd;
+
+	//dd = dx - dx2;
+	if(!isz(dd = dx - dx2))
+		t = -1 * Cd / dd;
+	else if(!isz(dd = dy - dy2))
+		t = -1 * Cu / dd;
+	else
+	{
+		printf("EstimateMissileTarget::bad dd value\n");
+		return false;
+	}
+
+	//printf("t:%lf\n", t);
+
+	if(t < 0)
+	{
+		//printf("EstimateMissileTarget::2nd\n");
+
+		dx2 = (-1 * b + sqrt(d)) / (2 * a);
+
+		double dy2_guts;
+
+		dy2_guts = (double)(missile_speed * missile_speed) - (dx2 * dx2);
+
+		if(dy2_guts <= 0.00001) 
+		{
+			printf("EstimateMissileTarget::bad dy2_guts value 2nd\n");
+			return false;
+		}
+
+		dy2 = sqrt(dy2_guts);
+
+		//dd = dx - dx2;
+		if(!isz(dd = dx - dx2))
+			t = -1 * Cd / dd;
+		else if(!isz(dd = dy - dy2))
+			t = -1 * Cu / dd;
+		else
+		{
+			printf("EstimateMissileTarget::bad dd value\n");
+			return false;
+		}
+
+		if(t < 0)
+		{
+			printf("EstimateMissileTarget::bad t value\n");
+			return false;
+		}
+	}
+
+	tx = dx * t + xo;
+	ty = dy * t + yo;
+
+	return true;
+}
+
+bool ZObject::NearestAttackLoc(int sx, int sy, int &ex, int &ey, int aa_radius, bool is_robot, ZMap &tmap)
+{
+	int &x = loc.x;
+	int &y = loc.y;
+	int &cx = center_x;
+	int &cy = center_y;
+
+	//line test
+	
+
+	//normal checks
+	{
+		//center ok?
+		ex = cx; ey = cy;
+		if(tmap.GetPathFinder().ShouldBeAbleToMoveTo(sx, sy, ex, ey, is_robot)) return true;
+
+		//+8 ok?
+		ex = x+8; ey = y+8;
+		if((ex != cx && ey != cy) && tmap.GetPathFinder().ShouldBeAbleToMoveTo(sx, sy, ex, ey, is_robot)) return true;
+	}
+
+	//quick cannon fort checks
+	{
+		//up 2 tiles ok?
+		ex = x+8; ey = (y+8)-32;
+		if((ex != cx && ey != cy) && tmap.GetPathFinder().ShouldBeAbleToMoveTo(sx, sy, ex, ey, is_robot)) return true;
+
+		//right 3 tiles ok?
+		ex = x+8+48; ey = y+8;
+		if((ex != cx && ey != cy) && tmap.GetPathFinder().ShouldBeAbleToMoveTo(sx, sy, ex, ey, is_robot)) return true;
+
+		//left 3 tiles ok?
+		ex = (x+8)-48; ey = y+8;
+		if((ex != cx && ey != cy) && tmap.GetPathFinder().ShouldBeAbleToMoveTo(sx, sy, ex, ey, is_robot)) return true;
+	}
+
+	//full direct line check
+	{
+		ZPath_Finding_Bresenham ls;
+		int lx, ly;
+
+		ls.Init(cx>>4, cy>>4, sx>>4, sy>>4, tmap.GetMapBasics().width, tmap.GetMapBasics().height);
+
+		while(ls.GetNext(lx, ly))
+		{
+			ex = (lx<<4)+8;
+			ey = (ly<<4)+8;
+
+			if(!points_within_distance(cx, cy, ex, ey, aa_radius)) break;
+
+			if(tmap.GetPathFinder().ShouldBeAbleToMoveTo(sx, sy, ex, ey, is_robot)) return true;
+		}
+	}
+
+	return false;
+}
+
+double ZObject::DamagedSpeed()
+{
+	if(ShowPartiallyDamaged()) return zsettings->partially_damaged_unit_speed;
+	if(ShowDamaged()) return zsettings->damaged_unit_speed;
+
+	return 1.0;
+}
+
+double ZObject::RunSpeed() 
+{
+	if(leader_obj)
+		return leader_obj->is_running && !ShowDamaged() ? zsettings->run_unit_speed : 1.0; 
+	else
+		return is_running && !ShowDamaged() ? zsettings->run_unit_speed : 1.0; 
+}
+
+bool ZObject::CanReachTargetRunning(int x, int y)
+{
+	double distance_runnable;
+
+	//an estimate because the real speed can change with terrain
+	distance_runnable = move_speed * stamina;
+
+	return points_within_distance(center_x, center_y, x, y, distance_runnable);
+}
+
+void ZObject::ProcessRunStamina(double time_dif)
+{
+	if(is_running)
+	{
+		stamina -= time_dif;
+
+		if(stamina < 0)
+		{
+			stamina = 0;
+			is_running = false;
+		}
+	}
+	else
+	{
+		stamina += time_dif * zsettings->run_recharge_rate;
+
+		if(stamina > max_stamina) stamina = max_stamina;
+	}
+}
+
+void ZObject::AttemptStartRun()
+{
+	const double min_stamina = 0.3;
+
+	if(is_running) return;
+
+	//one in five we don't run
+	if(!(rand() % 5)) return;
+
+	if(stamina < min_stamina) return;
+
+	is_running = true;
+}
+
+void ZObject::ProcessAttackDamage(ZMap &tmap, bool attack_player_given)
+{
+	double &the_time = ztime->ztime;
+	if(!attack_object || !damage) return;
+	if(the_time < next_damage_time) return;
+
+	next_damage_time = the_time + damage_int_time;
+
+	if(!this->CanAttackObject(attack_object))
+	{
+		Disengage();
+		return;
+	}
+
+	bool can_attack_with_grenades;
+
+	can_attack_with_grenades = (GetGrenadeAmount() || (GetGroupLeader() && GetGroupLeader()->GetGrenadeAmount()));
+
+	if(damage_is_missile || can_attack_with_grenades)
+	{
+		int tx, ty;
+		//int w, h;
+		damage_missile new_missile;
+
+		if(!EstimateMissileTarget(attack_object, tx, ty))
+		{
+			//#208: large buildings (fort, factories, ...) used to take every shot at
+			//their dead centre, so fire visibly converged on one point and you could
+			//not "hit any part" of them like in classic Z. Aim instead at the spot on
+			//the target's footprint nearest THIS shooter, so units around a building
+			//each pepper the side facing them. That point is never farther than the
+			//centre, so a unit already in range of the centre stays in range.
+			if(attack_object->object_type == BUILDING_OBJECT)
+			{
+				int blx = attack_object->loc.x;
+				int bly = attack_object->loc.y;
+
+				tx = center_x;
+				if(tx < blx) tx = blx;
+				else if(tx > blx + attack_object->width_pix) tx = blx + attack_object->width_pix;
+
+				ty = center_y;
+				if(ty < bly) ty = bly;
+				else if(ty > bly + attack_object->height_pix) ty = bly + attack_object->height_pix;
+			}
+			else
+				attack_object->GetCenterCords(tx, ty);
+		}
+
+		if(can_attack_with_grenades)
+		{
+			tx += (rand() % 48) - 24;
+			ty += (rand() % 48) - 24;
+
+			new_missile.x = tx;
+			new_missile.y = ty;
+			new_missile.damage = zsettings->grenade_damage * MAX_UNIT_HEALTH;
+			new_missile.radius = zsettings->grenade_damage_radius;
+			new_missile.team = owner;
+			new_missile.attacker_ref_id = ref_id;
+			new_missile.attack_player_given = attack_player_given;
+			new_missile.target_ref_id = attack_object->GetRefID();
+			new_missile.CalcExplodeTimeTo(center_x, center_y, zsettings->grenade_missile_speed, the_time);
+
+			//remove a grenade
+			if(GetGrenadeAmount())
+			{
+				SetGrenadeAmount(GetGrenadeAmount()-1);
+				sflags.updated_grenade_amount = true;
+			}
+			else if(GetGroupLeader() && GetGroupLeader()->GetGrenadeAmount())
+			{
+				GetGroupLeader()->SetGrenadeAmount(GetGroupLeader()->GetGrenadeAmount()-1);
+				sflags.updated_leader_grenade_amount = true;
+			}
+
+			//set a different next-time
+			next_damage_time = the_time + zsettings->grenade_attack_speed;
+		}
+		else
+		{
+			tx += (rand() % 32) - 16;
+			ty += (rand() % 32) - 16;
+
+			new_missile.x = tx;
+			new_missile.y = ty;
+			new_missile.damage = damage;
+			new_missile.radius = damage_radius;
+			new_missile.team = owner;
+			new_missile.attacker_ref_id = ref_id;
+			new_missile.attack_player_given = attack_player_given;
+			new_missile.target_ref_id = attack_object->GetRefID();
+			//new_missile.CalcExplodeTimeTo(loc.x + (width_pix >> 1), loc.y + (height_pix >> 1), missile_speed);
+			new_missile.CalcExplodeTimeTo(center_x, center_y, missile_speed, the_time);
+		}
+
+		damage_missile_list->push_back(new_missile);
+
+		sflags.fired_missile = true;
+		sflags.missile_x = tx;
+		sflags.missile_y = ty;
+
+		//tell the unit to dodge
+		attack_object->DodgeMissile(tx, ty, new_missile.explode_time - the_time);
+	}
+	else
+	{
+		if((rand() % 10000) / 10000.0 > damage_chance) return;
+
+		//attack vehicle or driver?
+		if(can_snipe && attack_object->CanBeSniped() && ((rand() % 10000) / 10000.0 <= snipe_chance))
+		{
+			//#182 follow-up: a landed snipe hits the driver a bit harder than a body
+			//shot. The driver starts with the robot's full HP while the vehicle has
+			//more, and only snipe_chance of hits reach the driver - so at 1x the
+			//vehicle is destroyed before the driver is ever sniped out (ejecting a
+			//grunt-driven jeep's driver was effectively impossible). A small
+			//multiplier lets a lucky snipe streak pop the driver first without making
+			//it common. Tunable via ZOD_SNIPE_DAMAGE_MULT.
+			static double snipe_mult = -1;
+			if(snipe_mult < 0)
+			{
+				const char *e = getenv("ZOD_SNIPE_DAMAGE_MULT");
+				snipe_mult = e ? atof(e) : 1.5;
+				if(snipe_mult < 1.0) snipe_mult = 1.0;
+			}
+
+			attack_object->DamageDriverHealth((int)(damage * snipe_mult));
+			sflags.updated_attack_object_driver_health = true;
+		}
+		else
+		{
+			attack_object->DamageHealth(damage, tmap);
+			sflags.updated_attack_object_health = true;
+		}
+
+		//are we a pyro? have to set victom's last hurt by fire time 
+		//(so that we can do the melt death effect)
+		if(object_type == ROBOT_OBJECT && object_id == PYRO)
+			attack_object->SetDamagedByFireTime(the_time);
+
+		//if destroyed give a target destroyed
+		if(attack_object->IsDestroyed() && attack_player_given)
+		{
+			sflags.portrait_anim_ref_id = ref_id;
+			sflags.portrait_anim_value = TARGET_DESTROYED_ANIM;
+		}
+	}
+}
+
+void ZObject::ProcessKillObject()
+{
+	double &the_time = ztime->ztime;
+
+	if(object_type == BUILDING_OBJECT && (object_id != FORT_FRONT && object_id != FORT_BACK))
+	{
+		do_auto_repair = true;
+		//next_auto_repair_time = the_time + BUILDING_AUTO_REPAIR_TIME + (rand() % 61);
+		next_auto_repair_time = the_time + zsettings->building_auto_repair_time;
+
+		if(zsettings->building_auto_repair_random_additional_time > 0)
+			next_auto_repair_time += (rand() % (zsettings->building_auto_repair_random_additional_time + 1));
+	}
+
+	//stop production?
+	if(ProducesUnits()) StopBuildingProduction();
+}
+
+void ZObject::ProcessAgroWP(vector<waypoint>::iterator &wp, double time_dif, bool is_new, ZOLists &ols, ZMap &tmap)
+{
+	int &x = loc.x;
+	int &y = loc.y;
+	float &dx = loc.dx;
+	float &dy = loc.dy;
+	int ox, oy;
+	ZObject *target_object;
+
+	if(is_new)
+	{
+		//set the agro center
+		//cur_wp_info.agro_center_x = x + (width_pix >> 1);
+		//cur_wp_info.agro_center_y = y + (height_pix >> 1);
+		cur_wp_info.agro_center_x = center_x;
+		cur_wp_info.agro_center_y = center_y;
+		cur_wp_info.stage = ATTACK_AWS;
+	}
+
+	target_object = GetObjectFromID(wp->ref_id, *ols.object_list);
+
+	//we still attacking this target?
+	//if(!target_object || 
+	//	target_object->IsDestroyed() || 
+	//	owner == target_object->GetOwner() ||
+	//	(!HasExplosives() && target_object->AttackedOnlyByExplosives()))
+	if(!CanAttackObject(target_object))
+	{
+		KillWP(wp);
+		return;
+	}
+
+	target_object->GetCenterCords(ox, oy);
+
+	if(!points_within_distance(ox, oy, cur_wp_info.agro_center_x, cur_wp_info.agro_center_y, attack_radius + zsettings->agro_distance))
+	{
+		//go back to center
+		//if we aren't already
+		if(cur_wp_info.stage != RETURN_URWS)
+		{
+			cur_wp_info.stage = RETURN_URWS;
+			//cur_wp_info.x = cur_wp_info.agro_center_x;
+			//cur_wp_info.y = cur_wp_info.agro_center_y;
+			SetTarget(cur_wp_info.agro_center_x, cur_wp_info.agro_center_y);
+			SetVelocity();
+		}
+	}
+	else
+	{
+		//we are within distance
+		//so continue the attack if we are not already
+		if(cur_wp_info.stage != ATTACK_AWS)
+		{
+			cur_wp_info.stage = ATTACK_AWS;
+			//cur_wp_info.x = ox;
+			//cur_wp_info.y = oy;
+			SetTarget(ox, oy);
+			SetVelocity();
+		}
+	}
+
+	if(cur_wp_info.stage == ATTACK_AWS)
+	{
+	//we're there
+		//if(WithinAttackRadius(ox, oy))
+		if(WithinAttackRadius(target_object))
+		{
+			StopMove();
+
+			//attack!
+			Engage(target_object);
+		}
+		else
+		{
+			//hunt down the bastard
+
+			//move there
+			//cur_wp_info.x = ox;
+			//cur_wp_info.y = oy;
+			SetTarget(ox, oy);
+			SetVelocity();
+
+			//did we halt movement?
+			if(!ProcessMoveOrKillWP(time_dif, tmap, wp, ols)) return;
+		}
+	}
+	else //if(cur_wp_info.stage == RETURN_URWS)
+	{
+		if(!ProcessMoveOrKillWP(time_dif, tmap, wp, ols)) return;
+
+		if(!ReachedTarget()) return;
+
+		KillWP(wp);
+		return;
+	}
+}
+
+void ZObject::ProcessAttackWP(vector<waypoint>::iterator &wp, double time_dif, bool is_new, ZOLists &ols, ZMap &tmap)
+{
+	int &x = loc.x;
+	int &y = loc.y;
+	float &dx = loc.dx;
+	float &dy = loc.dy;
+	int ox, oy;
+	ZObject *target_object;
+
+	target_object = GetObjectFromID(wp->ref_id, *ols.object_list);
+
+	//we still attacking this target?
+	//if(!target_object || 
+	//	target_object->IsDestroyed() || 
+	//	owner == target_object->GetOwner() ||
+	//	(!HasExplosives() && target_object->AttackedOnlyByExplosives()))
+	if(!CanAttackObject(target_object))
+	{
+		KillWP(wp);
+		return;
+	}
+
+	target_object->GetCenterCords(ox, oy);
+
+	//we're there
+	//if(WithinAttackRadius(ox, oy))
+	if(WithinAttackRadius(target_object))
+	{
+		StopMove();
+
+		//attack!
+		Engage(target_object);
+	}
+	else
+	{
+		//hunt down the bastard
+
+		//are we waiting for a path finding response?
+		if(cur_wp_info.path_finding_id)
+			return;
+		else if(!cur_wp_info.got_pf_response)
+		{
+			//we are not waiting for waypoints
+			//so start doing that
+			if(!target_object->NearestAttackLoc(x, y, cur_wp_info.x, cur_wp_info.y, attack_radius, (object_type == ROBOT_OBJECT), tmap))
+			{
+				target_object->GetCords(ox, oy);
+				//cur_wp_info.x = ox + 8;
+				//cur_wp_info.y = oy + 8;
+				SetTarget(ox+8, oy+8);
+			}
+			else
+				SetTarget();
+
+			//#141: the attack position is in a different region (e.g. across water)
+			//- this unit can't reach it. Pathing there returns a degenerate route
+			//and the unit spins in place re-aiming forever. Drop the order, exactly
+			//like the unreachable-move guard in ProcessMoveWP does.
+			if(!tmap.GetPathFinder().InSameRegion(x + 8, y + 8, cur_wp_info.x, cur_wp_info.y, (object_type == ROBOT_OBJECT)))
+			{
+				if(wp->player_given && DiagThrottleReady())
+					ZDiag("attack dropped: %s can't reach target ref#%d at t(%d,%d) (different region - e.g. across water)",
+						ZPathLog_UnitDesc(this).c_str(), wp->ref_id,
+						cur_wp_info.x / 16, cur_wp_info.y / 16);
+
+				StopMove();
+				KillWP(wp);
+				return;
+			}
+
+			//needed to check if we should recalc a path
+			cur_wp_info.init_attack_x = cur_wp_info.x;
+			cur_wp_info.init_attack_y = cur_wp_info.y;
+
+			//cur_wp_info.path_finding_id = tmap.GetPathFinder().Find_Path(x + (width_pix >> 1), y + (height_pix >> 1), cur_wp_info.x, cur_wp_info.y, (object_type == ROBOT_OBJECT), ref_id);
+			//cur_wp_info.path_finding_id = tmap.GetPathFinder().Find_Path(center_x, center_y, cur_wp_info.x, cur_wp_info.y, (object_type == ROBOT_OBJECT), ref_id);
+			cur_wp_info.path_finding_id = tmap.GetPathFinder().Find_Path(x + 8, y + 8, cur_wp_info.x, cur_wp_info.y, (object_type == ROBOT_OBJECT), HasExplosives(), ref_id);
+
+			//don't wait for thread if it wasn't created
+			if(cur_wp_info.path_finding_id)
+				StopMove();
+			else
+			{
+				cur_wp_info.got_pf_response = true;
+				SetVelocity();
+			}
+
+			return;
+		}
+
+		//redo path finding?
+		{
+			int adx, ady;
+
+			adx = ox - cur_wp_info.init_attack_x;
+			ady = oy - cur_wp_info.init_attack_y;
+
+			//has it moved too far from our current destination?
+			if(abs(adx) > attack_radius || abs(ady) > attack_radius)
+			{
+				//reset the waypoint
+				StopMove();
+				cur_wp_info.clear();
+				sflags.updated_route = true;
+
+				return;
+			}
+		}
+
+		//move there
+		//cur_wp_info.x = ox;
+		//cur_wp_info.y = oy;
+		SetVelocity();
+		//did we halt movement?
+		if(!ProcessMoveOrKillWP(time_dif, tmap, wp, ols)) return;
+
+		{
+			if(!ReachedTarget()) return;
+
+			//go to the next pf_point, or kill this waypoint?
+			if(cur_wp_info.pf_point_list.size())
+			{
+				//cur_wp_info.x = cur_wp_info.pf_point_list.begin()->x;
+				//cur_wp_info.y = cur_wp_info.pf_point_list.begin()->y;
+				SetTarget(cur_wp_info.pf_point_list.begin()->x, cur_wp_info.pf_point_list.begin()->y);
+				SetVelocity();
+
+				cur_wp_info.pf_point_list.erase(cur_wp_info.pf_point_list.begin());
+				sflags.updated_route = true;
+			}
+			else
+			{
+				//we are out of waypoints
+
+				//reset the waypoint
+				StopMove();
+				cur_wp_info.clear();
+				sflags.updated_route = true;
+
+				/*
+				//find new route to target
+				if(!target_object->NearestAttackLoc(x, y, cur_wp_info.x, cur_wp_info.y, attack_radius, (object_type == ROBOT_OBJECT), tmap))
+				{
+					target_object->GetCords(ox, oy);
+					//cur_wp_info.x = ox + 8;
+					//cur_wp_info.y = oy + 8;
+					SetTarget(ox+8,oy+8);
+				}
+				else
+					SetTarget();
+
+				cur_wp_info.got_pf_response = false;
+				//cur_wp_info.path_finding_id = tmap.GetPathFinder().Find_Path(x + (width_pix >> 1), y + (height_pix >> 1), cur_wp_info.x, cur_wp_info.y, (object_type == ROBOT_OBJECT), ref_id);
+				//cur_wp_info.path_finding_id = tmap.GetPathFinder().Find_Path(center_x, center_y, cur_wp_info.x, cur_wp_info.y, (object_type == ROBOT_OBJECT), ref_id);
+				cur_wp_info.path_finding_id = tmap.GetPathFinder().Find_Path(x + 8, y + 8, cur_wp_info.x, cur_wp_info.y, (object_type == ROBOT_OBJECT), ref_id);
+
+				//don't wait for thread if it wasn't created
+				if(cur_wp_info.path_finding_id)
+					StopMove();
+				else
+				{
+					cur_wp_info.got_pf_response = true;
+					SetVelocity();
+				}
+				*/
+			}
+		}
+	}
+}
+
+void ZObject::ProcessPickupWP(vector<waypoint>::iterator &wp, double time_dif, bool is_new, ZOLists &ols, ZMap &tmap)
+{
+	const double z = 0.000001;
+	int &x = loc.x;
+	int &y = loc.y;
+	float &dx = loc.dx;
+	float &dy = loc.dy;
+	ZObject *target_object;
+
+	target_object = GetObjectFromID(wp->ref_id, *ols.object_list);
+
+	//can pickup grenades?
+	if(!CanPickupGrenades())
+	{
+		KillWP(wp);
+		return;
+	}
+
+	//grenades still exist?
+	if(!target_object)
+	{
+		KillWP(wp);
+		return;
+	}
+
+	//are they grenades?
+	unsigned char ot, oid;
+	target_object->GetObjectID(ot, oid);
+	if(ot != MAP_ITEM_OBJECT || oid != GRENADES_ITEM)
+	{
+		KillWP(wp);
+		return;
+	}
+
+	//are we there?
+	if(target_object->UnderCursor(center_x, center_y))
+	{
+		//see ENTER_WP: a minion deliberately peeled off to grab these may complete
+		bool deliberate_grab = (!wp->player_given && wp->attack_to);
+
+		KillWP(wp);
+
+		if(!IsMinion() || deliberate_grab)
+		{
+			sflags.do_pickup_grenade_anim = true;
+
+			//#182: grenades are a squad resource. Deposit them on the group leader
+			//(or ourselves if we're the leader / ungrouped) so the squad carries them
+			//in one place - then the existing self/leader checks (HasExplosives,
+			//blast-through, throwing) all see them, the leader routes the trailing
+			//column THROUGH rocks, and the count shows for the whole squad.
+			ZObject *holder = GetGroupLeader() ? GetGroupLeader() : this;
+			holder->SetGrenadeAmount(holder->GetGrenadeAmount() + target_object->GetGrenadeAmount());
+			if(holder == this)
+				sflags.updated_grenade_amount = true;
+			else
+				sflags.updated_leader_grenade_amount = true;
+			target_object->SetGrenadeAmount(0);
+			target_object->SetHealth(0, tmap);
+
+			sflags.delete_grenade_box_ref_id = target_object->GetRefID();
+		}
+		return;
+	}
+
+	//disengage if this is a robot, because they can not fire and walk
+	//also setvelocity
+	if(is_new)
+	{
+		//force move waypoints are expected to always go
+		//straight to their targets
+		//cur_wp_info.x = wp->x;
+		//cur_wp_info.y = wp->y;
+		SetTarget(wp->x, wp->y);
+
+		//cur_wp_info.path_finding_id = tmap.GetPathFinder().Find_Path(x + (width_pix >> 1), y + (height_pix >> 1), wp->x, wp->y, (object_type == ROBOT_OBJECT), ref_id);
+		//cur_wp_info.path_finding_id = tmap.GetPathFinder().Find_Path(center_x, center_y, cur_wp_info.x, cur_wp_info.y, (object_type == ROBOT_OBJECT), ref_id);
+		cur_wp_info.path_finding_id = tmap.GetPathFinder().Find_Path(x + 8, y + 8, cur_wp_info.x, cur_wp_info.y, (object_type == ROBOT_OBJECT), HasExplosives(), ref_id);
+
+		//don't wait for thread if it wasn't created
+		if(cur_wp_info.path_finding_id)
+			StopMove();
+		else
+		{
+			cur_wp_info.got_pf_response = true;
+			SetVelocity();
+		}
+
+		//run to pick things up
+		AttemptStartRun(wp->x, wp->y);
+	}
+
+	//attack to
+	if(CheckAttackTo(wp, ols)) return;
+
+	if(!cur_wp_info.got_pf_response) return;
+
+	//did we halt movement?
+	if(!ProcessMoveOrKillWP(time_dif, tmap, wp, ols)) return;
+
+	if(!ReachedTarget()) return;
+
+	//go to the next pf_point, or kill this waypoint?
+	if(cur_wp_info.pf_point_list.size())
+	{
+		//cur_wp_info.x = cur_wp_info.pf_point_list.begin()->x;
+		//cur_wp_info.y = cur_wp_info.pf_point_list.begin()->y;
+		SetTarget(cur_wp_info.pf_point_list.begin()->x, cur_wp_info.pf_point_list.begin()->y);
+		SetVelocity();
+
+		cur_wp_info.pf_point_list.erase(cur_wp_info.pf_point_list.begin());
+		sflags.updated_route = true;
+	}
+	else
+		KillWP(wp);
+}
+
+void ZObject::ProcessEnterWP(vector<waypoint>::iterator &wp, double time_dif, bool is_new, ZOLists &ols, ZMap &tmap)
+{
+	const double z = 0.000001;
+	int &x = loc.x;
+	int &y = loc.y;
+	float &dx = loc.dx;
+	float &dy = loc.dy;
+	ZObject *target_object;
+
+	target_object = GetObjectFromID(wp->ref_id, *ols.object_list);
+
+	if(is_new)
+	{
+		//#220: pathfind to a REACHABLE tile within auto-enter range of the target,
+		//not its exact tile. The exact tile is often occupied (a vehicle sits on it)
+		//or in a different region (across rocks), which fails the same-region check
+		//- so Find_Path returns 0 and the unit beelines into the rocks and stalls,
+		//even when it could route around to within grabbing distance. Only kick in
+		//when the exact tile isn't reachable, so the open-field case is unchanged.
+		//Mirrors what attack orders do via NearestAttackLoc.
+		int ex = wp->x, ey = wp->y;
+		if(target_object
+			&& !tmap.GetPathFinder().ShouldBeAbleToMoveTo(x + 8, y + 8, ex, ey, (object_type == ROBOT_OBJECT)))
+		{
+			int nx, ny;
+			if(target_object->NearestAttackLoc(x + 8, y + 8, nx, ny,
+				zsettings->auto_grab_vehicle_distance, (object_type == ROBOT_OBJECT), tmap))
+			{
+				ex = nx;
+				ey = ny;
+			}
+		}
+
+		SetTarget(ex, ey);
+
+		cur_wp_info.path_finding_id = tmap.GetPathFinder().Find_Path(x + 8, y + 8, cur_wp_info.x, cur_wp_info.y, (object_type == ROBOT_OBJECT), HasExplosives(), ref_id);
+
+		//don't wait for thread if it wasn't created
+		if(cur_wp_info.path_finding_id)
+			StopMove();
+		else
+		{
+			cur_wp_info.got_pf_response = true;
+			SetVelocity();
+		}
+
+		//run to enter vehicles
+		AttemptStartRun(ex, ey);
+	}
+
+	if(!target_object || !target_object->CanBeEntered())//target_object->GetOwner() != NULL_TEAM || target_object->IsDestroyed())
+	{
+		KillWP(wp);
+		return;
+	}
+
+	int &cx = center_x;
+	int &cy = center_y;
+
+	//cx = x + (width_pix >> 1);
+	//cy = y + (height_pix >> 1);
+
+	//are we at the target?
+	if(target_object->UnderCursor(cx, cy))
+	{
+		//a minion normally won't enter (it just follows the leader), but if it
+		//was deliberately peeled off to grab this (an engine grab waypoint:
+		//attack_to, not player_given) it must be allowed to. Entering deletes the
+		//robot, which auto-removes it from the group (#48/#60).
+		bool deliberate_grab = (!wp->player_given && wp->attack_to);
+
+		KillWP(wp);
+
+		if(!IsMinion() || deliberate_grab)
+		{
+			sflags.entered_target_ref_id = target_object->GetRefID();
+		}
+		return;
+	}
+
+	//attack to
+	if(CheckAttackTo(wp, ols)) return;
+
+	//don't actually move without the pf_waypoints
+	if(!cur_wp_info.got_pf_response) return;
+
+	//did we halt movement?
+	if(!ProcessMoveOrKillWP(time_dif, tmap, wp, ols)) return;
+
+	if(!ReachedTarget()) return;
+
+	//go to the next pf_point, or kill this waypoint?
+	if(cur_wp_info.pf_point_list.size())
+	{
+		//cur_wp_info.x = cur_wp_info.pf_point_list.begin()->x;
+		//cur_wp_info.y = cur_wp_info.pf_point_list.begin()->y;
+		SetTarget(cur_wp_info.pf_point_list.begin()->x, cur_wp_info.pf_point_list.begin()->y);
+		SetVelocity();
+
+		cur_wp_info.pf_point_list.erase(cur_wp_info.pf_point_list.begin());
+		sflags.updated_route = true;
+	}
+	else
+	{
+		//reached the end of the path but our center never landed inside the
+		//target's sprite. If it can still be entered and we are touching it,
+		//board anyway rather than giving up - otherwise a moving auto-grabber
+		//that can't path exactly onto a (often small) vehicle just walks off and
+		//hands it to the next unit. A minion may board only if it was
+		//deliberately peeled off to grab (an engine grab waypoint).
+		if(target_object && target_object->CanBeEntered()
+			&& (!IsMinion() || (!wp->player_given && wp->attack_to))
+			&& IntersectsObject(*target_object))
+			sflags.entered_target_ref_id = target_object->GetRefID();
+
+		KillWP(wp);
+	}
+}
+
+void ZObject::ProcessDodgeWP(vector<waypoint>::iterator &wp, double time_dif, bool is_new, ZOLists &ols, ZMap &tmap)
+{
+	const double z = 0.000001;
+	int &x = loc.x;
+	int &y = loc.y;
+	float &dx = loc.dx;
+	float &dy = loc.dy;
+
+	if(is_new)
+	{
+		//cur_wp_info.x = wp->x;
+		//cur_wp_info.y = wp->y;
+		SetTarget(wp->x, wp->y);
+
+		SetVelocity();
+
+		AttemptStartRun();
+	}
+
+	//did we halt movement?
+	if(!ProcessMoveOrKillWP(time_dif, tmap, wp, ols)) return;
+
+	if(!ReachedTarget()) return;
+
+	KillWP(wp);
+}
+
+void ZObject::ProcessMoveWP(vector<waypoint>::iterator &wp, double time_dif, bool is_new, ZOLists &ols, ZMap &tmap, bool stoppable)
+{
+	const double z = 0.000001;
+	int &x = loc.x;
+	int &y = loc.y;
+	float &dx = loc.dx;
+	float &dy = loc.dy;
+
+	//disengage if this is a robot, because they can not fire and walk
+	//also setvelocity
+	if(is_new)
+	{
+		if(ZPATH_LOG_ON)
+			ZPathLog("MOVE   %s: new %s order to (%d,%d)t(%d,%d)",
+				ZPathLog_UnitDesc(this).c_str(), ZPathLog_WPModeName(wp->mode),
+				wp->x, wp->y, wp->x / 16, wp->y / 16);
+
+		//#141: always-on order-lifecycle trace (player orders only - infrequent).
+		//"move order:" = the unit received it. The matching "move dropped:",
+		//"order rejected:" or "route found:" line says what happened next. If you
+		//order a unit and NO "move order:" line appears, the order never reached it.
+		if(wp->player_given)
+			ZDiag("move order: %s received %s order to t(%d,%d) [%s]",
+				ZPathLog_UnitDesc(this).c_str(), ZPathLog_WPModeName(wp->mode),
+				wp->x / 16, wp->y / 16, stoppable ? "stoppable" : "force");
+
+		//force move waypoints are expected to always go
+		//straight to their targets
+		if(stoppable)
+		{
+			//cur_wp_info.x = wp->x;
+			//cur_wp_info.y = wp->y;
+			SetTarget(wp->x, wp->y);
+
+			//can this unit actually occupy the exact target tile? Two ways it can't:
+			//a different region (robots wade water so their regions include islands;
+			//vehicles don't), OR the target tile doesn't fit the unit's footprint -
+			//e.g. a 2x2 vehicle aimed at a bridge DECK tile, which is single-tile
+			//passable (so the region map says "reachable") but flanked by impassable
+			//rails, so the 2x2 won't fit. Either way A* returns a degenerate 1-leg
+			//route and the unit beelines straight at it, over water. ShouldBeAbleToMoveTo
+			//checks BOTH (region + the full target footprint).
+			if(!tmap.GetPathFinder().ShouldBeAbleToMoveTo(x + 8, y + 8, cur_wp_info.x, cur_wp_info.y, (object_type == ROBOT_OBJECT)))
+			{
+				//the exact tile won't work - but the player still wants the unit to
+				//GO there (e.g. "send the jeep to the bridge"). Snap to the nearest
+				//tile the unit can reach+stand on (the bridge's lane-aligned deck
+				//tile, say) and head there over a real route, instead of beelining
+				//over water. Only if nothing reachable is nearby (the click was on
+				//the far side of a river with no crossing) do we drop the order.
+				int snap_x, snap_y;
+				if(tmap.GetPathFinder().NearestReachableTile(x + 8, y + 8, cur_wp_info.x, cur_wp_info.y, (object_type == ROBOT_OBJECT), snap_x, snap_y))
+				{
+					if(ZPATH_LOG_ON)
+						ZPathLog("SNAP   %s: target t(%d,%d) won't fit, snapped to reachable t(%d,%d)",
+							ZPathLog_UnitDesc(this).c_str(), cur_wp_info.x / 16, cur_wp_info.y / 16,
+							snap_x / 16, snap_y / 16);
+					SetTarget(snap_x, snap_y);
+				}
+				else
+				{
+					if(ZPATH_LOG_ON)
+						ZPathLog("DROP   %s: target (%d,%d)t(%d,%d) unreachable, dropping move",
+							ZPathLog_UnitDesc(this).c_str(), cur_wp_info.x, cur_wp_info.y,
+							cur_wp_info.x / 16, cur_wp_info.y / 16);
+
+					//release diagnostic: a player ordered this unit somewhere it can't
+					//reach (e.g. a vehicle to the far side of water). Surfaces the
+					//otherwise-silent drop in bug-report logs (#54-style "won't move").
+					if(wp->player_given && DiagThrottleReady())
+						ZDiag("move dropped: %s ordered to t(%d,%d) but can't path there (unreachable - e.g. across water with no crossing in range)",
+							ZPathLog_UnitDesc(this).c_str(), cur_wp_info.x / 16, cur_wp_info.y / 16);
+
+					StopMove();
+					KillWP(wp);
+					return;
+				}
+			}
+
+			//cur_wp_info.path_finding_id = tmap.GetPathFinder().Find_Path(x + (width_pix >> 1), y + (height_pix >> 1), wp->x, wp->y, (object_type == ROBOT_OBJECT), ref_id);
+			//cur_wp_info.path_finding_id = tmap.GetPathFinder().Find_Path(center_x, center_y, cur_wp_info.x, cur_wp_info.y, (object_type == ROBOT_OBJECT), ref_id);
+			cur_wp_info.path_finding_id = tmap.GetPathFinder().Find_Path(x + 8, y + 8, cur_wp_info.x, cur_wp_info.y, (object_type == ROBOT_OBJECT), HasExplosives(), ref_id);
+
+			//don't wait for thread if it wasn't created
+			if(cur_wp_info.path_finding_id)
+				StopMove();
+			else
+			{
+				cur_wp_info.got_pf_response = true;
+				SetVelocity();
+			}
+		}
+		else
+		{
+			//cur_wp_info.x = wp->x;
+			//cur_wp_info.y = wp->y;
+			SetTarget(wp->x, wp->y);
+			SetVelocity();
+		}
+
+		//if(object_type == ROBOT_OBJECT) Disengage();
+
+		//run if we are going for a flag
+		{
+			for(vector<ZObject*>::iterator obj=ols.flag_olist.begin()++;obj!=ols.flag_olist.end();obj++)
+				if((*obj)->DistanceFromCoords(wp->x, wp->y) <= 32)
+				{
+					AttemptStartRun(wp->x, wp->y);
+					break;
+				}
+		}
+	}
+
+	//attack to
+	if(CheckAttackTo(wp, ols)) return;
+
+	if(!cur_wp_info.got_pf_response && stoppable) return;
+
+	//did we halt movement?
+	if(!ProcessMoveOrKillWP(time_dif, tmap, wp, ols, stoppable)) return;
+
+	if(!ReachedTarget()) return;
+
+	//go to the next pf_point, or kill this waypoint?
+	if(cur_wp_info.pf_point_list.size())
+	{
+		//cur_wp_info.x = cur_wp_info.pf_point_list.begin()->x;
+		//cur_wp_info.y = cur_wp_info.pf_point_list.begin()->y;
+		SetTarget(cur_wp_info.pf_point_list.begin()->x, cur_wp_info.pf_point_list.begin()->y);
+		SetVelocity();
+
+		cur_wp_info.pf_point_list.erase(cur_wp_info.pf_point_list.begin());
+		sflags.updated_route = true;
+
+		if(ZPATH_LOG_VERBOSE)
+			ZPathLog("leg    %s: next leg (%d,%d)t(%d,%d), %d left",
+				ZPathLog_UnitDesc(this).c_str(), cur_wp_info.x, cur_wp_info.y,
+				cur_wp_info.x / 16, cur_wp_info.y / 16, (int)cur_wp_info.pf_point_list.size());
+	}
+	else
+	{
+		if(ZPATH_LOG_ON)
+			ZPathLog("DONE   %s: %s order complete",
+				ZPathLog_UnitDesc(this).c_str(), ZPathLog_WPModeName(wp->mode));
+
+		KillWP(wp);
+	}
+}
+
+void ZObject::ProcessEnterFortWP(vector<waypoint>::iterator &wp, double time_dif, bool is_new, ZOLists &ols, ZMap &tmap)
+{
+	int &x = loc.x;
+	int &y = loc.y;
+	float &dx = loc.dx;
+	float &dy = loc.dy;
+	ZObject *target_object;
+	bool stoppable;
+
+	target_object = GetObjectFromID(wp->ref_id, ols.building_olist);
+
+	//target still exist?
+	//target still need repaired?
+	if(!target_object)
+	{
+		KillWP(wp);
+		return;
+	}
+
+	if(is_new)
+	{
+		cur_wp_info.stage = GOTO_ENTRANCE_EFWS;
+
+		//goto entrace
+		if(target_object->GetBuildingCreationMovePoint(cur_wp_info.x, cur_wp_info.y))
+		{
+			//these will be our exit cords for the last stage
+			cur_wp_info.fort_exit_x = cur_wp_info.x;
+			cur_wp_info.fort_exit_y = cur_wp_info.y;
+
+			SetTarget();
+
+			//cur_wp_info.path_finding_id = tmap.GetPathFinder().Find_Path(center_x, center_y, cur_wp_info.x, cur_wp_info.y, (object_type == ROBOT_OBJECT), ref_id);
+			cur_wp_info.path_finding_id = tmap.GetPathFinder().Find_Path(x + 8, y + 8, cur_wp_info.x, cur_wp_info.y, (object_type == ROBOT_OBJECT), HasExplosives(), ref_id);
+
+			//don't wait for thread if it wasn't created
+			if(cur_wp_info.path_finding_id)
+				StopMove();
+			else
+			{
+				cur_wp_info.got_pf_response = true;
+				SetVelocity();
+			}
+		}
+		else
+		{
+			//didn't get the entrance points?
+			KillWP(wp);
+			return;
+		}
+	}
+
+	if(!target_object->CanEnterFort(owner))
+	{
+		if(cur_wp_info.stage == GOTO_ENTRANCE_EFWS)
+		{
+			KillWP(wp);
+			return;
+		}
+		else if(cur_wp_info.stage == ENTER_BUILDING_EFWS)
+		{
+			//if the fort gets destroyed while we are entering it
+			//then execute the exit stage of this WP
+			//cur_wp_info.x = cur_wp_info.fort_exit_x;
+			//cur_wp_info.y = cur_wp_info.fort_exit_y;
+			SetTarget(cur_wp_info.fort_exit_x, cur_wp_info.fort_exit_y);
+
+			cur_wp_info.stage = EXIT_BUILDING_EFWS;
+			SetVelocity();
+		}
+	}
+
+	//attack to
+	if(CheckAttackTo(wp, ols)) return;
+
+	//don't move if we do not have a response
+	if(!cur_wp_info.got_pf_response) return;
+
+	switch(cur_wp_info.stage)
+	{
+		case GOTO_ENTRANCE_EFWS:
+			stoppable = true;
+			break;
+		case ENTER_BUILDING_EFWS:
+		case EXIT_BUILDING_EFWS:
+			stoppable = false;
+			break;
+	}
+
+	if(!ProcessMoveOrKillWP(time_dif, tmap, wp, ols, stoppable)) return;
+
+	if(!ReachedTarget()) return;
+
+	//so we reached our current target... now enter the next stage
+	switch(cur_wp_info.stage)
+	{
+	case GOTO_ENTRANCE_EFWS:
+		//go to the next pf_point, or next stage?
+		if(cur_wp_info.pf_point_list.size())
+		{
+			//cur_wp_info.x = cur_wp_info.pf_point_list.begin()->x;
+			//cur_wp_info.y = cur_wp_info.pf_point_list.begin()->y;
+			SetTarget(cur_wp_info.pf_point_list.begin()->x, cur_wp_info.pf_point_list.begin()->y);
+			SetVelocity();
+
+			cur_wp_info.pf_point_list.erase(cur_wp_info.pf_point_list.begin());
+			sflags.updated_route = true;
+		}
+		else
+		{
+			if(!target_object->GetBuildingCreationPoint(cur_wp_info.x, cur_wp_info.y))
+				KillWP(wp);
+			else
+			{
+				SetTarget();
+				SetVelocity();
+
+				cur_wp_info.stage = ENTER_BUILDING_EFWS;
+			}
+		}
+		break;
+	case ENTER_BUILDING_EFWS:
+		//cur_wp_info.x = cur_wp_info.fort_exit_x;
+		//cur_wp_info.y = cur_wp_info.fort_exit_y;
+		SetTarget(cur_wp_info.fort_exit_x, cur_wp_info.fort_exit_y);
+
+		cur_wp_info.stage = EXIT_BUILDING_EFWS;
+
+		//destroy the fort
+		sflags.destroy_fort_building_ref_id = target_object->GetRefID();
+
+		SetVelocity();
+		break;
+	case EXIT_BUILDING_EFWS:
+		KillWP(wp);
+		break;
+	default:
+		KillWP(wp);
+		break;
+	}
+}
+
+void ZObject::ProcessCraneRepairWP(vector<waypoint>::iterator &wp, double time_dif, bool is_new, ZOLists &ols, ZMap &tmap)
+{
+	const double z = 0.000001;
+	int &x = loc.x;
+	int &y = loc.y;
+	float &dx = loc.dx;
+	float &dy = loc.dy;
+	ZObject *target_object;
+	bool stoppable;
+
+	target_object = GetObjectFromID(wp->ref_id, ols.building_olist);
+
+	//target still exist?
+	//target still need repaired?
+	if(!target_object)
+	{
+		KillWP(wp);
+		return;
+	}
+
+	//begin movement towards the entrance
+	if(is_new)
+	{
+		int ent_x, ent_y, ent_x2, ent_y2;
+
+		cur_wp_info.stage = GOTO_ENTRANCE_CRWS;
+
+		if(target_object->GetCraneEntrance(ent_x, ent_y, ent_x2, ent_y2))
+		{
+			if(ent_x == ent_x2 && ent_y == ent_y2)
+			{
+				//building has one entrance
+				//cur_wp_info.x = ent_x;
+				//cur_wp_info.y = ent_y;
+				SetTarget(ent_x, ent_y);
+			}
+			else
+			{
+				//bridge has two entrances, which is closer?
+				double d1, d2;
+
+				d1 = sqrt(pow((double)(x - ent_x), 2) + pow((double)(y - ent_y), 2));
+				d2 = sqrt(pow((double)(x - ent_x2), 2) + pow((double)(y - ent_y2), 2));
+
+				if(d1 < d2)
+				{
+					//cur_wp_info.x = ent_x;
+					//cur_wp_info.y = ent_y;
+					SetTarget(ent_x, ent_y);
+				}
+				else
+				{
+					//cur_wp_info.x = ent_x2;
+					//cur_wp_info.y = ent_y2;
+					SetTarget(ent_x2, ent_y2);
+				}
+			}
+		}
+		else //could not get building entrance info?
+		{
+			KillWP(wp);
+			return;
+		}
+
+		//these will be our exit cords for the last stage
+		cur_wp_info.crane_exit_x = cur_wp_info.x;
+		cur_wp_info.crane_exit_y = cur_wp_info.y;
+
+		//SetVelocity();
+
+		//find our way to the entrance
+		//cur_wp_info.path_finding_id = tmap.GetPathFinder().Find_Path(x + (width_pix >> 1), y + (height_pix >> 1), cur_wp_info.x, cur_wp_info.y, (object_type == ROBOT_OBJECT), ref_id);
+		//cur_wp_info.path_finding_id = tmap.GetPathFinder().Find_Path(center_x, center_y, cur_wp_info.x, cur_wp_info.y, (object_type == ROBOT_OBJECT), ref_id);
+		cur_wp_info.path_finding_id = tmap.GetPathFinder().Find_Path(x + 8, y + 8, cur_wp_info.x, cur_wp_info.y, (object_type == ROBOT_OBJECT), HasExplosives(), ref_id);
+
+		//don't wait for thread if it wasn't created
+		if(cur_wp_info.path_finding_id)
+			StopMove();
+		else
+		{
+			cur_wp_info.got_pf_response = true;
+			SetVelocity();
+		}
+	}
+
+	if(!target_object->CanBeRepairedByCrane(owner))
+	{
+		if(cur_wp_info.stage == GOTO_ENTRANCE_CRWS)
+		{
+			KillWP(wp);
+			return;
+		}
+		else if(cur_wp_info.stage == ENTER_BUILDING_CRWS)
+		{
+			//if the building gets repaired while we are entering it
+			//then execute the exit stage of this WP
+			//cur_wp_info.x = cur_wp_info.crane_exit_x;
+			//cur_wp_info.y = cur_wp_info.crane_exit_y;
+			SetTarget(cur_wp_info.crane_exit_x, cur_wp_info.crane_exit_y);
+
+			cur_wp_info.stage = EXIT_BUILDING_CRWS;
+			SetVelocity();
+		}
+	}
+
+	//don't move if we do not have a response
+	if(!cur_wp_info.got_pf_response) return;
+
+	switch(cur_wp_info.stage)
+	{
+		case GOTO_ENTRANCE_CRWS:
+			stoppable = true;
+			break;
+		case ENTER_BUILDING_CRWS:
+		case EXIT_BUILDING_CRWS:
+			stoppable = false;
+			break;
+	}
+
+	if(!ProcessMoveOrKillWP(time_dif, tmap, wp, ols, stoppable)) return;
+
+	if(!ReachedTarget()) return;
+
+	//so we reached our current target... now enter the next stage
+	switch(cur_wp_info.stage)
+	{
+	case GOTO_ENTRANCE_CRWS:
+		//go to the next pf_point, or next stage?
+		if(cur_wp_info.pf_point_list.size())
+		{
+			//cur_wp_info.x = cur_wp_info.pf_point_list.begin()->x;
+			//cur_wp_info.y = cur_wp_info.pf_point_list.begin()->y;
+			SetTarget(cur_wp_info.pf_point_list.begin()->x, cur_wp_info.pf_point_list.begin()->y);
+			SetVelocity();
+
+			cur_wp_info.pf_point_list.erase(cur_wp_info.pf_point_list.begin());
+			sflags.updated_route = true;
+		}
+		else
+		{
+			if(!target_object->GetCraneCenter(cur_wp_info.x, cur_wp_info.y))
+				KillWP(wp);
+			else
+			{
+				cur_wp_info.stage = ENTER_BUILDING_CRWS;
+
+				SetTarget();
+				SetVelocity();
+
+				sflags.set_crane_anim = true;
+				sflags.crane_anim_on = true;
+				sflags.crane_rep_ref_id = wp->ref_id;
+			}
+		}
+		break;
+	case ENTER_BUILDING_CRWS:
+		//cur_wp_info.x = cur_wp_info.crane_exit_x;
+		//cur_wp_info.y = cur_wp_info.crane_exit_y;
+		SetTarget(cur_wp_info.crane_exit_x, cur_wp_info.crane_exit_y);
+		SetVelocity();
+
+		cur_wp_info.stage = EXIT_BUILDING_CRWS;
+		break;
+	case EXIT_BUILDING_CRWS:
+		//set the building to auto repair immediately...
+		target_object->do_auto_repair = true;
+		target_object->next_auto_repair_time = 0;
+
+		sflags.set_crane_anim = true;
+		sflags.crane_anim_on = false;
+		sflags.crane_rep_ref_id = wp->ref_id;
+		KillWP(wp);
+		break;
+	default:
+		KillWP(wp);
+		break;
+	}
+}
+
+void ZObject::ProcessUnitRepairWP(vector<waypoint>::iterator &wp, double time_dif, bool is_new, ZOLists &ols, ZMap &tmap)
+{
+	const double z = 0.000001;
+	int &x = loc.x;
+	int &y = loc.y;
+	float &dx = loc.dx;
+	float &dy = loc.dy;
+	ZObject *target_object;
+	bool stoppable;
+	int ent_x, ent_y;
+
+	target_object = GetObjectFromID(wp->ref_id, ols.building_olist);
+
+	//target still exist?
+	if(!target_object)
+	{
+		KillWP(wp);
+		return;
+	}
+
+	//begin movement towards the entrance
+	if(is_new)
+	{
+		cur_wp_info.stage = GOTO_ENTRANCE_URWS;
+
+		if(target_object->GetRepairEntrance(ent_x, ent_y))
+		{
+			cur_wp_info.x = ent_x;
+			cur_wp_info.y = ent_y;
+			SetTarget(ent_x, ent_y);
+		}
+		else
+		{
+			KillWP(wp);
+			return;
+		}
+
+		//SetVelocity();
+
+		//find our way to the entrance
+		//cur_wp_info.path_finding_id = tmap.GetPathFinder().Find_Path(x + (width_pix >> 1), y + (height_pix >> 1), cur_wp_info.x, cur_wp_info.y, (object_type == ROBOT_OBJECT), ref_id);
+		//cur_wp_info.path_finding_id = tmap.GetPathFinder().Find_Path(center_x, center_y, cur_wp_info.x, cur_wp_info.y, (object_type == ROBOT_OBJECT), ref_id);
+		cur_wp_info.path_finding_id = tmap.GetPathFinder().Find_Path(x + 8, y + 8, cur_wp_info.x, cur_wp_info.y, (object_type == ROBOT_OBJECT), HasExplosives(), ref_id);
+
+		//don't wait for thread if it wasn't created
+		if(cur_wp_info.path_finding_id)
+			StopMove();
+		else
+		{
+			cur_wp_info.got_pf_response = true;
+			SetVelocity();
+		}
+	}
+
+	//still ok to do this wp?
+	if(!target_object->CanRepairUnit(owner) || !CanBeRepaired())
+	{
+		//if the building can not repair us anymore (got destroyed or changed teams?)
+		//then if we are entering this building we must now leave it
+		if(cur_wp_info.stage == ENTER_BUILDING_URWS)
+		{
+			if(target_object->GetRepairEntrance(ent_x, ent_y))
+			{
+				cur_wp_info.x = ent_x;
+				cur_wp_info.y = ent_y;
+				SetTarget(ent_x, ent_y);
+			}
+			else
+			{
+				KillWP(wp);
+				return;
+			}
+			cur_wp_info.stage = EXIT_BUILDING_URWS;
+			SetVelocity();
+		}
+		else
+		{
+			KillWP(wp);
+			return;
+		}
+	}
+
+	//attack to
+	if(CheckAttackTo(wp, ols)) return;
+
+	//don't move if we do not have a response
+	if(!cur_wp_info.got_pf_response) return;
+
+	//do we need to wait?
+	if(target_object->RepairingAUnit())
+	{
+		//if the building can repair us but it is repairing someone else,
+		//then we will wait if we are in the wait state
+		//and we will leave the building if we are currently entering it
+		switch(cur_wp_info.stage)
+		{
+			case ENTER_BUILDING_URWS:
+				if(target_object->GetRepairEntrance(ent_x, ent_y))
+				{
+					//cur_wp_info.x = ent_x;
+					//cur_wp_info.y = ent_y;
+					SetTarget(ent_x, ent_y);
+				}
+				else
+				{
+					KillWP(wp);
+					return;
+				}
+				cur_wp_info.stage = EXIT_BUILDING_URWS;
+				SetVelocity();
+				break;
+			case WAIT_URWS:
+				return;
+				break;
+		}
+	}
+
+	switch(cur_wp_info.stage)
+	{
+		case GOTO_ENTRANCE_URWS:
+			stoppable = true;
+			break;
+		case ENTER_BUILDING_URWS:
+		case EXIT_BUILDING_URWS:
+			stoppable = false;
+			break;
+		default:
+			stoppable = true;
+			break;
+	}
+
+	if(!ProcessMoveOrKillWP(time_dif, tmap, wp, ols, stoppable)) return;
+
+	if(!ReachedTarget()) return;
+
+	switch(cur_wp_info.stage)
+	{
+	case GOTO_ENTRANCE_URWS:
+		//go to the next pf_point, or next stage?
+		if(cur_wp_info.pf_point_list.size())
+		{
+			//cur_wp_info.x = cur_wp_info.pf_point_list.begin()->x;
+			//cur_wp_info.y = cur_wp_info.pf_point_list.begin()->y;
+			SetTarget(cur_wp_info.pf_point_list.begin()->x, cur_wp_info.pf_point_list.begin()->y);
+			SetVelocity();
+
+			cur_wp_info.pf_point_list.erase(cur_wp_info.pf_point_list.begin());
+			sflags.updated_route = true;
+		}
+		else
+		{
+			cur_wp_info.stage = WAIT_URWS;
+			SetVelocity();
+		}
+		break;
+	case EXIT_BUILDING_URWS:
+		cur_wp_info.stage = WAIT_URWS;
+		SetVelocity();
+		break;
+	case ENTER_BUILDING_URWS:
+		sflags.entered_repair_building_ref_id = target_object->GetRefID();
+		
+		//set this to leave the building incase it isn't accepted
+		//because of another unit entering at the exact same interval / "time"
+		if(target_object->GetRepairEntrance(ent_x, ent_y))
+		{
+			//cur_wp_info.x = ent_x;
+			//cur_wp_info.y = ent_y;
+			SetTarget(ent_x, ent_y);
+		}
+		else
+		{
+			KillWP(wp);
+			return;
+		}
+		cur_wp_info.stage = EXIT_BUILDING_URWS;
+		SetVelocity();
+		break;
+	case WAIT_URWS:
+		if(!target_object->GetRepairCenter(cur_wp_info.x, cur_wp_info.y))
+			KillWP(wp);
+
+		cur_wp_info.stage = ENTER_BUILDING_URWS;
+
+		SetTarget();
+		SetVelocity();
+		break;
+	default:
+		KillWP(wp);
+		break;
+	}
+}
+
+bool ZObject::CheckAttackTo(vector<waypoint>::iterator &wp, ZOLists &ols)
+{
+	if(wp->attack_to)
+	{
+		if(!CanOverwriteWP()) return false;
+
+		//look for attack choices
+		vector<ZObject*> agro_choices;
+		for(vector<ZObject*>::iterator obj=ols.passive_engagable_olist.begin();obj!=ols.passive_engagable_olist.end();obj++)
+		{
+			int ox, oy;
+			unsigned char ot, oid;
+
+			(*obj)->GetObjectID(ot, oid);
+			(*obj)->GetCenterCords(ox, oy);
+
+			if((*obj)->GetOwner() != NULL_TEAM && (*obj)->GetOwner() != owner)
+			{
+				//do not auto attack buildings
+				if(!(ot == CANNON_OBJECT || ot == VEHICLE_OBJECT || ot == ROBOT_OBJECT)) continue;
+
+				//push it?
+				//if(WithinAgroRadius(ox, oy)) agro_choices.push_back(*obj);
+				if(WithinAgroRadius(*obj)) agro_choices.push_back(*obj);
+			}
+		}
+
+		//choose a random agro choice if we have one
+		if(agro_choices.size())
+		{
+			ZObject *agro_choice;
+			int ox, oy;
+
+			//find choice (closest)
+			agro_choice = agro_choices[rand() % agro_choices.size()];
+
+			agro_choice->GetCenterCords(ox, oy);
+
+			waypoint new_waypoint;
+
+			new_waypoint.mode = ATTACK_WP;
+			new_waypoint.ref_id = agro_choice->GetRefID();
+			new_waypoint.x = ox;
+			new_waypoint.y = oy;
+
+			//push this attack waypoint to the front,
+			//and exit this current waypoint
+			waypoint_list.insert(waypoint_list.begin(), new_waypoint);
+
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void ZObject::KillWP(vector<waypoint>::iterator &wp)
+{
+	sflags.updated_waypoints = true;
+	waypoint_list.erase(wp);
+
+	StopMove();
+	//SetVelocity();
+	//sflags.updated_location = true;
+
+	//clean this
+	last_wp.clear();
+}
+
+bool ZObject::CanOverwriteWP()
+{
+	vector<waypoint>::iterator wp;
+
+	//check current wp
+	if(waypoint_list.size())
+	{
+		wp = waypoint_list.begin();
+
+		switch(wp->mode)
+		{
+		case FORCE_MOVE_WP:
+			return false;
+			break;
+		case CRANE_REPAIR_WP:
+			if(cur_wp_info.stage != GOTO_ENTRANCE_CRWS)
+				return false;
+			break;
+		case UNIT_REPAIR_WP:
+			if(cur_wp_info.stage != GOTO_ENTRANCE_URWS && cur_wp_info.stage != WAIT_URWS)
+				return false;
+			break;
+		case ENTER_FORT_WP:
+			if(cur_wp_info.stage != GOTO_ENTRANCE_EFWS)
+				return false;
+			break;
+		}
+	}
+
+	return true;
+}
+
+bool ZObject::StopMove()
+{
+	float &dx = loc.dx;
+	float &dy = loc.dy;
+	//const float z = 0.00001;
+
+	//if((dx < z && dx > -z) && (dy < z && dy > -z)) return false;
+	if(!IsMoving()) return false;
+
+	dx = 0;
+	dy = 0;
+
+	sflags.updated_velocity = true;
+
+	return true;
+}
+
+void ZObject::SetTarget(int x, int y)
+{
+	//to
+	cur_wp_info.x = x;
+	cur_wp_info.y = y;
+
+	//new leg, new corner geometry - restart the slide give-up clock
+	slide_start_time = 0;
+
+	//from
+	cur_wp_info.sx = center_x;
+	cur_wp_info.sy = center_y;
+
+	//distance to go
+	cur_wp_info.adx = abs(cur_wp_info.x - cur_wp_info.sx);
+	cur_wp_info.ady = abs(cur_wp_info.y - cur_wp_info.sy);
+}
+
+bool ZObject::ReachedTarget()
+{
+	int &x = loc.x;
+	int &y = loc.y;
+	int &cx = center_x;
+	int &cy = center_y;
+	float &dx = loc.dx;
+	float &dy = loc.dy;
+	
+	//we at the target?
+	if(cx == cur_wp_info.x && cy == cur_wp_info.y)
+	{
+		xover = yover = 0;
+		return true;
+	}
+
+
+	//test
+	//int adx, ady;
+	//adx = abs(cx - cur_wp_info.sx);
+	//ady = abs(cy - cur_wp_info.sy);
+	//printf("adx:%d vs wp.adx:%d ... ady:%d wp.ady:%d\n", adx, cur_wp_info.adx, ady, cur_wp_info.ady);
+
+	//we over pass the target?
+	if(abs(cx - cur_wp_info.sx) >= cur_wp_info.adx && abs(cy - cur_wp_info.sy) >= cur_wp_info.ady)
+	{
+		x = cur_wp_info.x - (width_pix >> 1);
+		y = cur_wp_info.y - (height_pix >> 1);
+		xover = yover = 0;
+		return true;
+	}
+
+	return false;
+
+	////change dx/dy if we arrive at the end of this waypoint
+	//if(dx > 0 && cx < cur_wp_info.x) return false;
+	//if(dx < 0 && cx > cur_wp_info.x) return false;
+	//if(dy > 0 && cy < cur_wp_info.y) return false;
+	//if(dy < 0 && cy > cur_wp_info.y) return false;
+
+	////only fix at the last position if we were actually moving
+	////if(!((dx < z && dx > -z) && (dy < z && dy > -z)))
+	//if(!isz(dx) || !isz(dy))
+	//{
+	//	x = cur_wp_info.x - (width_pix >> 1);
+	//	y = cur_wp_info.y - (height_pix >> 1);
+	//	xover = yover = 0;
+	//}
+
+	//return true;
+}
+
+bool ZObject::ProcessMoveOrKillWP(double time_dif, ZMap &tmap, vector<waypoint>::iterator &wp, ZOLists &ols, bool stoppable)
+{
+	int stop_x, stop_y;
+	if(!ProcessMove(time_dif, tmap, stop_x, stop_y, stoppable))
+	{
+		//attack our way through?
+		if(DoAttackImpassableAtCoords(ols, stop_x, stop_y))
+		{
+			//this branch repeats every tick while the barrier is shot at,
+			//so rate-limit the evidence to one line every few seconds
+			if(ZPATH_LOG_ON && ztime->ztime - pathlog_last_block_time > 3.0)
+			{
+				pathlog_last_block_time = ztime->ztime;
+				ZPathLog("BLOCK  %s: barrier at (%d,%d)t(%d,%d) heading to (%d,%d) - attacking through it",
+					ZPathLog_UnitDesc(this).c_str(), stop_x, stop_y, stop_x / 16, stop_y / 16,
+					cur_wp_info.x, cur_wp_info.y);
+			}
+			return false;
+		}
+
+		if(ZPATH_LOG_ON)
+			ZPathLog("BLOCK  %s: impassable at (%d,%d)t(%d,%d) heading to (%d,%d)t(%d,%d) - %s order ABORTED",
+				ZPathLog_UnitDesc(this).c_str(), stop_x, stop_y, stop_x / 16, stop_y / 16,
+				cur_wp_info.x, cur_wp_info.y, cur_wp_info.x / 16, cur_wp_info.y / 16,
+				ZPathLog_WPModeName(wp->mode));
+
+		//otherwise kill the move and leave
+		KillWP(wp);
+		return false;
+	}
+
+	return true;
+}
+
+//pathfinding debug log watchdog: flag units that sit on a move order without
+//making progress, and units whose collision box overlaps an impassable tile
+//(which should be impossible). Observation only - never touches movement.
+//rate-limit a unit's auto-diagnostic events so a persistent condition (e.g. an
+//unreachable attacker re-evaluated every half second) writes one line, not a
+//flood - ZDiag is unbuffered and always-on in releases. Returns true at most
+//once per 5s per unit.
+bool ZObject::DiagThrottleReady()
+{
+	double t = ztime ? ztime->ztime : 0;
+
+	if(t < next_diag_event_time) return false;
+
+	next_diag_event_time = t + 5.0;
+	return true;
+}
+
+void ZObject::ProcessPathLogStallCheck(double the_time, ZMap &tmap)
+{
+	const double stall_seconds = 5.0;
+
+	//impassable-overlap violation check: ground truth for "units walk
+	//through/over things" reports. Mobile units only - buildings and rocks
+	//legitimately sit on their own impassable footprint tiles - and not
+	//during the waypoint modes that deliberately cross footprints: force
+	//moves (factory exits), crane/unit repair and fort entry (driving into
+	//the structure is the whole point). Dev-only (the WithinImpassable scan is
+	//the expensive part); the stall watchdog below runs in releases too.
+	if(ZPATH_LOG_ON && CanMove() && !IsDestroyed() && the_time >= pathlog_next_violation_time)
+	{
+		int cur_mode = waypoint_list.size() ? waypoint_list.begin()->mode : -1;
+
+		if(cur_mode != FORCE_MOVE_WP && cur_mode != CRANE_REPAIR_WP
+			&& cur_mode != UNIT_REPAIR_WP && cur_mode != ENTER_FORT_WP)
+		{
+			int vx, vy;
+
+			pathlog_next_violation_time = the_time + 2.0;
+
+			if(tmap.WithinImpassable(loc.x + 1, loc.y + 1, width_pix - 2, height_pix - 2, vx, vy, object_type == ROBOT_OBJECT))
+				ZPathLog("VIOLAT %s: collision box overlaps impassable tile t(%d,%d)! (%s order)",
+					ZPathLog_UnitDesc(this).c_str(), vx >> 4, vy >> 4,
+					cur_mode == -1 ? "no" : ZPathLog_WPModeName(cur_mode));
+		}
+	}
+
+	if(!waypoint_list.size())
+	{
+		pathlog_stall_reported = false;
+		pathlog_progress_time = the_time;
+		return;
+	}
+
+	//only plain move orders; units on attack / repair / etc orders
+	//stand still legitimately
+	int mode = waypoint_list.begin()->mode;
+	if(mode != MOVE_WP && mode != FORCE_MOVE_WP)
+	{
+		pathlog_stall_reported = false;
+		pathlog_progress_time = the_time;
+		return;
+	}
+
+	//moved since last check? (>1px so sub-pixel jitter doesn't count)
+	if(abs(center_x - pathlog_last_x) > 1 || abs(center_y - pathlog_last_y) > 1)
+	{
+		pathlog_last_x = center_x;
+		pathlog_last_y = center_y;
+		pathlog_progress_time = the_time;
+		pathlog_stall_reported = false;
+		return;
+	}
+
+	if(!pathlog_stall_reported && the_time - pathlog_progress_time > stall_seconds)
+	{
+		pathlog_stall_reported = true;
+		ZPathLog("STUCK  %s: no progress for %.1fs on a %s order to (%d,%d)t(%d,%d)%s, %d legs left",
+			ZPathLog_UnitDesc(this).c_str(), the_time - pathlog_progress_time,
+			ZPathLog_WPModeName(mode),
+			cur_wp_info.x, cur_wp_info.y, cur_wp_info.x / 16, cur_wp_info.y / 16,
+			cur_wp_info.path_finding_id ? " (still waiting on the A* thread!)" : "",
+			(int)cur_wp_info.pf_point_list.size());
+
+		//release diagnostic: a unit the player commanded has made no progress for
+		//a while - the classic "unit not moving" report (#54). pathlog_stall_reported
+		//keeps it to one line per stall, so no throttle helper needed here.
+		if(waypoint_list.begin()->player_given)
+			ZDiag("stuck: %s no progress for %.0fs on a move order to t(%d,%d)%s",
+				ZPathLog_UnitDesc(this).c_str(), the_time - pathlog_progress_time,
+				cur_wp_info.x / 16, cur_wp_info.y / 16,
+				cur_wp_info.path_finding_id ? " (waiting on pathfinder)" : "");
+	}
+}
+
+bool ZObject::ProcessMove(double time_dif, ZMap &tmap, int &stop_x, int &stop_y, bool stoppable)
+{
+	int &x = loc.x;
+	int &y = loc.y;
+	float &dx = loc.dx;
+	float &dy = loc.dy;
+	double nx, ny;
+	int inx, iny;
+	//const double z = 0.00001;
+
+	//are we moving?
+	//if((dx < z && dx > -z) && (dy < z && dy > -z))
+	if(isz(dx) && isz(dy)) return true;
+
+	nx = x + (dx * time_dif) + xover;
+	ny = y + (dy * time_dif) + yover;
+
+	inx = (int)floor(nx);
+	iny = (int)floor(ny);
+
+	//Minions used to be exempt from terrain collision ("never stoppable
+	//(for now)" upstream) - squad followers visibly phased through cliffs
+	//and rocks whenever their cloned waypoints beelined. Minions run their
+	//own pathfinding on the cloned waypoints, so with routes now always
+	//terrain-aware they can respect collision like everyone else; a blocked
+	//minion stops at the wall instead of ghosting through it.
+
+	//is the new x and y kosher?
+	//if(stoppable && tmap.WithinImpassable((inx + (width_pix>>1)) - 7, (iny + (height_pix>>1)) - 7, 6, 6, object_type == ROBOT_OBJECT))
+	if(stoppable && tmap.WithinImpassable(inx+1, iny+1, width_pix-2, height_pix-2, stop_x, stop_y, object_type == ROBOT_OBJECT))
+	{
+		if(ReachedTarget())
+			return true;
+
+		//never slide around a DESTROYABLE barrier (rocks): the original
+		//behavior is to walk up to it and blow it up (or stop) - sliding
+		//made grenade squads weave through whole rock fields as if the
+		//rocks weren't there, because each rock blocks only one tile
+		if(tmap.GetPathFinder().HasDestroyableBarrier(stop_x >> 4, stop_y >> 4))
+			return false;
+
+		//bound how long one slide may grind: a near-perpendicular slide
+		//advances pixels per second, and against a dead wall (e.g. a beeline
+		//at an unreachable target) it would otherwise crawl forever
+		if(slide_start_time && ztime->ztime - slide_start_time > 1.5)
+		{
+			if(ZPATH_LOG_ON)
+				ZPathLog("BLOCK  %s: slide at t(%d,%d) made no opening for 1.5s - giving up",
+					ZPathLog_UnitDesc(this).c_str(), stop_x >> 4, stop_y >> 4);
+
+			return false;
+		}
+
+		//A* routes are tile-resolution but this check is pixel-resolution, so
+		//the straight line to the next path leg can corner-clip an impassable
+		//tile the route never crossed - aborting here livelocks bots that
+		//instantly re-order and get the same route back. Before giving up,
+		//try the step one axis at a time (only with real velocity on that
+		//axis, and never past the leg's coordinate) so the unit slides along
+		//the obstacle edge until the corner is cleared.
+		int slide_x, slide_y;
+		bool slid_x = false;
+
+		if(!isz(dx)
+			&& (dx > 0 ? center_x < cur_wp_info.x : center_x > cur_wp_info.x)
+			&& !tmap.WithinImpassable(inx+1, y+1, width_pix-2, height_pix-2, slide_x, slide_y, object_type == ROBOT_OBJECT))
+		{
+			//x is clear: keep y (and its sub-pixel remainder) where it was
+			iny = y;
+			ny = y + yover;
+			slid_x = true;
+		}
+		else if(!isz(dy)
+			&& (dy > 0 ? center_y < cur_wp_info.y : center_y > cur_wp_info.y)
+			&& !tmap.WithinImpassable(x+1, iny+1, width_pix-2, height_pix-2, slide_x, slide_y, object_type == ROBOT_OBJECT))
+		{
+			//y is clear: keep x (and its sub-pixel remainder) where it was
+			inx = x;
+			nx = x + xover;
+		}
+		else
+			return false;
+
+		if(!slide_start_time) slide_start_time = ztime->ztime;
+
+		if(ZPATH_LOG_VERBOSE)
+			ZPathLog("slide  %s: corner-clip at t(%d,%d), sliding along %s toward (%d,%d)",
+				ZPathLog_UnitDesc(this).c_str(), stop_x / 16, stop_y / 16,
+				slid_x ? "x" : "y", cur_wp_info.x, cur_wp_info.y);
+	}
+	else
+		slide_start_time = 0; //full step clear - the corner is behind us
+
+	//robots don't attack while moving
+	if(object_type == ROBOT_OBJECT) Disengage();
+
+	//capture the overflow loss from double to int conversion
+	xover = nx - inx;
+	yover = ny - iny;
+
+	x = inx;
+	y = iny;
+
+	//set centers
+	center_x = x + (width_pix >> 1);
+	center_y = y + (height_pix >> 1);
+
+	//set new real move speed
+	//if(dx > z || dx < -z || dy > z || dy < -z)
+	if(!isz(dx) || !isz(dy))
+	{
+		double previous_real_speed = real_move_speed;
+
+		real_move_speed = move_speed * tmap.GetTileWalkSpeed(center_x, center_y) * DamagedSpeed() * RunSpeed();
+		//real_move_speed = move_speed * tmap.GetTileWalkSpeed(x + (width_pix >> 1), y + (height_pix >> 1));
+		//real_move_speed = move_speed * tmap.GetTileWalkSpeed(x + 8, y + 8);
+
+		//update in speed?
+		if(real_move_speed != previous_real_speed)
+		{
+			if(previous_real_speed > 0)
+			{
+				dx /= previous_real_speed;
+				dy /= previous_real_speed;
+			}
+			else
+			{
+				printf("error:previous_real_speed(%lf) not above zero!\n", previous_real_speed);
+			}
+			dx *= real_move_speed;
+			dy *= real_move_speed;
+
+			sflags.updated_velocity = true;
+		}
+	}
+
+	return true;
+}
+
+void ZObject::SetVelocity(ZObject *target_object)
+{
+	int &x = loc.x;
+	int &y = loc.y;
+	int ox, oy;
+	float &dx = loc.dx;
+	float &dy = loc.dy;
+	vector<waypoint>::iterator wp;
+	float mag;
+	float old_dx = loc.dx;
+	float old_dy = loc.dy;
+	
+
+	//do we have a waypoint?
+	if(waypoint_list.size())
+	{
+		int &cx = center_x;
+		int &cy = center_y;
+
+		//cx = x + (width_pix >> 1);
+		//cy = y + (height_pix >> 1);
+
+		dx = cur_wp_info.x - cx;
+		dy = cur_wp_info.y - cy;
+		if(!isz(dx) || !isz(dy))
+		{
+			mag = sqrt((dx * dx) + (dy * dy));
+			dx /= mag;
+			dy /= mag;
+			dx *= real_move_speed;
+			dy *= real_move_speed;
+		}
+
+		//wp = waypoint_list.begin();
+
+		//switch(wp->mode)
+		//{
+		//case MOVE_WP:
+		//case FORCE_MOVE_WP:
+		//case ENTER_WP:
+		//case CRANE_REPAIR_WP:
+		//case UNIT_REPAIR_WP:
+		//case ATTACK_WP:
+		//	dx = cur_wp_info.x - cx;
+		//	dy = cur_wp_info.y - cy;
+		//	if(!isz(dx) || !isz(dy))
+		//	{
+		//		mag = sqrt((dx * dx) + (dy * dy));
+		//		dx /= mag;
+		//		dy /= mag;
+		//		dx *= real_move_speed;
+		//		dy *= real_move_speed;
+		//	}
+		//	break;
+		////case ATTACK_WP:
+		////	if(target_object)
+		////	{
+		////		target_object->GetCenterCords(ox, oy);
+		////		dx = ox - cx;
+		////		dy = oy - cy;
+		////		if(!isz(dx) || !isz(dy))
+		////		{
+		////			mag = sqrt((dx * dx) + (dy * dy));
+		////			dx /= mag;
+		////			dy /= mag;
+		////			dx *= real_move_speed;
+		////			dy *= real_move_speed;
+		////		}
+		////		//garr
+		////		//yover = xover = 0;
+		////	}
+
+		//	break;
+		//}
+	}
+	else
+	{
+		//we aint moving if we have no waypoints
+		StopMove();
+	}
+
+	if(fabs(dx - old_dx) < 0.1) dx = old_dx;
+	if(fabs(dy - old_dy) < 0.1) dy = old_dy;
+
+	//update velocity?
+	if(dx != old_dx || dy != old_dy)
+	{
+		sflags.updated_velocity = true;
+		//yover = xover = 0;
+
+		//#141: spin-in-place watchdog. A unit that keeps re-aiming (heading
+		//changes) without actually moving is stuck oscillating its path - the
+		//"tank spins in place" bug. Count heading changes while the centre stays
+		//put; if a move happens, reset. Past a threshold, log it (throttled).
+		int new_dir = DirectionFromLoc(dx, dy);
+		int old_dir = DirectionFromLoc(old_dx, old_dy);
+		if(new_dir != -1 && old_dir != -1 && new_dir != old_dir)
+		{
+			if(abs(center_x - spin_ref_cx) + abs(center_y - spin_ref_cy) <= 16)
+			{
+				spin_dir_changes++;
+				if(spin_dir_changes >= 8 && DiagThrottleReady())
+				{
+					static const char *wp_mode_name[MAX_WAYPOINT_MODES] = {
+						"move", "enter", "attack", "force-move", "crane-repair",
+						"unit-repair", "agro", "enter-fort", "dodge", "pickup-grenades" };
+
+					//what it is, where it's stuck, which two headings it flips between
+					ZDiag("SPIN? %s spun %dx in place at tile(%d,%d)  heading %d<->%d  vel(%.1f,%.1f)",
+						ZPathLog_UnitDesc(this).c_str(), spin_dir_changes,
+						center_x / 16, center_y / 16, old_dir, new_dir, dx, dy);
+
+					//the immediate goal it's aiming at + whether it has a real A* route
+					ZDiag("   aiming at tile(%d,%d)  route: %d A* legs (0=direct beeline)  waypoints: %d",
+						cur_wp_info.x / 16, cur_wp_info.y / 16,
+						(int)cur_wp_info.pf_point_list.size(), (int)waypoint_list.size());
+
+					//the order driving it (mode / target / who issued it)
+					if(waypoint_list.size())
+					{
+						const waypoint &w = waypoint_list.front();
+						const char *mn = (w.mode >= 0 && w.mode < MAX_WAYPOINT_MODES) ? wp_mode_name[(int)w.mode] : "?";
+						ZDiag("   order: %s -> tile(%d,%d) ref#%d %s",
+							mn, w.x / 16, w.y / 16, w.ref_id,
+							w.player_given ? "(player-given)" : "(AI)");
+					}
+
+					//who it's trying to attack, if anyone
+					if(attack_object)
+					{
+						int ax, ay; attack_object->GetCenterCords(ax, ay);
+						ZDiag("   attack target ref#%d at tile(%d,%d)", attack_object->GetRefID(), ax / 16, ay / 16);
+					}
+				}
+			}
+			else
+			{
+				spin_ref_cx = center_x;
+				spin_ref_cy = center_y;
+				spin_dir_changes = 0;
+			}
+		}
+	}
+}
+
+bool ZObject::DodgeMissile(int tx, int ty, double time_till_explode)
+{
+	int nx, ny;
+
+	//1 in 3 then don't do
+	//if(!(rand() % 3)) return false;
+	if(!CanOverwriteWP()) return false;
+	if(move_speed <= 0) return false;
+	if(real_move_speed <= 0) return false;
+	if(object_type == ROBOT_OBJECT && attack_object) return false;
+	if(owner == NULL_TEAM) return false;
+
+	//#103: only idle units flinch from fire. If the unit is executing an order
+	//(a move, attack, enter, etc.) don't abandon it to dodge - otherwise units
+	//ordered toward the enemy fort just flee instead of advancing, making them
+	//nearly impossible to command under fire. A unit already mid-dodge (front
+	//DODGE_WP) still updates its dodge.
+	if(waypoint_list.size() && waypoint_list.begin()->mode != DODGE_WP) return false;
+
+	double dist; 
+	if(time_till_explode > stamina) dist = time_till_explode * real_move_speed;
+	else dist = time_till_explode * real_move_speed * zsettings->run_unit_speed;
+	int m_move_dist = dist * 2.0 / 4.0;
+	int f_move_dist = dist * 4.0 / 4.0;
+	if(m_move_dist <= 0) m_move_dist = 1;
+	int move_dist = f_move_dist + (rand() % m_move_dist);
+	// guard the divisor: rand() % 1000 is 0 about 0.1% of the time, and
+	// 1000.0 / 0 -> inf -> cos/sin(inf) = NaN -> assigning NaN to the int nx/ny
+	// below is UB that lands as INT_MIN, which then overflows in SetTarget. Keep
+	// the existing angle distribution otherwise.
+	int theta_div = rand() % 1000;
+	double theta = (2 * PI) * (1000.0 / (theta_div ? theta_div : 1));
+
+	//move_dist = dist;
+
+	nx = center_x + (move_dist * cos(theta));
+	ny = center_y + (move_dist * sin(theta));
+
+	//if(rand()%2)
+	//	nx = center_x + (f_move_dist + (rand() % m_move_dist));
+	//else
+	//	nx = center_x - (f_move_dist + (rand() % m_move_dist));
+
+	//if(rand()%2)
+	//	ny = center_y + (f_move_dist + (rand() % m_move_dist));
+	//else
+	//	ny = center_y - (f_move_dist + (rand() % m_move_dist));
+
+	//modify current dodge or make new?
+	if(waypoint_list.size() && waypoint_list.begin()->mode == DODGE_WP)
+	{
+		//altering this should make it
+		//recognize as a new waypoint later
+		waypoint_list.begin()->x = nx;
+		waypoint_list.begin()->y = ny;
+	}
+	else
+	{
+		waypoint dodge_waypoint;
+
+		dodge_waypoint.mode = DODGE_WP;
+		dodge_waypoint.ref_id = -1;
+		dodge_waypoint.x = nx;
+		dodge_waypoint.y = ny;
+
+		waypoint_list.insert(waypoint_list.begin(), dodge_waypoint);
+	}
+
+	return true;
+}
+
+bool ZObject::DoAttackImpassableAtCoords(ZOLists &ols, int x, int y)
+{
+	//all impasses require explosives to destroy
+	if(!HasExplosives()) return false;
+
+	for(vector<ZObject*>::iterator o=ols.object_list->begin(); o!=ols.object_list->end();++o)
+	{
+		if(!(*o)->IsDestroyableImpass()) continue;
+		if(!(*o)->CausesImpassAtCoord(x, y)) continue;
+		if(!CanAttackObject(*o)) continue;
+
+		//ok attack it
+		{
+			waypoint new_waypoint;
+
+			new_waypoint.mode = ATTACK_WP;
+			new_waypoint.ref_id = (*o)->GetRefID();
+			(*o)->GetCenterCords(new_waypoint.x, new_waypoint.y);
+
+			//push this attack waypoint to the front,
+			//and exit this current waypoint
+			waypoint_list.insert(waypoint_list.begin(), new_waypoint);
+
+			//a kind of solution for the minions
+			CloneMinionWayPoints();
+
+			return true;
+		}
+	}
+
+	return false;
+}
+
+server_flag &ZObject::GetSFlags()
+{
+	return sflags;
+}
+
+void ZObject::CreateLocationData(char *&data, int &size)
+{
+	size = 4 + sizeof(object_location);
+	data = (char*)malloc(size);
+
+	PacketSetInt(data, 0, ref_id);
+	memcpy(data+4, &loc, sizeof(object_location));
+}
+
+void ZObject::CreateAttackObjectData(char *&data, int &size)
+{
+	attack_object_packet send_data;
+
+	size = sizeof(attack_object_packet);
+	data = (char*)malloc(size);
+
+	send_data.ref_id = ref_id;
+	if(attack_object)
+		send_data.attack_object_ref_id = attack_object->ref_id;
+	else
+		send_data.attack_object_ref_id = -1;
+
+	memcpy(data, &send_data, sizeof(attack_object_packet));
+}
+
+void ZObject::SetLoc(object_location new_loc)
+{
+	double &the_time = ztime->ztime;
+	int &x = loc.x;
+	int &y = loc.y;
+
+	//#134: teleport detector. Movement is client-side dead-reckoning: SmoothMove
+	//extrapolates last_loc + velocity*elapsed every frame, and this authoritative
+	//update corrects it. Normally the prediction tracks reality so the correction
+	//is tiny. A correction that snaps the unit >6 tiles means the extrapolation had
+	//run far off (e.g. a delayed "stop" let it fly at the enemy) - the visible
+	//"teleport there and back". Log the snap with the timing that caused it.
+	//Skips initial placement (old position 0,0 = not on the map yet).
+	if((x || y) && (abs(new_loc.x - x) + abs(new_loc.y - y) > 96))
+		ZDiag("TELEPORT? %s ref#%d correction snapped tile(%d,%d) -> tile(%d,%d)  [%d px]  dt=%.2f old_vel(%.1f,%.1f)",
+			GetObjectName().c_str(), GetRefID(), x / 16, y / 16,
+			new_loc.x / 16, new_loc.y / 16,
+			abs(new_loc.x - x) + abs(new_loc.y - y),
+			the_time - last_loc_set_time, loc.dx, loc.dy);
+
+	if(new_loc.dx != loc.dx || new_loc.dy != loc.dy)
+	{
+		loc = new_loc;
+		RecalcDirection();
+	}
+	else
+		loc = new_loc;
+
+	//for estimating where it really is
+	last_loc = loc;
+	last_loc_set_time = the_time;
+
+	//set centers
+	center_x = x + (width_pix >> 1);
+	center_y = y + (height_pix >> 1);
+}
+
+void ZObject::SmoothMove(double &the_time)
+{
+	int &x = loc.x;
+	int &y = loc.y;
+	float &dx = loc.dx;
+	float &dy = loc.dy;
+
+	//#134: client-side dead-reckoning. Cap how far past the last authoritative
+	//update we extrapolate: the server re-syncs moving units ~4x/second, so a
+	//live prediction never nears MAX_EXTRAP_TIME. It only bites a unit whose
+	//stop/turn update never arrived - freezing it a hair ahead instead of
+	//flinging it across the map (and through water) and snapping back later.
+	double elapsed = the_time - last_loc_set_time;
+	if(elapsed > MAX_EXTRAP_TIME) elapsed = MAX_EXTRAP_TIME;
+
+	//move if it is moving
+	if(!isz(dx)) loc.x = last_loc.x + floor(dx * elapsed);
+	if(!isz(dy)) loc.y = last_loc.y + floor(dy * elapsed);
+
+	//set centers
+	center_x = x + (width_pix >> 1);
+	center_y = y + (height_pix >> 1);
+}
+
+// Render-only smoothing. The client already extrapolates loc per frame from the
+// last SEND_LOC velocity (SmoothMove), so straight-line motion is smooth; what
+// jumps is the *correction* when a new SEND_LOC arrives (direction / terrain-
+// speed / stop changes), plus the 1px floor() quantization. This absorbs those
+// discontinuities into a small visual offset that decays to zero, so the sprite
+// eases instead of snapping — with NO steady-state lag during constant motion
+// (because the predicted-vs-actual difference is ~0 while extrapolating). The
+// offset is applied only at blit time (see ZMap::RenderZSurface); loc is never
+// touched, so gameplay/selection/collision/combat are unaffected.
+void ZObject::ProcessRenderSmoothing(double the_time)
+{
+	if(!zod_render_smoothing || !render_inited)
+	{
+		render_off_x = render_off_y = 0;
+		render_prev_x = loc.x;
+		render_prev_y = loc.y;
+		render_smooth_time = the_time;
+		render_inited = true;
+		return;
+	}
+
+	double dt = the_time - render_smooth_time;
+	render_smooth_time = the_time;
+	if(dt <= 0) { render_prev_x = loc.x; render_prev_y = loc.y; return; }
+
+	// Where loc "should" be from last frame + its velocity; the leftover is the
+	// discontinuous snap (≈0 during normal extrapolation).
+	double pred_x = render_prev_x + loc.dx * dt;
+	double pred_y = render_prev_y + loc.dy * dt;
+	render_off_x -= (loc.x - pred_x);
+	render_off_y -= (loc.y - pred_y);
+	render_prev_x = loc.x;
+	render_prev_y = loc.y;
+
+	// Large offset (teleport / respawn / big correction): snap, don't slide.
+	const double max_off = 32.0;
+	if(render_off_x*render_off_x + render_off_y*render_off_y > max_off*max_off)
+		render_off_x = render_off_y = 0;
+
+	// Ease the absorbed offset back to zero.
+	const double tau = 0.08;   // ~80ms visual catch-up
+	double decay = exp(-dt / tau);
+	render_off_x *= decay;
+	render_off_y *= decay;
+}
+
+void ZObject::GetRenderOffset(double &ox, double &oy)
+{
+	if(!zod_render_smoothing) { ox = 0; oy = 0; return; }
+	ox = render_off_x;
+	oy = render_off_y;
+
+	// Idle "engine running" bob: a small smooth vertical sway for a STATIONARY
+	// JEEP (render-only), simulating its idling engine - smoother than the
+	// original discrete 2-frame body toggle. Jeeps only: on the heavy vehicles
+	// the sway reads as the whole tank rocking, which looks wrong. Applied
+	// only while stopped (moving vehicles get their motion from the move
+	// itself) and only while crewed: an empty vehicle has no driver and no
+	// running engine, so it must sit dead still (owner == NULL_TEAM is how the
+	// engine marks an enterable, driverless vehicle - see CanBeEntered).
+	// Wrecks don't idle either.
+	unsigned char ot, oid;
+	GetObjectID(ot, oid);
+	if(ot == VEHICLE_OBJECT && oid == JEEP && owner != NULL_TEAM && !IsDestroyed() && isz(loc.dx) && isz(loc.dy))
+	{
+		const double bob_amp = 1.5;   // logical px
+		const double bob_hz  = 2.0;   // idle frequency
+		double phase = ref_id * 0.6;  // desync nearby vehicles
+		oy += bob_amp * sin(ztime->ztime * (2.0 * PI * bob_hz) + phase);
+	}
+}
+
+void ZObject::RecalcDirection()
+{
+	int new_dir;
+
+	new_dir = DirectionFromLoc(loc.dx, loc.dy);
+
+	printf("ZObject::RecalcDirection():%d\n", new_dir);
+
+	if(new_dir != -1) direction = new_dir;
+}
+
+int ZObject::DirectionFromLoc(float dx, float dy)
+{
+	//const float z = 0.000001;
+	float a;
+	int dir;
+
+	//are we going anywhere?
+	//if((dx > -z && dx < z) && (dy > -z && dy < z))
+	if(isz(dx) && isz(dy))
+		return -1;
+
+	a = atan2(dy,dx);
+
+	//atan2 is kind of funky
+	if(a < 0) a += PI + PI;
+	a += PI * 1 / 8;
+
+	if(a < PI / 4) dir = 0;
+	else if(a < PI / 2) dir = 7;
+	else if(a < PI * 3 / 4) dir = 6;
+	else if(a < PI) dir = 5;
+	else if(a < 5 * PI / 4) dir = 4;
+	else if(a < 6 * PI / 4) dir = 3;
+	else if(a < 7 * PI / 4) dir = 2;
+	else if(a < 2 * PI) dir = 1;
+	else dir = 0;
+
+	//printf("DirectionFromLoc:a:%f dir:%d\n", a, dir);
+
+	return dir;
+}
+
+ZObject* ZObject::GetObjectFromID_BS(int ref_id_, vector<ZObject*> &the_list)
+{
+	int low, high, midpoint;
+
+	low = 0;
+	high = the_list.size() - 1;
+	midpoint = 0;
+
+	//printf("ref id list: ");
+	//for(vector<ZObject*>::iterator obj=the_list.begin(); obj!=the_list.end();obj++)
+	//	printf("%d, ", (*obj)->GetRefID());
+	//printf("\n");
+
+	while (low <= high)
+	{
+		int tref_id;
+
+		//midpoint = low + ((high - low) / 2);
+		midpoint = low + ((high - low) >> 1);
+
+		tref_id = the_list[midpoint]->GetRefID();
+
+		if (ref_id_ == tref_id)
+			return the_list[midpoint];
+		else if (ref_id_ < tref_id)
+			high = midpoint - 1;
+		else
+			low = midpoint + 1;
+	}
+
+	return NULL;
+}
+
+ZObject* ZObject::GetObjectFromID(int ref_id_, vector<ZObject*> &the_list)
+{
+	vector<ZObject*>::iterator obj;
+
+	return GetObjectFromID_BS(ref_id_, the_list);
+
+	//for(obj=the_list.begin(); obj!=the_list.end();obj++)
+	//	if((*obj)->ref_id == ref_id_)
+	//		return *obj;
+
+	//return NULL;
+}
+
+void ZObject::SetAttackObject(ZObject *obj)
+{
+	attack_object = obj;
+}
+
+ZObject* ZObject::GetAttackObject()
+{
+	return attack_object;
+}
+
+ZObject* ZObject::NearestObjectFromList(vector<ZObject*> &the_list)
+{
+	ZObject *obj_choice;
+	double least_distance;
+
+	if(!the_list.size()) return NULL;
+
+	obj_choice = the_list[0];
+	least_distance = DistanceFromObject(*obj_choice);
+	for(vector<ZObject*>::iterator obj=the_list.begin()++;obj!=the_list.end();obj++)
+	{
+		double this_distance = DistanceFromObject(**obj);
+
+		if(this_distance < least_distance)
+		{
+			least_distance = this_distance;
+			obj_choice = *obj;
+		}
+	}
+
+	return obj_choice;
+}
+
+void ZObject::RemoveObjectFromList(ZObject* the_object, vector<ZObject*> &the_list)
+{
+	vector<ZObject*>::iterator i;
+
+	for(i=the_list.begin();i!=the_list.end();)
+	{
+		if(*i == the_object)
+			i = the_list.erase(i);
+		else
+			i++;
+	}
+}
+
+ZObject* ZObject::NearestObjectToCoords(vector<ZObject*> &the_list, int x, int y)
+{
+	ZObject *obj_choice;
+	double least_distance;
+
+	if(!the_list.size()) return NULL;
+
+	obj_choice = the_list[0];
+	least_distance = obj_choice->DistanceFromCoords(x,y);
+	for(vector<ZObject*>::iterator i=the_list.begin();i!=the_list.end();i++)
+	{
+		double this_distance;
+
+		this_distance = (*i)->DistanceFromCoords(x,y);
+		if(this_distance < least_distance)
+		{
+			least_distance = this_distance;
+			obj_choice = *i;
+		}
+	}
+
+	return obj_choice;
+}
+
+void ZObject::ClearAndDeleteList(vector<ZObject*> &the_list)
+{
+	for(vector<ZObject*>::iterator obj=the_list.begin(); obj!=the_list.end(); ++obj)
+		if(*obj) delete *obj;
+
+	the_list.clear();
+}
+
+void ZObject::ProcessList(vector<ZObject*> &the_list)
+{
+	for(vector<ZObject*>::iterator obj=the_list.begin(); obj!=the_list.end(); ++obj)
+		if(*obj) (*obj)->Process();
+}
+
+ZObject* ZObject::NearestSelectableObject(vector<ZObject*> &the_list, int unit_type, int only_team, int x, int y)
+{
+	ZObject *obj_choice;
+	double least_distance;
+
+	if(!the_list.size()) return NULL;
+
+	obj_choice = NULL;
+	//obj_choice = the_list[0];
+	//least_distance = obj_choice->DistanceFromCoords(x,y);
+	for(vector<ZObject*>::iterator i=the_list.begin();i!=the_list.end();i++)
+	{
+		unsigned char ot, oid;
+		double this_distance;
+
+		if((*i)->GetOwner() != only_team) continue;
+		if((*i)->IsMinion()) continue;
+
+		(*i)->GetObjectID(ot, oid);
+		if(ot != unit_type) continue;
+
+		//this the first found?
+		if(!obj_choice)
+		{
+			obj_choice = *i;
+			least_distance = obj_choice->DistanceFromCoords(x,y);
+			continue;
+		}
+
+		//is this one closer then the previous?
+		this_distance = (*i)->DistanceFromCoords(x,y);
+		if(this_distance < least_distance)
+		{
+			obj_choice = *i;
+			least_distance = this_distance;
+		}
+	}
+
+	return obj_choice;
+}
+
+ZObject* ZObject::NextSelectableObjectAboveID(vector<ZObject*> &the_list, int unit_type, int only_team, int min_ref_id)
+{
+	for(vector<ZObject*>::iterator i=the_list.begin();i!=the_list.end();i++)
+	{
+		unsigned char ot, oid;
+
+		if((*i)->GetRefID() <= min_ref_id) continue;
+		if((*i)->GetOwner() != only_team) continue;
+		if((*i)->IsMinion()) continue;
+
+		(*i)->GetObjectID(ot, oid);
+		if(ot != unit_type) continue;
+			
+		return *i;
+	}
+
+	return NULL;
+}
+
+void ZObject::RemoveObject(ZObject *obj)
+{
+	if(attack_object == obj)
+	{
+		SetAttackObject(NULL);
+
+		//only the server needs this
+		//but it doesn't hurt to do it in the client
+		SignalLidShouldClose();
+	}
+
+	//this is kind of crude but it needs to be done
+	for(vector<ZObject*>::iterator i=minion_list.begin();i!=minion_list.end();i++)
+		if(*i == obj) *i = NULL;
+
+	//crude
+	if(leader_obj == obj) leader_obj = NULL;
+}
+
+//bool ZObject::ServerFireTurrentMissile(int &x_, int &y_, int &damage, int &radius, double &offset_time)
+//{
+//	x_ = 0;
+//	y_ = 0;
+//	damage = 0;
+//	radius = 0;
+//	offset_time = 0;
+//	return false;
+//}
+
+vector<fire_missile_info> ZObject::ServerFireTurrentMissile(int &damage, int &radius)
+{
+	vector<fire_missile_info> ret;
+
+	damage = 0;
+	radius = 0;
+
+	return ret;
+}
+
+void ZObject::FireTurrentMissile(int x_, int y_, double offset_time)
+{
+
+}
+
+ZGuiWindow *ZObject::MakeGuiWindow()
+{
+	return NULL;
+}
+
+void ZObject::ProcessSetBuiltCannonData(char *data, int size)
+{
+
+}
+
+void ZObject::ProcessSetBuildingStateData(char *data, int size)
+{
+
+}
+
+bool ZObject::GetBuildingCreationPoint(int &x, int &y)
+{
+	return false;
+}
+
+bool ZObject::GetBuildingCreationMovePoint(int &x, int &y)
+{
+	return false;
+}
+
+bool ZObject::GetBuildUnit(unsigned char &ot, unsigned char &oid)
+{
+	return false;
+}
+
+bool ZObject::BuildUnit(double &the_time, unsigned char &ot, unsigned char &oid)
+{
+	return false;
+}
+
+void ZObject::ResetProduction()
+{
+
+}
+
+void ZObject::SetBuildList(ZBuildList *buildlist_)
+{
+	buildlist = buildlist_;
+}
+
+bool ZObject::StoreBuiltCannon(unsigned char oid)
+{
+	return false;
+}
+
+map_zone_info *ZObject::GetConnectedZone()
+{
+	return connected_zone;
+}
+
+void ZObject::SetConnectedZone(map_zone_info *connected_zone_)
+{
+	connected_zone = connected_zone_;
+}
+
+void ZObject::SetConnectedZone(ZMap &the_map)
+{
+	connected_zone = the_map.GetZone(loc.x, loc.y);
+}
+
+bool ZObject::RemoveStoredCannon(unsigned char oid)
+{
+	return false;
+}
+
+bool ZObject::HaveStoredCannon(unsigned char oid)
+{
+	return false;
+}
+
+int ZObject::CannonsInZone(ZOLists &ols)
+{
+	int cannons_found = 0;
+
+	for(vector<ZObject*>::iterator i=ols.object_list->begin();i!=ols.object_list->end();i++)
+		if(this != *i && connected_zone == (*i)->GetConnectedZone())
+		{
+			unsigned char ot, oid;
+
+			(*i)->GetObjectID(ot, oid);
+
+			if(ot != CANNON_OBJECT) continue;
+
+			cannons_found++;
+		}
+
+	return cannons_found;
+}
+
+vector<unsigned char> &ZObject::GetBuiltCannonList()
+{
+	static vector<unsigned char> arg;
+
+	return arg;
+}
+
+void ZObject::SetUnitLimitReachedList(bool *unit_limit_reached_)
+{
+	unit_limit_reached = unit_limit_reached_;
+}
+
+void ZObject::SetLevel(int level_)
+{
+
+}
+
+int ZObject::GetLevel()
+{
+	return 0;
+}
+
+void ZObject::DoPreRender(ZMap &the_map, SDL_Surface *dest, int shift_x, int shift_y)
+{
+
+}
+
+bool ZObject::HasDestroyedFortInZone(ZOLists &ols)
+{
+	if(!connected_zone) return false;
+
+	for(vector<ZObject*>::iterator i=ols.building_olist.begin(); i!=ols.building_olist.end(); ++i)
+	{
+		unsigned char ot, oid;
+
+		if(connected_zone != (*i)->GetConnectedZone()) continue;
+		if(!(*i)->IsDestroyed()) continue;
+
+		(*i)->GetObjectID(ot, oid);
+
+		if(ot == BUILDING_OBJECT && (oid == FORT_FRONT || oid == FORT_FRONT)) return true;
+	}
+
+	return false;
+}
+
+bool ZObject::DoAutoRepair(ZMap &tmap, ZOLists &ols)
+{
+	double &the_time = ztime->ztime;
+
+	if(!do_auto_repair) return false;
+
+	if(the_time >= next_auto_repair_time)
+	{
+		do_auto_repair = false;
+
+		//nevermind?
+		if(HasDestroyedFortInZone(ols)) return false;
+		
+		//do the repair
+		//health = max_health;
+		SetHealth(max_health, tmap);
+
+		//let them know
+		return true;
+	}
+
+	return false;
+}
+
+void ZObject::StopAutoRepair()
+{
+	do_auto_repair = false;
+}
+
+int ZObject::GetBuildState()
+{
+	return -1;
+}
+
+void ZObject::SetMapImpassables(ZMap &tmap)
+{
+
+}
+
+void ZObject::UnSetMapImpassables(ZMap &tmap)
+{
+
+}
+
+void ZObject::SetDestroyMapImpassables(ZMap &tmap)
+{
+
+}
+
+void ZObject::UnSetDestroyMapImpassables(ZMap &tmap)
+{
+
+}
+
+void ZObject::AddGroupMinion(ZObject *obj)
+{
+	if(!obj) return;
+	if(obj == this) return;
+
+	minion_list.push_back(obj);
+}
+
+void ZObject::RemoveGroupMinion(ZObject *obj)
+{
+	for(vector<ZObject*>::iterator i=minion_list.begin();i!=minion_list.end();)
+	{
+		if(!*i || *i == obj)
+			i = minion_list.erase(i);
+		else
+			i++;
+	}
+}
+
+vector<ZObject*> &ZObject::GetMinionList()
+{
+	return minion_list;
+}
+
+ZObject* ZObject::GetGroupLeader()
+{
+	return leader_obj;
+}
+
+int ZObject::GetMyFormationSlot()
+{
+	if(!leader_obj) return -1;
+	vector<ZObject*> &ml = leader_obj->GetMinionList();
+	for(int i=0;i<(int)ml.size();i++)
+		if(ml[i] == this) return i;
+	return -1;
+}
+
+//#182: total grenades the squad is carrying. With squad-shared grenades they sit
+//on the leader, but sum the whole group so it's correct during any transition and
+//however a member is selected.
+int ZObject::GroupGrenadeAmount()
+{
+	ZObject *lead = leader_obj ? leader_obj : this;
+	int total = lead->GetGrenadeAmount();
+	vector<ZObject*> &ml = lead->GetMinionList();
+	for(vector<ZObject*>::iterator i=ml.begin(); i!=ml.end(); i++)
+		if(*i) total += (*i)->GetGrenadeAmount();
+	return total;
+}
+
+void ZObject::SetGroupLeader(ZObject *obj)
+{
+	//cant be your own leader
+	if(obj == this) return;
+
+	//if(leader_obj) minion_list.clear();
+
+	leader_obj = obj;
+}
+
+void ZObject::ClearGroupInfo()
+{
+	minion_list.clear();
+	leader_obj = NULL;
+}
+
+bool ZObject::IsMinion()
+{
+	return leader_obj;
+}
+
+bool ZObject::IsApartOfAGroup()
+{
+	return leader_obj || minion_list.size();
+}
+
+// Squad cohesion toggle. ON (default): minions trail the leader (CheckMinionTrail)
+// instead of each running its own A* to the destination, which is what made a
+// group fan out across the map on different routes. ZOD_MINION_TRAIL=0 restores
+// the old every-minion-paths-independently behaviour for a side-by-side compare.
+static bool minion_trail_on()
+{
+	static int on = -1;
+	if(on < 0)
+	{
+		const char *e = getenv("ZOD_MINION_TRAIL");
+		on = (e && (e[0]=='0' || e[0]=='n' || e[0]=='N')) ? 0 : 1;
+	}
+	return on != 0;
+}
+
+// Squad formation: fixed slot offsets (in whole "cells") clustered around the
+// leader, ordered so the smallest groups fill the tightest ring first. Scaled by
+// ZOD_FORM_SPACING pixels (default 14, just under a 16px tile). Used only for the
+// trail target (always a short hop next to the leader), never as a far A* goal -
+// offsetting a far goal is what diverged routes, this never does.
+static void FormationSlotOffset(int slot, int &ox, int &oy)
+{
+	static const int cell[][2] = {
+		{-1, 0}, { 1, 0}, { 0, 1}, { 0,-1},
+		{-1, 1}, { 1, 1}, {-1,-1}, { 1,-1},
+		{-2, 0}, { 2, 0}, { 0, 2}, { 0,-2},
+	};
+	const int n = sizeof(cell) / sizeof(cell[0]);
+
+	if(slot < 0) { ox = oy = 0; return; }
+
+	static int spacing = -1;
+	if(spacing < 0)
+	{
+		const char *e = getenv("ZOD_FORM_SPACING");
+		spacing = e ? atoi(e) : 14;
+		if(spacing < 0) spacing = 0;
+	}
+
+	ox = cell[slot % n][0] * spacing;
+	oy = cell[slot % n][1] * spacing;
+}
+
+void ZObject::CloneMinionWayPoints()
+{
+	//A plain player move order is handled by trailing (the minion follows the
+	//leader, it does NOT path to the far destination itself). Everything else -
+	//FORCE_MOVE (building exits, cannon-eject spread) and enter/attack/etc orders -
+	//is still copied verbatim so minions keep doing those as before.
+	bool trail_move = minion_trail_on() && !waypoint_list.empty()
+		&& waypoint_list.front().mode == MOVE_WP;
+
+	for(vector<ZObject*>::iterator i=minion_list.begin();i!=minion_list.end();i++)
+	{
+		if(!*i) continue;
+
+		//a minion that has peeled off to grab something keeps its own detour;
+		//don't overwrite it with the leader's shared path (#48/#60). When the
+		//grab is done its front waypoint is no longer a detour and it re-syncs.
+		if((*i)->IsOnGrabDetour()) continue;
+
+		if(trail_move)
+			(*i)->GetWayPointList().clear();   //trail logic takes over from here
+		else
+			(*i)->GetWayPointList() = waypoint_list;
+
+		(*i)->SetVelocity();
+
+		//just left cannon...
+		(*i)->SetJustLeftCannon(just_left_cannon);
+	}
+}
+
+void ZObject::CreateGroupInfoData(char *&data, int &size)
+{
+	//only robots can create groups so
+	if(object_type != ROBOT_OBJECT)
+	{
+		data = NULL;
+		size = 0;
+		return;
+	}
+
+	//int ref_id;
+	int leader_ref_id;
+	int minions;
+
+	if(leader_obj)
+		leader_ref_id = leader_obj->GetRefID();
+	else
+		leader_ref_id = -1;
+
+	minions = minion_list.size();
+
+	size = 12 + (4 * minions);
+
+	data = (char*)malloc(size);
+	PacketSetInt(data, 0, ref_id);
+	PacketSetInt(data, 4, leader_ref_id);
+	PacketSetInt(data, 8, minions);
+
+	for(int i=0;i<minions;i++)
+	{
+		if(minion_list[i])
+			PacketSetInt(data, (2+i)*4, minion_list[i]->GetRefID());
+		else
+			PacketSetInt(data, (2+i)*4, -1);
+	}
+}
+
+void ZObject::CreateTeamData(char *&data, int &size)
+{
+	object_team_packet packet_header;
+
+	size = sizeof(object_team_packet) + (driver_info.size() * sizeof(driver_info_s));
+	data = (char*)malloc(size);
+
+	packet_header.ref_id = ref_id;
+	packet_header.owner = owner;
+	packet_header.driver_type = driver_type;
+	packet_header.driver_amount = driver_info.size();
+
+	memcpy(data, &packet_header, sizeof(object_team_packet));
+
+	int shift_amt = sizeof(object_team_packet);
+	for(vector<driver_info_s>::iterator i=driver_info.begin();i!=driver_info.end();i++)
+	{
+		memcpy(data + shift_amt, &(*i), sizeof(driver_info_s));
+		shift_amt += sizeof(driver_info_s);
+	}
+}
+
+void ZObject::ProcessGroupInfoData(char *data, int size, vector<ZObject*> &object_list)
+{
+	int ref_id_;
+	int leader_ref_id;
+	int minions;
+
+	//meet min requirements?
+	if(size < 12) return;
+
+	ref_id_ = PacketGetInt(data, 0);
+	leader_ref_id = PacketGetInt(data, 4);
+	minions = PacketGetInt(data, 8);
+
+	//other requirements?
+	if(ref_id_ != ref_id) return;
+	if(size != 12 + (4 * minions)) return;
+
+	ClearGroupInfo();
+
+	leader_obj = GetObjectFromID(leader_ref_id, object_list);
+
+	//fill the minion list
+	for(int i=0;i<minions;i++)
+	{
+		ZObject *new_minion;
+
+		new_minion = GetObjectFromID(PacketGetInt(data, (2+i)*4), object_list);
+
+		if(new_minion)
+		{
+			minion_list.push_back(new_minion);
+		}
+		else
+		{
+			printf("ProcessGroupInfoData:could not find a minion\n");
+		}
+	}
+}
+
+void ZObject::SetupRockRender(bool **rock_list, int map_w, int map_h)
+{
+
+}
+
+bool ZObject::CanBeDestroyed()
+{
+	return can_be_destroyed;
+}
+
+void ZObject::CreationMapEffects(ZMap &tmap)
+{
+
+}
+
+void ZObject::DeathMapEffects(ZMap &tmap)
+{
+
+}
+
+bool ZObject::ResetBuildTime(float zone_ownage)
+{
+	return false;
+}
+
+bool ZObject::RecalcBuildTime()
+{
+	return false;
+}
+
+double ZObject::SpeedOffsetPercent()
+{
+	if(!move_speed) return 1.0;
+	if(!IsMoving()) return 1.0;
+
+	return sqrt((loc.dx*loc.dx)+(loc.dy*loc.dy)) / move_speed;
+}
+
+bool ZObject::CanBeRepairedByCrane(int repairers_team)
+{
+	if(object_type != BUILDING_OBJECT) return false;
+	if(object_id == FORT_FRONT) return false;
+	if(object_id == FORT_BACK) return false;
+
+	if(owner != NULL_TEAM && repairers_team != owner) return false;
+	if(!IsDestroyed()) return false;
+
+	return true;
+}
+
+bool ZObject::CanAttack()
+{
+	return damage && !IsDestroyed();
+}
+
+bool ZObject::HasExplosives()
+{
+	if(has_explosives) return true;
+	if(GetGrenadeAmount()) return true;
+	if(GetGroupLeader() && GetGroupLeader()->GetGrenadeAmount()) return true;
+
+	return false;
+	//return has_explosives;
+}
+
+bool ZObject::AttackedOnlyByExplosives()
+{
+	return attacked_by_explosives;
+}
+
+void ZObject::SetDriverType(int driver_type_)
+{
+	driver_type = driver_type_;
+
+	if(driver_type < 0) driver_type = 0;
+	if(driver_type >= MAX_ROBOT_TYPES) driver_type = MAX_ROBOT_TYPES-1;
+
+	//drivers can mess with damage info
+	ResetDamageInfo();
+}
+
+void ZObject::AddDriver(int driver_health_)
+{
+	driver_info_s new_driver;
+
+	new_driver.driver_health = driver_health_;
+
+	AddDriver(new_driver);
+}
+
+void ZObject::AddDriver(driver_info_s new_driver)
+{
+	new_driver.next_attack_time = 0;
+
+	driver_info.push_back(new_driver);
+
+	//drivers can mess with damage info
+	ResetDamageInfo();
+}
+
+vector<driver_info_s> &ZObject::GetDrivers()
+{
+	return driver_info;
+}
+
+void ZObject::ClearDrivers()
+{
+	driver_info.clear();
+
+	//drivers can mess with damage info
+	ResetDamageInfo();
+}
+
+int ZObject::GetDriverType()
+{
+	return driver_type;
+}
+
+int ZObject::GetDriverHealth()
+{
+	if(driver_info.size())
+		return driver_info.begin()->driver_health;
+	else
+		return 0;
+}
+
+bool ZObject::CanEjectDrivers()
+{
+	return false;
+}
+
+void ZObject::SetInitialDrivers()
+{
+	driver_type = GRUNT;
+	ClearDrivers();
+}
+
+void ZObject::SetEjectableCannon(bool ejectable_)
+{
+
+}
+
+void ZObject::ResetDamageInfo()
+{
+
+}
+
+unsigned short ZObject::GetExtraLinks()
+{
+	return 0;
+}
+
+void ZObject::DoHitEffect()
+{
+	do_hit_effect = true;
+}
+
+bool ZObject::GetCraneEntrance(int &x, int &y, int &x2, int &y2)
+{
+	return false;
+}
+
+bool ZObject::GetCraneCenter(int &x, int &y)
+{
+	return false;
+}
+
+bool ZObject::GetRepairEntrance(int &x, int &y)
+{
+	return false;
+}
+
+bool ZObject::GetRepairCenter(int &x, int &y)
+{
+	return false;
+}
+
+void ZObject::DoCraneAnim(bool on_, ZObject *rep_obj)
+{
+
+}
+
+bool ZObject::CanBeRepaired()
+{
+	return false;
+}
+
+bool ZObject::CanRepairUnit(int units_team)
+{
+	return false;
+}
+
+bool ZObject::RepairingAUnit()
+{
+	return false;
+}
+
+bool ZObject::SetRepairUnit(ZObject *unit_obj)
+{
+	return false;
+}
+
+bool ZObject::GetLidState()
+{
+	return false;
+}
+
+void ZObject::SetLidState(bool lid_open_)
+{
+
+}
+
+void ZObject::DoRepairBuildingAnim(bool on_, double remaining_time_)
+{
+
+}
+
+bool ZObject::RepairUnit(double &the_time, unsigned char &ot, unsigned char &oid, int &driver_type_, vector<driver_info_s> &driver_info_, vector<waypoint> &rwaypoint_list)
+{
+	return false;
+}
+
+void ZObject::ProcessServerLid()
+{
+
+}
+
+void ZObject::SignalLidShouldOpen()
+{
+
+}
+
+void ZObject::SignalLidShouldClose()
+{
+
+}
+
+bool ZObject::CanBeSniped()
+{
+	return can_be_sniped && driver_info.size();
+}
+
+bool ZObject::CanSnipe()
+{
+	return can_snipe;
+}
+
+bool ZObject::HasLid()
+{
+	return has_lid;
+}
+
+bool ZObject::HasProcessedDeath()
+{
+	return processed_death;
+}
+
+void ZObject::SetHasProcessedDeath(bool processed_death_)
+{
+	processed_death = processed_death_;
+}
+
+void ZObject::DoDriverHitEffect()
+{
+	do_driver_hit_effect = true;
+}
+
+bool ZObject::CanBeEntered()
+{
+	if(owner != NULL_TEAM) return false;
+	if(IsDestroyed()) return false;
+	if(!(object_type == VEHICLE_OBJECT || object_type == CANNON_OBJECT)) return false;
+
+	return true;
+}
+
+void ZObject::SetDamagedByFireTime(double the_time)
+{
+	last_damaged_by_fire_time = the_time;
+}
+
+void ZObject::SetDamagedByMissileTime(double the_time)
+{
+	last_damaged_by_missile_time = the_time;
+}
+
+double ZObject::GetDamagedByFireTime()
+{
+	return last_damaged_by_fire_time;
+}
+
+double ZObject::GetDamagedByMissileTime()
+{
+	return last_damaged_by_missile_time;
+}
+
+bool ZObject::CanEnterFort(int team)
+{
+	return false;
+}
+
+bool ZObject::CanSetWaypoints()
+{
+	return false;
+}
+
+bool ZObject::CanMove()
+{
+	return move_speed;
+}
+
+bool ZObject::CanAttackObject(ZObject *obj)
+{
+	if(!obj) return false;
+
+	if(!CanAttack()) return false;
+	if(obj->IsDestroyed()) return false;
+	if(owner == obj->GetOwner()) return false;
+	if(!HasExplosives() && obj->AttackedOnlyByExplosives()) return false;
+
+	return true;
+}
+
+void ZObject::PostPathFindingResult(ZPath_Finding_Response* response)
+{
+	if(!response) return;
+
+	if(response->thread_id == cur_wp_info.path_finding_id)
+	{
+		//printf("got a good response - thread_id:%d\n", response->thread_id);
+		cur_wp_info.got_pf_response = true;
+		cur_wp_info.pf_point_list = response->pf_point_list;
+		cur_wp_info.path_finding_id = 0;
+		sflags.updated_route = true;
+
+		if(ZPATH_LOG_ON)
+		{
+			if(cur_wp_info.pf_point_list.size())
+			{
+				//render the route as a tile list (capped so one line stays readable)
+				const int max_pts = 24;
+				string route;
+				char pt[32];
+				int i = 0;
+
+				for(vector<ZPath_Finding_AStar::pf_point>::iterator p=cur_wp_info.pf_point_list.begin(); p!=cur_wp_info.pf_point_list.end() && i<max_pts; ++p, ++i)
+				{
+					snprintf(pt, sizeof(pt), " t(%d,%d)", p->x / 16, p->y / 16);
+					route += pt;
+				}
+				if((int)cur_wp_info.pf_point_list.size() > max_pts) route += " ...";
+
+				ZPathLog("ROUTE  %s: id:%d, %d legs:%s",
+					ZPathLog_UnitDesc(this).c_str(), response->thread_id,
+					(int)cur_wp_info.pf_point_list.size(), route.c_str());
+			}
+			else
+				ZPathLog("ROUTE  %s: id:%d EMPTY - no path was found, unit will not move",
+					ZPathLog_UnitDesc(this).c_str(), response->thread_id);
+		}
+
+		//#141: always-on order-lifecycle trace - what the pathfinder came back with
+		//for a player order (pairs with the "move order:" receipt line). Either it
+		//found a route (unit will move) or it found nothing (order silently ignored
+		//- the "won't take my order" bug). Player orders only, so not spammy.
+		if(waypoint_list.size() && waypoint_list.front().player_given)
+		{
+			const waypoint &w = waypoint_list.front();
+			if(response->pf_point_list.empty())
+				ZDiag("order rejected: %s found NO path for its %s order to t(%d,%d) - target unreachable from here (center t(%d,%d))",
+					ZPathLog_UnitDesc(this).c_str(), ZPathLog_WPModeName(w.mode),
+					w.x / 16, w.y / 16, center_x / 16, center_y / 16);
+			else
+				ZDiag("route found: %s got a %d-leg path for its %s order to t(%d,%d) - will move",
+					ZPathLog_UnitDesc(this).c_str(), (int)response->pf_point_list.size(),
+					ZPathLog_WPModeName(w.mode), w.x / 16, w.y / 16);
+		}
+
+		if(cur_wp_info.pf_point_list.size())
+		{
+			//cur_wp_info.x = cur_wp_info.pf_point_list.begin()->x;
+			//cur_wp_info.y = cur_wp_info.pf_point_list.begin()->y;
+			SetTarget(cur_wp_info.pf_point_list.begin()->x, cur_wp_info.pf_point_list.begin()->y);
+			SetVelocity();
+
+			cur_wp_info.pf_point_list.erase(cur_wp_info.pf_point_list.begin());
+			sflags.updated_route = true;
+		}
+	}
+}
+
+void ZObject::GetRemainingRoute(vector<ZPath_Finding_AStar::pf_point> &out)
+{
+	out.clear();
+
+	if(!waypoint_list.size()) return;
+	if(!cur_wp_info.got_pf_response) return;
+
+	//the leg currently being walked, then the legs still queued
+	out.push_back(ZPath_Finding_AStar::pf_point(cur_wp_info.x, cur_wp_info.y));
+	out.insert(out.end(), cur_wp_info.pf_point_list.begin(), cur_wp_info.pf_point_list.end());
+}
+
+// #206: is this object a "wreck" - a destroyed mobile unit (vehicle/robot/cannon/
+// animal) left on the ground? Buildings leave their own footprint and map items are
+// never destroyed, so they're excluded.
+static inline bool is_ground_wreck(ZObject *o)
+{
+	unsigned char ot, oid;
+	o->GetObjectID(ot, oid);
+	return o->IsDestroyed() &&
+		ot != BUILDING_OBJECT &&
+		ot != MAP_ITEM_OBJECT;
+}
+
+bool sort_objects_func (ZObject *a, ZObject *b)
+{
+	// #206: a wreck is ground debris - living units and buildings must always draw
+	// OVER it. A wreck can't be both depth-correct vs buildings AND always under
+	// units in one z-order (those constraints form a provable 3-way cycle, which
+	// would make std::sort undefined), so wrecks become a single under-layer: every
+	// wreck sorts before every non-wreck, then normal depth applies within each group.
+	bool aw = is_ground_wreck(a);
+	bool bw = is_ground_wreck(b);
+	if(aw != bw) return aw;   // a is a wreck, b isn't -> a sorts first -> drawn under
+
+	// depth sort by the sprite's bottom edge. When two overlapping objects share
+	// the same bottom-y the comparator would call them equal, and std::sort
+	// (unstable) is then free to swap them from frame to frame - which renders
+	// as flicker on the overlapping pixels (issue #49). Break ties on the stable
+	// unique ref_id so the order is deterministic every frame.
+	int ay = a->loc.y + a->height_pix;
+	int by = b->loc.y + b->height_pix;
+	if(ay != by) return ay < by;
+	if(a->ref_id != b->ref_id) return a->ref_id < b->ref_id;
+	// final tiebreak: the object's address is unique and stable within a session,
+	// so the order stays total - and thus deterministic frame to frame - even if
+	// two objects ever share a ref_id (e.g. the -1 default before one is assigned,
+	// or a static map decoration that slips through). Otherwise the platform's
+	// std::sort is free to flicker them (issue #50, the static-object form of #49).
+	return a < b;
+}
+

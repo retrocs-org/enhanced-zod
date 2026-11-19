@@ -1,0 +1,123 @@
+#include "zserver.h"
+#include "zhttp.h"
+#include "zsavegame.h"
+#include <sstream>
+#include <iomanip>
+#include <random>
+#include <SDL3/SDL.h>
+
+std::string ZCloud_JSON(const std::string &s) {
+    std::string out="\""; const char *hex="0123456789abcdef";
+    for(unsigned char c:s) { if(c=='"'||c=='\\') {out+='\\';out+=c;} else if(c<32) {out+="\\u00";out+=hex[c>>4];out+=hex[c&15];} else out+=c; } return out+'"';
+}
+bool ZServer::CloudAuthorized(int player) {
+    if(player<0 || player>=(int)player_info.size()) return false;
+    if(player_info[player].bot_logged_in) return true;
+    auto found=cloud_peers.find(player_info[player].p_id); return found!=cloud_peers.end() && !found->second.account.empty();
+}
+void ZServer::CloudConnected(int player) {
+    if(!cloud_required) {
+        if(getenv("ZOD_PERSISTENT_SERVER") && std::string(getenv("ZOD_PERSISTENT_SERVER"))=="1") {
+            int mode=0;server_socket.SendMessage(player,CLOUD_REQUIRED,(char*)&mode,sizeof(mode));
+        }
+        return;
+    }
+    if(cloud_peers.size()>=64) {auto *handler=server_socket.GetHandler(player);if(handler)handler->Disconnect();return;}
+    cloud_peers[player_info[player].p_id]=ZCloudPeer{current_time(),false,"","",""};
+    int required=1;server_socket.SendMessage(player,CLOUD_REQUIRED,(char*)&required,sizeof(required));
+}
+bool ZServer::CloudFilter(int type,int event,char *data,int size,int player) {
+    if(!cloud_required || type!=TCP_EVENT) return true;
+    if(player<0 || player>=(int)player_info.size()) return false;
+    if(event==SEND_BOT_BYPASS_DATA) {auto *handler=server_socket.GetHandler(player);return handler && handler->IsLoopback();}
+    if(event==CLOUD_TICKET || event==REQUEST_VERSION) return true;
+    if(!CloudAuthorized(player)) return false;
+    // Cloud identity is immutable; legacy name/login commands cannot impersonate it.
+    if(!player_info[player].bot_logged_in && (event==SET_NAME || event==GIVE_PLAYER_NAME || event==SET_PLAYER_MODE)) {
+        if(event==SET_PLAYER_MODE && size==sizeof(player_mode_packet) && data && ((player_mode_packet*)data)->mode==PLAYER_MODE) return true;
+        return false;
+    }
+    if(event==SET_TEAM && lan_match_started && !player_info[player].bot_logged_in && size==sizeof(int) && data) {
+        int team;memcpy(&team,data,sizeof(team));
+        if(team!=player_info[player].team) {
+            int current=player_info[player].team;server_socket.SendMessage(player,SET_TEAM,(char*)&current,sizeof(current));
+            SendNews(player,"Public match teams are locked after startup. You can spectate until the next round.",0,0,0);return false;
+        }
+    }
+    if(!player_info[player].bot_logged_in && event==SEND_CHAT && size>0 && data && data[0]=='/') return false;
+    return true;
+}
+void ZServer::cloud_ticket_event(ZServer *p,char *data,int size,int player) {
+    if(!p->cloud_required || player<0 || player>=(int)p->player_info.size() || size!=65 || !data || data[64]!=0) return;
+    for(int i=0;i<64;++i) if(!((data[i]>='0'&&data[i]<='9')||(data[i]>='a'&&data[i]<='f'))) return;
+    auto &peer=p->cloud_peers[p->player_info[player].p_id];
+    if(peer.requested || !peer.account.empty()) return;
+    if(p->cloud_task.Pending()) {peer.ticket=std::string(data,64);return;}
+    peer.requested=true;peer.ticket.clear();
+    int id=p->player_info[player].p_id,port=getenv("ZOD_CLOUD_AGENT_PORT") ? atoi(getenv("ZOD_CLOUD_AGENT_PORT")) : 0;
+    std::string secret=getenv("ZOD_CLOUD_AGENT_SECRET") ? getenv("ZOD_CLOUD_AGENT_SECRET") : "",ticket(data,64);
+    p->cloud_task.Start([id,port,secret,ticket](){
+        ZCloudClaim result;result.peer=id;
+        if(port<1 || port>65535 || secret.size()!=64) return result;
+        auto response=ZHttp_Post("127.0.0.1",port,"/verify","{\"Secret\":"+ZCloud_JSON(secret)+",\"Ticket\":"+ZCloud_JSON(ticket)+"}");
+        if(!response.ok || response.status!=200) return result;
+        std::istringstream input(response.body);std::getline(input,result.account);std::getline(input,result.name);std::getline(input,result.grant);
+        if(result.account.size()!=64 || result.grant.size()!=64 || result.name.size()<3 || result.name.size()>24) {result.account.clear();result.grant.clear();}
+        return result;
+    });
+}
+void ZServer::CheckCloud() {
+    if(!cloud_required) return;
+    ZCloudClaim claim;
+    if(cloud_task.Poll(claim)) for(size_t i=0;i<player_info.size();++i) if(player_info[i].p_id==claim.peer) {
+        bool duplicate=false;for(const auto &v:cloud_peers) if(v.first!=claim.peer && !claim.account.empty() && v.second.account==claim.account) duplicate=true;
+        int success=(!claim.account.empty() && !duplicate) ? 1 : 0;
+        if(success) {
+            auto &peer=cloud_peers[claim.peer];peer.account=claim.account;peer.grant=claim.grant;
+            player_info[i].name=claim.name; RelayLPlayerName((int)i);
+        }
+        server_socket.SendMessage((int)i,CLOUD_RESULT,(char*)&success,sizeof(success));
+        if(!success) {auto *handler=server_socket.GetHandler((int)i);if(handler) handler->Disconnect();}
+    }
+    for(size_t i=0;i<player_info.size();++i) {
+        auto found=cloud_peers.find(player_info[i].p_id);if(found==cloud_peers.end()) continue;
+        if(!CloudAuthorized((int)i) && current_time()-found->second.connected>30) {auto *handler=server_socket.GetHandler((int)i);if(handler)handler->Disconnect();}
+        
+    }
+    if(!cloud_task.Pending()) for(size_t i=0;i<player_info.size();++i) {
+        auto found=cloud_peers.find(player_info[i].p_id);
+        if(found!=cloud_peers.end() && !found->second.ticket.empty() && !found->second.requested) {
+            std::string ticket=found->second.ticket;cloud_ticket_event(this,const_cast<char*>(ticket.c_str()),65,(int)i);break;
+        }
+    }
+    for(auto i=cloud_peers.begin();i!=cloud_peers.end();) {
+        bool connected=false;for(const auto &p:player_info) if(p.p_id==i->first)connected=true;
+        if(!connected)i=cloud_peers.erase(i);else ++i;
+    }
+}
+void ZServer::FreezeCloudRoster() {
+    if(!cloud_required || !game_on || cloud_roster_fixed) return;
+    cloud_roster.clear();cloud_match_start=ztime.ztime;cloud_roster_fixed=true;
+    for(const auto &p:player_info) {
+        auto peer=cloud_peers.find(p.p_id);
+        if(p.mode==PLAYER_MODE && p.team>NULL_TEAM && peer!=cloud_peers.end() && !peer->second.account.empty())
+            cloud_roster[peer->second.account]={p.team,peer->second.grant};
+    }
+}
+void ZServer::ResetCloudMatch() {
+    cloud_roster_fixed=false;cloud_reported=false;cloud_roster.clear();cloud_deaths.clear();cloud_match_start=ztime.ztime;
+    for(int t=0;t<MAX_TEAM_TYPES;++t) cloud_kills[t]=cloud_lost[t]=cloud_captures[t]=0;
+}
+void ZServer::ReportCloudMatch() {
+    if(!cloud_required || cloud_roster.empty() || cloud_reported) return;
+    cloud_reported=true;
+    const char *folder=getenv("ZOD_CLOUD_OUTBOX");if(!folder || !*folder)return;
+    bool alive[MAX_TEAM_TYPES]={};for(auto *object:object_list) {unsigned char type,id;object->GetObjectID(type,id);int team=object->GetOwner();if(team>NULL_TEAM&&team<MAX_TEAM_TYPES&&!object->IsDestroyed()&&(type==ROBOT_OBJECT||type==VEHICLE_OBJECT||type==CANNON_OBJECT))alive[team]=true;}
+    std::random_device random;std::ostringstream uuid;for(int n=0;n<8;++n) uuid<<std::hex<<std::setw(8)<<std::setfill('0')<<(std::uint32_t)random();
+    std::ostringstream report;report<<"{\"id\":"<<ZCloud_JSON(uuid.str())<<",\"map\":"<<ZCloud_JSON(map_name)<<",\"duration\":"<<std::max(0,(int)(ztime.ztime-cloud_match_start))<<",\"players\":[";
+    bool comma=false;for(const auto &entry:cloud_roster) {int team=entry.second.team;if(team<1||team>=MAX_TEAM_TYPES)continue;if(comma)report<<",";comma=true;report<<"{\"account\":"<<ZCloud_JSON(entry.first)<<",\"grant\":"<<ZCloud_JSON(entry.second.grant)<<",\"won\":"<<(alive[team]?"true":"false")<<",\"kills\":"<<cloud_kills[team]<<",\"lost\":"<<cloud_lost[team]<<",\"captures\":"<<cloud_captures[team]<<"}";}
+    report<<"]}";
+    std::string path=std::string(folder)+"/"+uuid.str()+".json";
+    const auto text=report.str();ZSaveWriter writer;writer.Raw(text.data(),(int)text.size());
+    if(!writer.WriteFile(path)) {cloud_reported=false;printf("cloud: could not save match result\n");}
+}

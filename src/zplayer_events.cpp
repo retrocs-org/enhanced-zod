@@ -1,0 +1,1905 @@
+#include "zplayer.h"
+#include "packet_io.h"
+#include "zprefs.h"
+#include "zpath_debug.h"
+#include <math.h>
+
+using namespace COMMON;
+
+void ZPlayer::SetupEHandler()
+{
+	ehandler.SetParent(this);
+	ehandler.AddFunction(TCP_EVENT, DEBUG_EVENT_, test_event);
+	ehandler.AddFunction(TCP_EVENT, STORE_MAP, store_map_event);
+	ehandler.AddFunction(TCP_EVENT, ADD_NEW_OBJECT, add_new_object_event);
+	ehandler.AddFunction(TCP_EVENT, SET_ZONE_INFO, set_zone_info_event);
+	ehandler.AddFunction(TCP_EVENT, NEWS_EVENT, display_news_event);
+	ehandler.AddFunction(TCP_EVENT, SEND_WAYPOINTS, set_object_waypoints_event);
+	ehandler.AddFunction(TCP_EVENT, SEND_UNIT_ROUTE, set_object_route_event);
+	ehandler.AddFunction(TCP_EVENT, SEND_RALLYPOINTS, set_object_rallypoints_event);
+	ehandler.AddFunction(TCP_EVENT, SEND_LOC, set_object_loc_event);
+	ehandler.AddFunction(TCP_EVENT, SET_OBJECT_TEAM, set_object_team_event);
+	ehandler.AddFunction(TCP_EVENT, SET_ATTACK_OBJECT, set_object_attack_object_event);
+	ehandler.AddFunction(TCP_EVENT, DELETE_OBJECT, delete_object_event);
+	ehandler.AddFunction(TCP_EVENT, UPDATE_HEALTH, set_object_health_event);
+	ehandler.AddFunction(TCP_EVENT, END_GAME, end_game_event);
+    ehandler.AddFunction(TCP_EVENT,CLOUD_REQUIRED,cloud_required_event);
+    ehandler.AddFunction(TCP_EVENT,CLOUD_RESULT,cloud_result_event);
+	ehandler.AddFunction(TCP_EVENT, RETURN_TO_MENU, return_to_menu_event);	//#136
+	ehandler.AddFunction(TCP_EVENT, RESET_GAME, reset_game_event);
+	ehandler.AddFunction(TCP_EVENT, FIRE_MISSILE, fire_object_missile_event);
+	ehandler.AddFunction(TCP_EVENT, DESTROY_OBJECT, destroy_object_event);
+	ehandler.AddFunction(TCP_EVENT, SET_BUILDING_STATE, set_building_state_event);
+	ehandler.AddFunction(TCP_EVENT, SET_BUILT_CANNON_AMOUNT, set_building_cannon_list_event);
+	ehandler.AddFunction(TCP_EVENT, COMP_MSG, set_computer_message_event);
+	ehandler.AddFunction(TCP_EVENT, OBJECT_GROUP_INFO, set_object_group_info_event);
+	ehandler.AddFunction(TCP_EVENT, DO_CRANE_ANIM, do_crane_anim_event);
+	ehandler.AddFunction(TCP_EVENT, SET_REPAIR_ANIM, set_repair_building_anim_event);
+	ehandler.AddFunction(TCP_EVENT, SET_SETTINGS, set_settings_event);
+	ehandler.AddFunction(TCP_EVENT, SET_LID_OPEN, set_lid_open_event);
+	ehandler.AddFunction(TCP_EVENT, SNIPE_OBJECT, snipe_object_event);
+	ehandler.AddFunction(TCP_EVENT, DRIVER_HIT_EFFECT, driver_hit_effect_event);
+	ehandler.AddFunction(TCP_EVENT, CLEAR_PLAYER_LIST, clear_player_list_event);
+	ehandler.AddFunction(TCP_EVENT, ADD_LPLAYER, add_player_event);
+	ehandler.AddFunction(TCP_EVENT, DELETE_LPLAYER, delete_player_event);
+	ehandler.AddFunction(TCP_EVENT, SET_LPLAYER_NAME, set_player_name_event);
+	ehandler.AddFunction(TCP_EVENT, SET_LPLAYER_TEAM, set_player_team_event);
+	ehandler.AddFunction(TCP_EVENT, SET_LPLAYER_MODE, set_player_mode_event);
+	ehandler.AddFunction(TCP_EVENT, SET_LPLAYER_IGNORED, set_player_ignored_event);
+	ehandler.AddFunction(TCP_EVENT, SET_LPLAYER_READY, set_player_ready_event);
+    ehandler.AddFunction(TCP_EVENT, LOBBY_COUNTDOWN, lobby_countdown_event);
+	ehandler.AddFunction(TCP_EVENT, SET_LPLAYER_LOGINFO, set_player_loginfo_event);
+	ehandler.AddFunction(TCP_EVENT, SET_LPLAYER_VOTEINFO, set_player_voteinfo_event);
+	ehandler.AddFunction(TCP_EVENT, UPDATE_GAME_PAUSED, update_game_paused_event);
+	ehandler.AddFunction(TCP_EVENT, UPDATE_GAME_SPEED, update_game_speed_event);
+	ehandler.AddFunction(TCP_EVENT, VOTE_INFO, set_vote_info_event);
+	ehandler.AddFunction(TCP_EVENT, GIVE_PLAYER_ID, set_player_id_event);
+	ehandler.AddFunction(TCP_EVENT, GIVE_SELECTABLE_MAP_LIST, set_selectable_map_list_event);
+	ehandler.AddFunction(TCP_EVENT, GIVE_CAMPAIGN_UNLOCK, set_campaign_unlock_event);
+	ehandler.AddFunction(TCP_EVENT, GIVE_MAP_NAME, set_map_name_event);
+	ehandler.AddFunction(TCP_EVENT, GIVE_LOGINOFF, display_login_event);
+	ehandler.AddFunction(TCP_EVENT, SET_GRENADE_AMOUNT, set_grenade_amount_event);
+	ehandler.AddFunction(TCP_EVENT, PICKUP_GRENADE_ANIM, pickup_grenade_event);
+	ehandler.AddFunction(TCP_EVENT, DO_PORTRAIT_ANIM, do_portrait_anim_event);
+	ehandler.AddFunction(TCP_EVENT, TEAM_ENDED, team_ended_event);
+	ehandler.AddFunction(TCP_EVENT, SET_TEAM, set_team_event);
+	ehandler.AddFunction(TCP_EVENT, POLL_BUY_REGKEY, poll_buy_regkey);
+	ehandler.AddFunction(TCP_EVENT, RETURN_REGKEY, set_regkey);
+	ehandler.AddFunction(TCP_EVENT, SET_BUILDING_QUEUE_LIST, set_build_queue_list_event);
+	ehandler.AddFunction(TCP_EVENT, REQUEST_VERSION, request_version_event);
+	ehandler.AddFunction(TCP_EVENT, GIVE_VERSION, get_version_event);
+	
+	ehandler.AddFunction(OTHER_EVENT, CONNECT_EVENT, connect_event);
+	ehandler.AddFunction(OTHER_EVENT, DISCONNECT_EVENT, disconnect_event);
+	
+	ehandler.AddFunction(SDL_EVENT, RESIZE_EVENT, resize_event);
+	ehandler.AddFunction(SDL_EVENT, LCLICK_EVENT, lclick_event);
+	ehandler.AddFunction(SDL_EVENT, LUNCLICK_EVENT, lunclick_event);
+	ehandler.AddFunction(SDL_EVENT, RCLICK_EVENT, rclick_event);
+	ehandler.AddFunction(SDL_EVENT, RUNCLICK_EVENT, runclick_event);
+	ehandler.AddFunction(SDL_EVENT, MCLICK_EVENT, mclick_event);
+	ehandler.AddFunction(SDL_EVENT, MUNCLICK_EVENT, munclick_event);
+	ehandler.AddFunction(SDL_EVENT, WHEELUP_EVENT, wheelup_event);
+	ehandler.AddFunction(SDL_EVENT, WHEELDOWN_EVENT, wheeldown_event);
+	ehandler.AddFunction(SDL_EVENT, KEYDOWN_EVENT_, keydown_event);
+	ehandler.AddFunction(SDL_EVENT, KEYUP_EVENT_, keyup_event);
+	ehandler.AddFunction(SDL_EVENT, MOTION_EVENT, motion_event);
+}
+
+void ZPlayer::motion_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	bool did_main_menu_motion;
+
+	if(p->rbutton.down && !p->rbutton.dragged
+		&& (abs(p->mouse_x - p->rbutton.x) > CLICK_DRAG_SLOP
+			|| abs(p->mouse_y - p->rbutton.y) > CLICK_DRAG_SLOP))
+		p->rbutton.dragged = true;
+
+	if(p->MainMenuMotion())
+	{
+		return;
+	}
+
+	// A right click keeps its normal cancel/order behavior. Once movement passes
+	// the click slop, it becomes a viewport drag and its release is consumed.
+	if(p->rbutton.down && p->rbutton.dragged)
+	{
+		int change_x = p->mouse_x - p->rbutton.x;
+		int change_y = p->mouse_y - p->rbutton.y;
+
+		if(!p->rbutton.started_over_hud && !p->rbutton.started_over_gui && (change_x || change_y))
+		{
+			int shift_x, shift_y;
+
+			p->zmap.GetViewShift(shift_x, shift_y);
+			p->zmap.SetViewShift(shift_x + change_x, shift_y + change_y);
+			p->do_focus_to = false;
+
+			p->rbutton.x = p->mouse_x;
+			p->rbutton.y = p->mouse_y;
+		}
+
+		return;
+	}
+
+	// Middle-button drag pans the viewport directly. The old SDL1 code warped the
+	// cursor back to the press point on every motion event; under SDL2/scaled
+	// rendering that can suppress or distort motion deltas.
+	if(p->mbutton.down)
+	{
+		int change_x, change_y;
+		int shift_x, shift_y;
+
+		change_x = p->mouse_x - p->mbutton.x;
+		change_y = p->mouse_y - p->mbutton.y;
+
+		if(!change_x && !change_y) return;
+
+		p->zmap.GetViewShift(shift_x, shift_y);
+		p->zmap.SetViewShift(shift_x + change_x, shift_y + change_y);
+		p->do_focus_to = false;
+
+		p->mbutton.x = p->mouse_x;
+		p->mbutton.y = p->mouse_y;
+		return;
+	}
+
+	p->hover_object = NULL;
+
+	//are we over the map?
+	//if(p->mouse_x < p->screen->w - HUD_WIDTH && p->mouse_y < p->screen->h - HUD_HEIGHT)
+	if(p->mouse_x < p->init_w - HUD_WIDTH && p->mouse_y < p->init_h - HUD_HEIGHT)
+	{
+		int shift_x, shift_y;
+		int map_x, map_y;
+		vector<ZObject*>::iterator i;
+
+		p->zmap.GetViewShift(shift_x, shift_y);
+
+		map_x = p->mouse_x + shift_x;
+		map_y = p->mouse_y + shift_y;
+
+		//printf("motion:: mouse over map: %d %d \n", map_x, map_y);
+
+		//find if we have an object under this cursor
+
+		//#205: on touch, a tap rarely lands exactly on a small target (a flag,
+		//an empty cannon, a unit), so commands meant for it fell through to the
+		//ground. Grow the target hit-box by a small margin - the same touch slack
+		//#196 gave unit selection - so a near-miss tap still commands the object.
+		//Desktop keeps margin 0 (UnderCursorMargin then == the old UnderCursor).
+#ifdef __ANDROID__
+		const int hover_margin = 10;
+#else
+		const int hover_margin = 0;
+#endif
+
+		for(i=p->object_list.begin(); i!=p->object_list.end(); i++)
+			if((*i)->UnderCursorMargin(map_x, map_y, hover_margin))
+		{
+			//#133: a destroyed bridge/building (or any dead object) is not a valid
+			//attack target - don't show the attack cursor or let an order be issued.
+			p->hover_object_can_attack = !(*i)->IsDestroyed() && (*i)->UnderCursorCanAttack(map_x, map_y);
+			p->hover_object_can_enter_fort = (*i)->UnderCursorFortCanEnter(map_x, map_y);
+
+			//#160: a destroyed building (e.g. a bridge) isn't attackable (#133), but
+			//a CRANE can repair it - so when the current selection can repair, still
+			//treat the destroyed-but-repairable structure as the hover object.
+			//Otherwise the repair cursor never shows and the crane can't be ordered
+			//to fix the bridge. Combat-only selections see nothing here (can_repair
+			//is false), so #133 stays intact; the server also still refuses attacks
+			//on dead objects (CanAttackObject checks IsDestroyed).
+			bool hover_can_repair = p->select_info.can_repair && (*i)->CanBeRepairedByCrane(p->our_team);
+
+			//a flag/grenades pickup is GRABBED, not attacked, so the #133 destroyed
+			//gate (about not attacking rubble) must not hide it either. A contested
+			//flag reads as IsDestroyed (health 0) yet is still a valid grab target -
+			//bots grab it - so without this the player gets no grab cursor over it
+			//and can't order the capture. Owner is irrelevant here (you grab your
+			//own/neutral/enemy flags); DetermineCursor sorts out the exact cursor.
+			unsigned char hov_ot, hov_oid;
+			(*i)->GetObjectID(hov_ot, hov_oid);
+			bool hover_can_grab = hov_ot == MAP_ITEM_OBJECT &&
+				((hov_oid == FLAG_ITEM && p->select_info.can_move) ||
+				 (hov_oid == GRENADES_ITEM && p->select_info.can_pickup_grenades));
+
+			//if we can not attack, enter, repair, or grab it
+			//then we aren't hovering over this object
+			if(!p->hover_object_can_attack && !p->hover_object_can_enter_fort && !hover_can_repair && !hover_can_grab) continue;
+
+			p->hover_object = (*i);
+			//printf("object under cursor:%s\n", p->hover_object->GetObjectName().c_str());
+		}
+		
+		//#107: the rectangle/drag select runs here on each motion, not just on
+		//release - so the pause gate in the unclick handler (#91) missed it, and a
+		//box-drag still selected units before the round started. Freeze it too.
+		//#102: only once the drag is past the click slop. CollectSelectables clears
+		//the selection, so running it for a 1-2px click jitter wiped the units
+		//before the unclick could order them - the "command not taken" bug. A real
+		//box drag (> slop) still selects live.
+		if(!p->ztime.IsPaused() && !p->lbutton.started_over_hud && !p->lbutton.started_over_gui
+			&& p->DragExceedsSlop())
+			p->CollectSelectables();
+	}
+	else
+	{
+		if(p->lbutton.down && p->lbutton.started_over_hud)
+		{
+			hud_click_response hud_response;
+
+			p->zhud.MouseMotion(p->mouse_x, p->mouse_y, p->init_w, p->init_h, hud_response);
+
+			if(hud_response.used)
+			{
+				if(hud_response.type == HUD_MINI_MAP)
+				{
+					p->FocusCameraTo(hud_response.mini_x, hud_response.mini_y);
+				}
+			}
+		}
+	}
+
+	//a better place can be found
+	p->DetermineCursor();
+}
+
+void ZPlayer::resize_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	if(p->use_opengl)
+	{
+		ZVideo_SetMode(p->init_w, p->init_h, !p->is_windowed);
+
+		ResetOpenGLViewPort(p->init_w, p->init_h);
+	}
+	else
+	{
+		// MUST reassign p->screen: when the logical size changes, ZVideo_SetMode
+		// destroys and recreates the framebuffer surface, so the old p->screen
+		// is left dangling. Desktop resizes keep the same logical size (no
+		// rebuild), but Android fires a real resize at startup - the game then
+		// drew into the stale surface while the new blank one was presented,
+		// which was the black screen.
+		p->screen = ZVideo_SetMode(p->init_w, p->init_h, !p->is_windowed);
+	}
+
+	ZSDL_Surface::SetScreenDimensions(p->init_w, p->init_h);
+	
+	p->zhud.ReRenderAll();
+	
+	p->zmap.SetViewingDimensions(p->init_w - HUD_WIDTH, p->init_h - HUD_HEIGHT);
+
+	//move menus around
+	if(p->prev_w && p->prev_h) p->MainMenuMove(1.0 * p->init_w / p->prev_w, 1.0 * p->init_h / p->prev_h);
+	p->prev_w = p->init_w;
+	p->prev_h = p->init_h;
+
+// redraw_everything();
+}
+
+void ZPlayer::lclick_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	hud_click_response hud_response;
+
+	p->lbutton.down = true;
+
+	//#120: while the post-match summary is up, a left click dismisses it and
+	//advances to the next map - it must not fall through to game/HUD handling.
+	if(p->show_match_summary)
+	{
+		p->ChooseMatchAction(p->MatchActionAt(p->mouse_x,p->mouse_y));
+		p->lbutton.down = false;
+		return;
+	}
+
+	//taken by a main menu?
+	if(p->MainMenuAbsorbLClick())
+	{
+		p->lbutton.started_over_gui = true;
+		return;
+	}
+
+	//p->zhud.LeftClick(p->mouse_x, p->mouse_y, p->screen->w, p->screen->h, hud_response);
+	p->zhud.LeftClick(p->mouse_x, p->mouse_y, p->init_w, p->init_h, hud_response);
+		
+
+	//did the hud absorb the click?
+	if(!hud_response.used)
+	{
+		p->lbutton.started_over_hud = false;
+
+		//see if gui absorbs it
+		if(p->place_cannon)
+		{
+
+		}
+		else if(p->GuiAbsorbLClick())
+		{
+			p->lbutton.started_over_gui = true;
+		}
+		else if(p->zcomp_msg.AbsorbedLClick(p->mouse_x, p->mouse_y, p->zmap))
+		{
+			p->lbutton.started_over_gui = true;
+		}
+		else
+		{
+			p->lbutton.started_over_gui = false;
+			//normal click. In classic mouse mode the selection must survive
+			//until release - a plain click on ground IS the order - so the
+			//clear is deferred (CollectSelectables clears again anyway).
+			if(!zod_classic_mouse) p->select_info.Clear();
+			p->DetermineCursor();
+			p->GiveHudSelected();
+		}
+	}
+	else
+	{
+		p->lbutton.started_over_hud = true;
+		p->lbutton.started_over_gui = false;
+
+		switch(hud_response.type)
+		{
+		case HUD_BUTTON:
+			break;
+		case HUD_MINI_MAP:
+			p->FocusCameraTo(hud_response.mini_x, hud_response.mini_y);
+			break;
+		case HUD_JUMP_TO_UNIT:
+			{
+				int x, y;
+				ZObject *obj;
+
+				obj = p->GetObjectFromID(hud_response.jump_ref_id, p->object_list);
+
+				if(obj)
+				{
+					obj->GetCenterCords(x, y);
+					p->FocusCameraTo(x, y);
+				}
+
+				if(!p->select_info.ObjectIsSelected(obj))
+				{
+					p->SelectZObject(obj);
+				}
+			}
+			break;
+		}
+	}
+}
+
+void ZPlayer::lunclick_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	hud_click_response hud_response;
+
+	//taken by a main menu?
+	if(p->MainMenuAbsorbLUnClick())
+	{
+		p->lbutton.down = false;
+		return;
+	}
+
+	//p->zhud.LeftUnclick(p->mouse_x, p->mouse_y, p->screen->w, p->screen->h, hud_response);
+	p->zhud.LeftUnclick(p->mouse_x, p->mouse_y, p->init_w, p->init_h, hud_response);
+
+	//send it out
+	if(!hud_response.used)
+	{
+		if(p->DoPlaceCannon())
+		{
+
+		}
+		else if(p->GuiAbsorbLUnClick())
+		{
+			
+		}
+		else if(p->lbutton.started_over_gui && p->zcomp_msg.AbsorbedLUnClick(p->mouse_x, p->mouse_y, p->zmap))
+		{
+			if(p->zcomp_msg.GetFlags().resume_game)
+			{
+				p->SendSetPaused(false);
+				//update_game_paused_packet packet;
+				//packet.game_paused = false;
+				//p->client_socket.SendMessage(SET_GAME_PAUSED, (const char*)&packet, sizeof(update_game_paused_packet));
+			}
+			else
+			{
+				ZObject *obj;
+				obj = p->GetObjectFromID(p->zcomp_msg.GetFlags().ref_id, p->object_list);
+
+				if(obj)
+				{
+					//select it?
+					if(p->zcomp_msg.GetFlags().select_obj) p->SelectZObject(obj);
+					//{
+					//	//p->SelectZObject(obj);
+					//	//p->DetermineCursor();
+					//	//p->ClearDevWayPointsOfSelected();
+					//	//p->GiveHudSelected();
+					//}
+
+					//open a gui?
+					if(p->zcomp_msg.GetFlags().open_gui)
+					{
+						p->ObjectMakeGuiWindow(obj);
+						//p->DeleteCurrentGuiWindow();
+						//if(obj->GetOwner() != NULL_TEAM && obj->GetOwner() == p->our_team && (p->gui_window = obj->MakeGuiWindow()))
+						//{
+						//	//give it the build list
+						//	p->gui_window->SetBuildList(&p->buildlist);
+						//}
+					}
+
+					//run to it
+					int x, y;
+					obj->GetCenterCords(x, y);
+					p->FocusCameraTo(x, y);
+
+					//printf("zcomp_msg.AbsorbedLUnClick ref_id:%d obj:%d\n", p->zcomp_msg.GetFlags().ref_id, obj);
+				}
+			}
+		}
+	}
+
+	//p->GuiAbsorbLUnClick();
+
+	//collect selectables
+	if(p->ztime.IsPaused())
+	{
+		//#91: the game world is frozen until the round starts - a click here must
+		//not order, select, or trigger a unit's "reporting"/"yes sir" voice.
+		//(Resume is handled above; the HUD and menus still work.)
+		p->lbutton.down = false;
+	}
+	else if(!p->lbutton.started_over_hud && !p->lbutton.started_over_gui)
+	{
+		//classic mouse: a plain click with units selected is an order
+		if(zod_classic_mouse && p->ClassicLeftClickOrder())
+		{
+			p->lbutton.down = false;
+		}
+		else
+		{
+			p->CollectSelectables();
+			p->lbutton.down = false;
+			p->DetermineCursor();
+			p->ClearDevWayPointsOfSelected();
+			p->GiveHudSelected();
+		}
+	}
+	else
+		p->lbutton.down = false;
+
+	//did the hud absorb the click?
+	if(hud_response.used)
+	{
+	
+	}
+
+	//we have a hud event?
+	switch(hud_response.type)
+		{
+		case HUD_BUTTON:
+			p->HandleButton((hud_buttons)hud_response.button);
+			break;
+		case HUD_MINI_MAP: break;
+		case HUD_JUMP_TO_UNIT: break;
+		}
+}
+
+void ZPlayer::rclick_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	p->rbutton.down = true;
+	p->rbutton.dragged = false;
+	p->rbutton.started_over_hud = p->mouse_x < 0 || p->mouse_y < 0
+		|| p->mouse_x >= p->init_w - HUD_WIDTH || p->mouse_y >= p->init_h - HUD_HEIGHT;
+	p->rbutton.started_over_gui = p->show_match_summary || p->active_menu || p->gui_window
+		|| (p->gui_factory_list && p->gui_factory_list->IsVisible()) || !p->gui_menu_list.empty();
+}
+
+void ZPlayer::runclick_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	bool was_down = p->rbutton.down;
+	bool was_dragged = p->rbutton.dragged;
+	int change_x = p->mouse_x - p->rbutton.x;
+	int change_y = p->mouse_y - p->rbutton.y;
+
+	if(was_down && (was_dragged || abs(change_x) > CLICK_DRAG_SLOP || abs(change_y) > CLICK_DRAG_SLOP))
+	{
+		if(!p->rbutton.started_over_hud && !p->rbutton.started_over_gui)
+		{
+			int shift_x, shift_y;
+
+			p->zmap.GetViewShift(shift_x, shift_y);
+			p->zmap.SetViewShift(shift_x + change_x, shift_y + change_y);
+			p->do_focus_to = false;
+		}
+		was_dragged = true;
+	}
+
+	p->rbutton.down = false;
+	p->rbutton.dragged = false;
+
+	if(!was_down) return;
+
+	if(was_dragged)
+	{
+		p->hover_object = NULL;
+		motion_event(p, NULL, 0, 0);
+		p->DetermineCursor();
+		return;
+	}
+
+	//classic (original-Z) mouse: the right button cancels the selection
+	//instead of giving orders - orders are the left button's job. The
+	//eject special case stays (right click on your own vehicle).
+	if(zod_classic_mouse)
+	{
+		if(p->select_info.selected_list.size() == 1)
+		{
+			vector<ZObject*>::iterator i = p->select_info.selected_list.begin();
+			int shift_x, shift_y;
+
+			int mouse_x_map, mouse_y_map;
+
+			p->zmap.GetViewShift(shift_x, shift_y);
+			mouse_x_map = p->mouse_x + shift_x;
+			mouse_y_map = p->mouse_y + shift_y;
+
+			if((*i)->CanEjectDrivers() && (*i)->UnderCursor(mouse_x_map, mouse_y_map))
+			{
+				eject_vehicle_packet the_packet;
+
+				the_packet.ref_id = (*i)->GetRefID();
+
+				p->client_socket.SendMessage(EJECT_VEHICLE, (char*)&the_packet, sizeof(eject_vehicle_packet));
+			}
+		}
+
+		p->ClearDevWayPointsOfSelected();
+		p->select_info.Clear();
+		p->DetermineCursor();
+		p->GiveHudSelected();
+		return;
+	}
+
+	p->AddDevWayPointToSelected();
+	if(!p->ShiftDown()) 
+	{
+		//special case where a vehicle ejects?
+		if(p->select_info.selected_list.size() == 1)
+		{
+			unsigned char ot, oid;
+			int shift_x, shift_y;
+			int mouse_x_map, mouse_y_map;
+			vector<ZObject*>::iterator i;
+
+			i = p->select_info.selected_list.begin();
+
+			(*i)->GetObjectID(ot, oid);
+
+			p->zmap.GetViewShift(shift_x, shift_y);
+
+			mouse_x_map = p->mouse_x + shift_x;
+			mouse_y_map = p->mouse_y + shift_y;
+
+			//if(ot == CANNON_OBJECT && (*i)->UnderCursor(mouse_x_map, mouse_y_map))
+			if((*i)->CanEjectDrivers() && (*i)->UnderCursor(mouse_x_map, mouse_y_map))
+			{
+				eject_vehicle_packet the_packet;
+
+				the_packet.ref_id = (*i)->GetRefID();
+
+				p->client_socket.SendMessage(EJECT_VEHICLE, (char*)&the_packet, sizeof(eject_vehicle_packet));
+
+				p->ClearDevWayPointsOfSelected();
+			}
+		}
+
+		p->SendDevWayPointsOfSelected();
+	}
+}
+
+void ZPlayer::mclick_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	p->mbutton.down = true;
+}
+
+void ZPlayer::munclick_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	p->mbutton.down = false;
+}
+
+void ZPlayer::wheelup_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	p->MainMenuWheelUp();
+	if(p->active_menu) p->active_menu->WheelUpButton();
+	if(p->gui_window) p->gui_window->WheelUpButton();
+	if(p->gui_factory_list) p->gui_factory_list->WheelUpButton();
+}
+
+void ZPlayer::wheeldown_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	p->MainMenuWheelDown();
+	if(p->active_menu) p->active_menu->WheelDownButton();
+	if(p->gui_window) p->gui_window->WheelDownButton();
+	if(p->gui_factory_list) p->gui_factory_list->WheelDownButton();
+}
+
+void ZPlayer::keydown_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	key_event *pi = (key_event*)data;
+	int the_key = pi->the_key;
+	int the_unicode = pi->the_unicode;
+	
+	if(the_unicode) p->ProcessUnicode(the_unicode);
+
+	//printf("keydown:%d unicode:%d\n", the_key, the_unicode);
+
+	p->SetAsciiState(the_key, true);
+
+	//#120: Enter/Return dismisses the post-match summary and advances
+    if(p->show_match_summary) {
+        if(the_key==SDLK_RETURN || the_key==SDLK_KP_ENTER) p->ChooseMatchAction(p->hosted_setup_available ? 1 : 0);
+        else if(the_key=='r') p->ChooseMatchAction(1);
+        else if(the_key==SDLK_ESCAPE) p->ChooseMatchAction(p->hosted_setup_available ? 2 : 0);
+        else if(the_key==SDLK_F1 && p->zvote.VoteInProgress()) p->SendVoteYes();
+        else if(the_key==SDLK_F2 && p->zvote.VoteInProgress()) p->SendVoteNo();
+        else if(the_key==SDLK_F3 && p->zvote.VoteInProgress()) p->SendVotePass();
+        return;
+    }
+    if(p->summary_pending) return;
+    if(!p->gui_menu_list.empty() && the_key!=SDLK_ESCAPE) return;
+
+	//the four letter pan keys (WASD unless rebound in Settings -> Keys)
+	{
+		int pan = ZPrefs_PanActionForKey(the_key);
+		if(pan >= 0)
+		{
+			if(!p->collect_chat_message && !p->CtrlDown() && !p->AltDown())
+			{
+				if(pan == ZKEY_PAN_UP && !p->up_down)
+					{ p->up_down = true; p->vert_scroll_over = 0; p->last_vert_scroll_time = current_time(); }
+				else if(pan == ZKEY_PAN_DOWN && !p->down_down)
+					{ p->down_down = true; p->vert_scroll_over = 0; p->last_vert_scroll_time = current_time(); }
+				else if(pan == ZKEY_PAN_RIGHT && !p->right_down)
+					{ p->right_down = true; p->horz_scroll_over = 0; p->last_horz_scroll_time = current_time(); }
+				else if(pan == ZKEY_PAN_LEFT && !p->left_down)
+					{ p->left_down = true; p->horz_scroll_over = 0; p->last_horz_scroll_time = current_time(); }
+			}
+			return;
+		}
+	}
+
+	switch(the_key)
+	{
+		case '0':
+		case '1':
+		case '2':
+		case '3':
+		case '4':
+		case '5':
+		case '6':
+		case '7':
+		case '8':
+		case '9':
+			if(p->CtrlDown())
+				p->select_info.SetGroup(the_key - '0');
+			else
+			{
+				p->LoadControlGroup(the_key - '0');
+				//p->select_info.LoadGroup(the_key - '0');
+				//p->DetermineCursor();
+				//p->ClearDevWayPointsOfSelected();
+				//p->GiveHudSelected();
+			}
+			break;
+		case 27: //esc key
+			//was exit(0) — an accidental ESC instantly killed the game. Toggle
+			//the in-game menu instead (it has Quit, which itself confirms).
+            p->BackFromMenu();
+			break;
+		case SDLK_RCTRL: // rctrl
+			p->rctrl_down = true;
+			break;
+		case SDLK_LCTRL: // lctrl
+			p->lctrl_down = true;
+			break;
+		case SDLK_RALT: // ralt
+			p->ralt_down = true;
+			break;
+		case SDLK_LALT: // lalt
+			p->lalt_down = true;
+			break;
+		case SDLK_UP: //up
+			//p->zmap.ShiftViewUp();
+			if(!p->up_down)
+			{
+				p->up_down = true;
+				p->vert_scroll_over = 0;
+				p->last_vert_scroll_time = current_time();
+			}
+			break;
+		case SDLK_DOWN: //down
+			//p->zmap.ShiftViewDown();
+			if(!p->down_down)
+			{
+				p->down_down = true;
+				p->vert_scroll_over = 0;
+				p->last_vert_scroll_time = current_time();
+			}
+			break;
+		case SDLK_RIGHT: //right
+			//p->zmap.ShiftViewRight();
+			if(!p->right_down)
+			{
+				p->right_down = true;
+				p->horz_scroll_over = 0;
+				p->last_horz_scroll_time = current_time();
+			}
+			break;
+		case SDLK_LEFT: //left
+			//p->zmap.ShiftViewLeft();
+			if(!p->left_down)
+			{
+				p->left_down = true;
+				p->horz_scroll_over = 0;
+				p->last_horz_scroll_time = current_time();
+			}
+			break;
+		//#138: WASD pans the view like the arrow keys (W=up, A=left, S=down,
+		//D=right). Skip while typing chat, and when Ctrl/Alt is held so the
+		//letter shortcuts (Ctrl+A select-all, Alt+V fullscreen, ...) still work.
+		case SDLK_LSHIFT: //left shift
+			p->lshift_down = true;
+			break;
+		case SDLK_RSHIFT: //right shift
+			p->rshift_down = true;
+			break;
+		case SDLK_F1:
+			p->SendVoteYes();
+			break;
+		case SDLK_F2:
+			p->SendVoteNo();
+			break;
+		case SDLK_F3:
+			p->SendVotePass();
+			break;
+		case SDLK_F12:
+			//diagnostics: append selected units' state to zod_diag.log (bug reports)
+			p->DumpDiagnostics();
+			break;
+		case SDLK_PAUSE:
+			//toggle pause mid-game (the dedicated Pause/Break key; keyboards without
+			//one use Z, handled in ProcessUnicode). #79 follow-up.
+			{
+				bool will_pause = !p->ztime.IsPaused();
+				p->SendSetPaused(will_pause);
+				p->AddNewsEntry(will_pause ? "PAUSED - press " + ZPrefs_KeyLabel(zod_keys[ZKEY_PAUSE]) + " to resume" : "resumed");
+			}
+			break;
+	}
+}
+
+void ZPlayer::keyup_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	key_event *pi = (key_event*)data;
+	int the_key = pi->the_key;
+	int the_unicode = pi->the_unicode;
+	//printf("keyup:%d\n", the_key);
+
+	p->SetAsciiState(the_key, false);
+
+	//releasing a (possibly rebound) pan key
+	switch(ZPrefs_PanActionForKey(the_key))
+	{
+		case ZKEY_PAN_UP:    p->up_down = false; break;
+		case ZKEY_PAN_DOWN:  p->down_down = false; break;
+		case ZKEY_PAN_RIGHT: p->right_down = false; break;
+		case ZKEY_PAN_LEFT:  p->left_down = false; break;
+		default: break;
+	}
+
+	switch(the_key)
+	{
+		case SDLK_RCTRL: // rctrl
+			p->rctrl_down = false;
+			break;
+		case SDLK_LCTRL: // lctrl
+			p->lctrl_down = false;
+			break;
+		case SDLK_RALT: // ralt
+			p->ralt_down = false;
+			break;
+		case SDLK_LALT: // lalt
+			p->lalt_down = false;
+			break;
+		case SDLK_UP: //up
+			p->up_down = false;
+			break;
+		case SDLK_DOWN: //down
+			p->down_down = false;
+			break;
+		case SDLK_RIGHT: //right
+			p->right_down = false;
+			break;
+		case SDLK_LEFT: //left
+			p->left_down = false;
+			break;
+		//#138: WASD release clears the same scroll flags as the arrow keys
+		case SDLK_LSHIFT: //left shift
+			p->lshift_down = false;
+			if(!p->ShiftDown()) p->SendDevWayPointsOfSelected();
+			break;
+		case SDLK_RSHIFT: //right shift
+			p->rshift_down = false;
+			if(!p->ShiftDown()) p->SendDevWayPointsOfSelected();
+			break;
+	}
+}
+
+void ZPlayer::test_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	if(size) printf("ZPlayer::test_event:%s...\n", data);
+}
+
+void ZPlayer::connect_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	p->ProcessConnect(!p->deployment_handshake);
+
+	p->SendLogin();
+}
+
+void ZPlayer::disconnect_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	p->ProcessDisconnect();
+}
+
+void ZPlayer::store_map_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	p->frontend.DeploymentStage("Loading terrain and map data");
+	int done = p->ProcessMapDownload(data, size);
+
+	if(p->zmap.Loaded())
+	{
+        p->frontend.DeploymentStage("Preparing units and objectives");
+		//#183: the map's object descriptors are now loaded - gate cranes out of the
+		//production GUI on maps with no bridges (matches the server's validation).
+		p->buildlist.SetMapHasBridges(p->MapHasBridges());
+
+		//#79: a map just loaded - drop any menu-first / map-picker overlay so we
+		//land cleanly in the game. BUT keep the matchmaking lobby: you join a
+		//PAUSED match, its map then arrives, and you must stay in the lobby (ready
+		//up, wait for a fellow) until the match actually starts - closing it here
+		//dropped you straight into the game with no lobby at all.
+		bool in_lobby = false;
+		for(vector<ZGuiMainMenuBase*>::iterator i=p->gui_menu_list.begin(); i!=p->gui_menu_list.end(); ++i)
+			if((*i)->GetMenuType() == GMM_LOBBY) { in_lobby = true; break; }
+
+		if(in_lobby)
+			ZDiag("store_map: map loaded but lobby open - keeping lobby (not closing menus)");
+		else
+			p->CloseMainMenus();
+
+		p->zmap.SetViewingDimensions(p->init_w - 100, p->init_h - 36);
+		p->zhud.SetTerrainType((planet_type)p->zmap.GetMapBasics().terrain_type);
+		p->zhud.GetMiniMap().Setup_Boundaries();
+		p->InitAnimals();
+
+		//zoom in if this map is narrower/shorter than the view (no black edge)
+		p->AutoZoomToFillMap();
+
+		if(p->graphics_loaded)
+			ZMusicEngine::PlayPlanetMusic(p->zmap.GetMapBasics().terrain_type);
+	}
+	else if(done)
+	{
+		//#79: the map download finished but the server sent no map - it's idling
+		//in menu-first mode. Open the main menu so the player can pick a map or
+		//adjust settings; RenderScreen draws it over the idle background.
+		p->OpenStartMenu();
+	}
+}
+
+void ZPlayer::add_new_object_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	ZObject *obj;
+
+	obj = p->ProcessNewObject(data, size);
+
+	//is it our fort? or something else particular
+	if(obj)
+	{
+		unsigned char ot, oid;
+
+		obj->GetObjectID(ot, oid);
+
+		if(ot == BUILDING_OBJECT && (oid == FORT_FRONT || oid == FORT_BACK) && obj->GetOwner() == p->our_team)
+		{
+			p->fort_ref_id = obj->GetRefID();
+			p->FocusCameraToFort();
+		}
+
+		//if(ot == MAP_ITEM_OBJECT && oid == ROCK_ITEM) ORock::SetupRockRenders(p->zmap, p->object_list);
+		if(ot == MAP_ITEM_OBJECT && oid == ROCK_ITEM) ORock::EditRockRender(p->zmap, p->object_list, obj, true);
+
+		obj->CreationMapEffects(p->zmap);
+
+		//set effect list
+		obj->SetEffectList(&p->GetEffectList());
+	}
+
+	//make the buttons available that let you cycle through your units
+	p->ReSetupButtons();
+
+	p->ProcessChangeObjectAmount();
+}
+
+void ZPlayer::set_zone_info_event(ZPlayer *p, char *data, int size, int dummy)
+{
+    if(size==sizeof(zone_info_packet)) {
+        zone_info_packet packet; memcpy(&packet,data,sizeof(packet));
+        if(packet.zone_number>=0 && packet.zone_number<(int)p->zmap.GetZoneInfoList().size()
+           && packet.owner>=NULL_TEAM && packet.owner<MAX_TEAM_TYPES) {
+            auto previous=p->seen_zone_owners.find(packet.zone_number);
+            if(previous!=p->seen_zone_owners.end() && previous->second!=packet.owner
+               && packet.owner==p->our_team && p->our_team!=NULL_TEAM && !p->show_match_summary && !p->summary_pending)
+                ++p->match_zones_captured;
+            p->seen_zone_owners[packet.zone_number]=packet.owner;
+        }
+    }
+    p->ProcessZoneInfo(data, size);
+}
+
+void ZPlayer::display_news_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	const double lasting_time = 10.0;
+	news_entry new_entry;
+	//SDL_Color textcolor;
+
+	if(size <= 5) return;
+
+	//extract
+	memcpy(&new_entry.r, data, 1);
+	memcpy(&new_entry.g, data+1, 1);
+	memcpy(&new_entry.b, data+2, 1);
+	new_entry.message = data+3;
+    if(new_entry.message.find("error")!=string::npos||new_entry.message.find("blocked")!=string::npos||new_entry.message.find("Unit limit")!=string::npos||new_entry.message.find("Order rejected")!=string::npos)p->BattleFeedback(new_entry.message);
+    if(new_entry.message.compare(0,11,"@objective|")==0){p->ReceiveObjective(new_entry.message);return;}
+
+	p->AddNewsEntry(new_entry.message, new_entry.r, new_entry.g, new_entry.b);
+    if(p->frontend.Loading()&&(new_entry.message.find("locked")!=string::npos||new_entry.message.find("invalid map")!=string::npos||new_entry.message.find("could not")!=string::npos||new_entry.message.find("must be logged")!=string::npos||new_entry.message.find("not allowed")!=string::npos||new_entry.message.find("damaged")!=string::npos||new_entry.message.find("no saved game")!=string::npos))p->frontend.DeploymentFailed(new_entry.message);
+    if(new_entry.message.find("error")!=string::npos || new_entry.message.find("spectating")!=string::npos
+       || new_entry.message.find("Ready is only")!=string::npos || new_entry.message.find("disabled")!=string::npos)
+        for(auto *menu:p->gui_menu_list) if(auto *lobby=dynamic_cast<GMMLobby*>(menu)) lobby->SetError(new_entry.message);
+
+	/*
+	//alloc
+	new_entry = new news_entry;
+
+	//extract
+	memcpy(&new_entry->r, data, 1);
+	memcpy(&new_entry->g, data+1, 1);
+	memcpy(&new_entry->b, data+2, 1);
+	new_entry->message = data+3;
+
+	//a hack to get software renderer working again...
+	//(don't ever allow setting to the invisible "color key" color
+	if(!new_entry->r && !new_entry->g && !new_entry->b)
+		new_entry->r = 1;
+
+	//make surface
+	textcolor.r = new_entry->r;
+	textcolor.g = new_entry->g;
+	textcolor.b = new_entry->b;
+	//new_entry.text_image = TTF_RenderText_Solid(p->ttf_font, new_entry.message.c_str(), textcolor);
+	//new_entry->text_image.LoadBaseImage(TTF_RenderText_Solid(p->ttf_font, new_entry->message.c_str(), textcolor));
+	new_entry->text_image.LoadBaseImage(ZFontEngine::GetFont(SMALL_WHITE_FONT).Render(new_entry->message.c_str()));
+	
+	//a hack to get software renderer working again...
+	if(!p->use_opengl && new_entry->text_image.GetBaseSurface())
+	{
+		ZSDL_ModifyBlack(new_entry->text_image.GetBaseSurface());
+		new_entry->text_image.UseDisplayFormat();
+		SDL_SetSurfaceColorKey(new_entry->text_image.GetBaseSurface(), true, 0x000000); 
+	}
+
+
+	//set death time
+	new_entry->death_time = current_time() + lasting_time;
+
+	if(new_entry->text_image.GetBaseSurface())
+	  p->news_list.insert(p->news_list.begin(), new_entry);
+	else
+	  printf("ZPlayer::display_news_event: was not about to render news message:%s...\n", new_entry->message.c_str());
+	*/
+}
+
+void ZPlayer::set_object_waypoints_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	ZObject *our_object;
+
+	our_object = p->ProcessWaypointData(data, size);
+
+	//did any objects get their waypoint list updated?
+	if(!our_object) return;
+
+	//the old route belonged to the old waypoints; the server relays a fresh
+	//one (SEND_UNIT_ROUTE) once it is computed
+	our_object->GetClientRoute().clear();
+
+	//tell this object to render its waypoint list for some time
+	our_object->ShowWaypoints();
+}
+
+void ZPlayer::set_object_route_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	int ref_id;
+	int point_amount;
+	ZObject *our_object;
+
+	//does it hold the header info?
+	if(size < 8) return;
+
+	ref_id = PacketGetInt(data, 0);
+	point_amount = PacketGetInt(data, 4);
+
+	//should we toss this packet for bad data?
+	if(point_amount < 0) return;
+	if(size != 8 + (point_amount * 8)) return;
+
+	our_object = GetObjectFromID(ref_id, p->object_list);
+
+	//not found?
+	if(!our_object) return;
+
+	//store the route for the waypoint-line renderer
+	{
+		vector<ZPath_Finding_AStar::pf_point> &route = our_object->GetClientRoute();
+		route.clear();
+		int off = 8;
+		for(int i=0;i<point_amount;i++)
+		{
+			int x = PacketGetInt(data, off); off += 4;
+			int y = PacketGetInt(data, off); off += 4;
+			route.push_back(ZPath_Finding_AStar::pf_point(x, y));
+		}
+	}
+}
+
+void ZPlayer::set_object_rallypoints_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	ZObject *our_object;
+
+	our_object = p->ProcessRallypointData(data, size);
+
+	//did any objects get their waypoint list updated?
+	if(!our_object) return;
+}
+
+void ZPlayer::set_object_loc_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	ZObject *obj;
+
+	obj = p->ProcessObjectLoc(data, size);
+	//int ref_id;
+	//object_location new_loc;
+
+	//if(size != 4 + sizeof(object_location)) return;
+
+	//ref_id = ((int*)data)[0];
+	//memcpy(&new_loc, data+4, sizeof(object_location));
+
+	//obj = p->GetObjectFromID(ref_id, p->object_list);
+
+	//if(!obj) return;
+
+	//obj->SetLoc(new_loc);
+}
+
+void ZPlayer::set_object_team_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	ZObject *obj;
+
+	obj = p->ProcessObjectTeam(data, size);
+
+	if(obj)
+	{
+		//deselect if does not belong to us anymore
+		if(obj->GetOwner() != p->our_team)
+			p->select_info.DeleteObject(obj);
+	}
+}
+
+void ZPlayer::set_object_attack_object_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	ZObject *obj;
+
+	obj = p->ProcessObjectAttackObject(data, size);
+
+	if(!obj) return;
+
+	//set the little flashy A in the hud?
+	if(obj->GetAttackObject() && 
+		obj->GetAttackObject()->GetOwner() == p->our_team &&
+		p->zhud.GetARefID() == -1 &&
+		!(rand() % 5))
+	{
+		p->zhud.SetARefID(obj->GetAttackObject()->GetRefID());
+
+		if(!p->zhud.GetAPortrait().DoingAnim())
+		{
+			p->zhud.GetAPortrait().SetObject(obj->GetAttackObject());
+			p->zhud.GetAPortrait().StartAnim(WERE_UNDER_ATTACK_ANIM);
+		}
+
+		//add this event to the spacebar event list
+		p->AddSpaceBarEvent(SpaceBarEvent(obj->GetAttackObject()->GetRefID(), true));
+	}
+
+	//if(obj->GetAttackObject())
+	//	printf("obj:%s now attacking %s\n", obj->GetObjectName().c_str(), obj->GetAttackObject()->GetObjectName().c_str());
+	//else
+	//	printf("obj:%s now attacking nothing\n", obj->GetObjectName().c_str());
+}
+
+void ZPlayer::delete_object_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	ZObject *obj;
+
+	obj = p->ProcessDeleteObject(data, size);
+
+	if(!obj) return;
+
+	//this is now done inside of ProcessDeleteObject
+	////now we have to make sure no other part of the client is using this pointer
+	//p->DeleteObjectCleanUp(obj);
+}
+
+void ZPlayer::set_object_health_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	ZObject *obj;
+
+	obj = p->ProcessObjectHealthTeam(data, size);
+
+	if(!obj) return;
+
+	obj->DoHitEffect();
+}
+
+//#136: server says the match is over and we should go back to the main menu
+//(menu-driven session) rather than auto-load the next map.
+void ZPlayer::return_to_menu_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	p->summary_menu_ready=true;
+    if(p->summary_continue_sent||(!p->show_match_summary&&!p->summary_pending))p->CompleteMenuReturn();
+}
+
+void ZPlayer::end_game_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	if(p->summary_pending || p->show_match_summary) return;
+	p->ProcessEndGame();
+
+	//#88: the match is over. Losers get no TEAM_ENDED, so decide win/loss here
+	//from whether we still have any combat unit on the field, freeze the elapsed
+	//time, and raise the summary panel for the server's end-of-game pause. Skip
+	//for spectators (no real team of our own).
+	if(p->our_team > NULL_TEAM && p->our_team < MAX_TEAM_TYPES)
+	{
+		bool have_units = false;
+
+		for(vector<ZObject*>::iterator i=p->object_list.begin(); i!=p->object_list.end(); i++)
+		{
+			if((*i)->GetOwner() != p->our_team || (*i)->IsDestroyed()) continue;
+
+			unsigned char ot, oid;
+			(*i)->GetObjectID(ot, oid);
+
+			if(ot == ROBOT_OBJECT || ot == VEHICLE_OBJECT || ot == CANNON_OBJECT)
+			{
+				have_units = true;
+				break;
+			}
+		}
+
+		if(!p->match_result_known) p->match_won = have_units;
+		p->match_duration = p->MatchElapsed();
+		p->BuildMatchSummary();
+		p->RecordHighScore();
+		ZMusicEngine::PlayResultMusic(p->match_won);
+
+		//#120/#180: don't pop the summary over the explosions. Wait until every
+		//on-screen explosion sprite has finished animating, THEN add a 3s buffer;
+		//ProcessGame schedules summary_show_time once the effects have drained.
+		//Stays up until the player dismisses it (see lclick/keydown -> Continue).
+		p->summary_pending = true;
+		p->summary_continue_sent = false;
+		p->summary_end_time = current_time();
+		p->summary_show_time = 0;   //0 = not scheduled yet; set once explosions end
+	}
+}
+
+void ZPlayer::reset_game_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	p->frontend.DeploymentStage("Preparing units and battle state");
+	p->ProcessResetGame();
+    if(p->managed_dedicated) {
+        p->lobby_countdown=-1;p->lobby_pause_confirmed=false;
+        p->CloseAllMenus();p->LoadMainMenu(GMM_LOBBY);
+    }
+}
+
+void ZPlayer::fire_object_missile_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	p->ProcessFireMissile(data, size);
+}
+
+void ZPlayer::destroy_object_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	destroy_object_packet *pi = (destroy_object_packet*)data;
+	ZObject *obj;
+	int i;
+
+	//good packet?
+	if(size < sizeof(destroy_object_packet)) return;
+
+	obj = p->GetObjectFromID(pi->ref_id, p->object_list);
+
+	if(!obj) return;
+
+	//good packet (double check)?
+	if(size != sizeof(destroy_object_packet) + (sizeof(fire_missile_info) * pi->fire_missile_amount)) return;
+
+	//#88: tally combat-unit losses/kills for the end-of-match summary. Our unit
+	//dying is a loss; an enemy combat unit dying to one of ours is a kill (the
+	//killer's owner is checked so a third team's kill isn't credited to us).
+	{
+		unsigned char ot, oid;
+		obj->GetObjectID(ot, oid);
+
+		if(ot == ROBOT_OBJECT || ot == VEHICLE_OBJECT || ot == CANNON_OBJECT)
+		{
+			if(obj->GetOwner() == p->our_team)
+				p->match_units_lost++;
+			else if(pi->killer_ref_id != -1)
+			{
+				ZObject *kobj = ZObject::GetObjectFromID(pi->killer_ref_id, p->object_list);
+				if(kobj && kobj->GetOwner() == p->our_team)
+					p->match_enemies_killed++;
+			}
+		}
+	}
+
+	obj->SetHealth(0, p->zmap);
+	obj->DoDeathEffect(pi->do_fire_death, pi->do_missile_death);
+
+	//if(pi->fire_missile) obj->FireTurrentMissile(pi->missile_x, pi->missile_y, pi->missile_offset_time);
+	for(i=0;i<pi->fire_missile_amount;i++)
+	{
+		fire_missile_info missile_info;
+
+		memcpy((char*)&missile_info, data + sizeof(destroy_object_packet) + (sizeof(fire_missile_info) * i), sizeof(fire_missile_info));
+		obj->FireTurrentMissile(missile_info.missile_x, missile_info.missile_y, missile_info.missile_offset_time);
+	}
+
+	//was it our fort, if so run to it
+	if(obj->GetRefID() == p->fort_ref_id)
+	{
+		//run to it
+		int x, y;
+		obj->GetCenterCords(x, y);
+		p->FocusCameraTo(x, y);
+	}
+	else
+	//is it the last enemy fort?
+	{
+		unsigned char ot, oid;
+		bool other_teams_exist = false;
+
+		for(int i=RED_TEAM;i<MAX_TEAM_TYPES; i++)
+			if(i != p->our_team && i != obj->GetOwner() && p->team_units_available[i] > 0)
+			{
+				other_teams_exist = true;
+				break;
+			}
+
+		obj->GetObjectID(ot, oid);
+
+		if((ot == BUILDING_OBJECT && (oid == FORT_FRONT || oid == FORT_BACK)) &&
+			obj->GetOwner() != p->our_team &&
+			p->team_units_available[p->our_team] > 0 &&
+			!other_teams_exist)
+		{
+			int x, y;
+			obj->GetCenterCords(x, y);
+			p->FocusCameraTo(x, y);
+		}
+	}
+
+	//was this the target of our "A" unit?
+	if(pi->killer_ref_id != -1 && p->zhud.GetARefID() != -1 && !p->zhud.GetAPortrait().DoingAnim())
+	{
+		ZObject *aobj;
+		ZObject *kobj;
+
+		aobj = ZObject::GetObjectFromID(p->zhud.GetARefID(), p->object_list);
+		kobj = ZObject::GetObjectFromID(pi->killer_ref_id, p->object_list);
+
+		//is the killer one of us and near our "A" unit?
+		if(aobj && kobj && (kobj->GetOwner() == p->our_team))
+		{
+			int ax, ay, kx, ky;
+
+			aobj->GetCenterCords(ax, ay);
+			kobj->GetCenterCords(kx, ky);
+
+			if(aobj == kobj || points_within_distance(ax, ay, kx, ky, 100))
+			{
+				static int last_anim = -1;
+				int next_anim;
+
+				next_anim = rand() % 7;
+				while(next_anim == last_anim)
+					next_anim = rand() % 7;
+
+				last_anim = next_anim;
+
+				p->zhud.GetAPortrait().SetObject(kobj);
+				p->zhud.GetAPortrait().StartAnim(GOOD_HIT_ANIM + next_anim);
+			}
+		}
+	}
+
+	//delete it?
+	if(pi->destroy_object)
+	{
+		p->DeleteObjectCleanUp(obj);
+		p->ols.DeleteObject(obj);
+	}
+}
+
+void ZPlayer::set_building_state_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	ZObject *obj;
+
+	obj = p->ProcessBuildingState(data, size);
+}
+
+void ZPlayer::set_building_cannon_list_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	ZObject *obj;
+
+	obj = p->ProcessBuildingCannonList(data, size);
+}
+
+void ZPlayer::set_computer_message_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	computer_msg_packet *pi = (computer_msg_packet*)data;
+
+	//good packet?
+	if(size != sizeof(computer_msg_packet)) return;
+
+	//process
+	switch(pi->sound)
+	{
+	case COMP_VEHICLE_SND:
+		ZSoundEngine::PlayWav(pi->sound);
+		p->zcomp_msg.DisplayMessage(VEHICLE_MANUFACTURED_MSG, pi->ref_id);p->BattleFeedback("Vehicle manufactured. Space focuses the new unit.");
+		p->AddSpaceBarEvent(SpaceBarEvent(pi->ref_id, true));
+		break;
+	case COMP_ROBOT_SND:
+		ZSoundEngine::PlayWav(pi->sound);
+		p->zcomp_msg.DisplayMessage(ROBOT_MANUFACTURED_MSG, pi->ref_id);p->BattleFeedback("Infantry manufactured. Space focuses the new squad.");
+		p->AddSpaceBarEvent(SpaceBarEvent(pi->ref_id, true));
+		break;
+	case COMP_GUN_SND:
+		ZSoundEngine::PlayWav(pi->sound);
+		p->zcomp_msg.DisplayMessage(GUN_MANUFACTURED_MSG, pi->ref_id);p->BattleFeedback("Cannon ready. Space opens its factory.");
+		p->AddSpaceBarEvent(SpaceBarEvent(pi->ref_id, false, true));
+		break;
+	case COMP_STARTING_MANUFACTURE_SND:
+		ZSoundEngine::PlayWav(pi->sound);
+		break;
+	case COMP_MANUFACTURING_CANCELED_SND:
+		ZSoundEngine::PlayWav(pi->sound);
+		break;
+	case COMP_TERRITORY_LOST_SND:
+		ZSoundEngine::PlayWav(pi->sound);
+		break;
+	case COMP_RADAR_ACTIVATED_SND:
+		ZSoundEngine::PlayWav(pi->sound);
+		break;
+	}
+}
+
+void ZPlayer::set_object_group_info_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	ZObject *obj;
+
+	obj = p->ProcessObjectGroupInfo(data, size);
+	//int ref_id;
+	//ZObject *obj;
+
+	////needs to atleast hold the ref_id at this point
+	//if(size < 4) return;
+
+	//ref_id = *(int*)data;
+
+	//obj = p->GetObjectFromID(ref_id, p->object_list);
+
+	//if(!obj) return;
+
+	//obj->ProcessGroupInfoData(data, size, p->object_list);
+}
+
+void ZPlayer::do_crane_anim_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	crane_anim_packet *pi = (crane_anim_packet*)data;
+	ZObject *obj;
+	ZObject *rep_obj;
+
+	//good packet?
+	if(size != sizeof(crane_anim_packet)) return;
+
+	obj = p->GetObjectFromID(pi->ref_id, p->object_list);
+
+	if(!obj) return;
+
+	rep_obj = p->GetObjectFromID(pi->rep_ref_id, p->object_list);
+
+	obj->DoCraneAnim(pi->on, rep_obj);
+}
+
+void ZPlayer::set_repair_building_anim_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	repair_building_anim_packet *pi = (repair_building_anim_packet*)data;
+	ZObject *obj;
+
+	//good packet?
+	if(size != sizeof(repair_building_anim_packet)) return;
+
+	obj = p->GetObjectFromID(pi->ref_id, p->object_list);
+
+	if(!obj) return;
+
+	obj->DoRepairBuildingAnim(pi->on, pi->remaining_time);
+
+	if(pi->play_sound && obj->GetOwner() == p->our_team)
+	{
+		if(pi->on)
+			ZSoundEngine::PlayWav(COMP_STARTING_REPAIR_SND);
+		else
+		{
+			ZSoundEngine::PlayWav(COMP_VEHICLE_REPAIRED_SND);
+
+			//store space bar event
+			p->AddSpaceBarEvent(SpaceBarEvent(pi->ref_id));
+		}
+	}
+}
+
+void ZPlayer::set_settings_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	p->ProcessZSettings(data, size);
+	////good packet?
+	//if(size != sizeof(ZSettings)) return;
+
+	////stuff it
+	//memcpy(&p->zsettings, data, sizeof(ZSettings));
+}
+
+void ZPlayer::set_lid_open_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	ZObject *obj;
+
+	obj = p->ProcessObjectLidState(data, size);
+	//set_lid_state_packet *pi = (set_lid_state_packet*)data;
+	//ZObject *obj;
+
+	////good packet?
+	//if(size != sizeof(set_lid_state_packet)) return;
+
+	//obj = p->GetObjectFromID(pi->ref_id, p->object_list);
+
+	//if(!obj) return;
+
+	//obj->SetLidState(pi->lid_open);
+}
+
+void ZPlayer::snipe_object_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	snipe_object_packet *pi = (snipe_object_packet*)data;
+	ZObject *obj;
+
+	//good packet?
+	if(size != sizeof(snipe_object_packet)) return;
+
+	obj = p->GetObjectFromID(pi->ref_id, p->object_list);
+
+	if(!obj) return;
+
+	int cx, cy;
+
+	obj->GetCenterCords(cx, cy);
+
+	p->effect_list.push_back((ZEffect*)(new ERobotTurrent(&(p->ztime), cx, cy-4, obj->GetOwner())));
+}
+
+void ZPlayer::driver_hit_effect_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	driver_hit_packet *pi = (driver_hit_packet*)data;
+	ZObject *obj;
+
+	//good packet?
+	if(size != sizeof(driver_hit_packet)) return;
+
+	obj = p->GetObjectFromID(pi->ref_id, p->object_list);
+
+	if(!obj) return;
+
+	obj->DoDriverHitEffect();
+}
+
+void ZPlayer::clear_player_list_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	p->player_info.clear();
+}
+
+void ZPlayer::add_player_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	p->ProcessAddLPlayer(data, size);
+}
+
+void ZPlayer::delete_player_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	p->ProcessDeleteLPlayer(data, size);
+}
+
+void ZPlayer::set_player_name_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	p->ProcessSetLPlayerName(data, size);
+}
+
+void ZPlayer::set_player_team_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	p->ProcessSetLPlayerTeam(data, size);
+} 
+
+void ZPlayer::set_player_mode_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	p->ProcessSetLPlayerMode(data, size);
+}
+
+void ZPlayer::set_player_ignored_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	p->ProcessSetLPlayerIgnored(data, size);
+}
+
+void ZPlayer::set_player_ready_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	p->ProcessSetLPlayerReady(data, size);
+}
+
+void ZPlayer::set_player_loginfo_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	p->ProcessSetLPlayerLogInfo(data, size);
+}
+
+void ZPlayer::set_player_voteinfo_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	p->ProcessSetLPlayerVoteInfo(data, size);
+
+	//update vote numbers maybe
+	if(p->zvote.VoteInProgress())
+		p->zvote.SetupImages(p->OurPInfo().real_voting_power(), p->VotesNeeded(), p->VotesFor(), p->VotesAgainst(), p->VoteAppendDescription());
+		//p->zvote.SetupImages(p->OurPInfo().voting_power, p->VotesNeeded(), p->VotesFor(), p->VotesAgainst(), p->VoteAppendDescription());
+}
+
+void ZPlayer::update_game_paused_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	if(size==sizeof(update_game_paused_packet) && data) p->lobby_pause_confirmed=true;
+	p->ProcessUpdateGamePaused(data, size);
+}
+
+void ZPlayer::update_game_speed_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	p->ProcessUpdateGameSpeed(data, size);
+}
+
+void ZPlayer::set_vote_info_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	p->ProcessVoteInfo(data, size);
+
+	//setup images if we'll be rendering them
+	if(p->zvote.VoteInProgress())
+		p->zvote.SetupImages(p->OurPInfo().real_voting_power(), p->VotesNeeded(), p->VotesFor(), p->VotesAgainst(), p->VoteAppendDescription());
+		//p->zvote.SetupImages(p->OurPInfo().voting_power, p->VotesNeeded(), p->VotesFor(), p->VotesAgainst(), p->VoteAppendDescription());
+}
+
+void ZPlayer::set_player_id_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	p->ProcessPlayerID(data, size);
+}
+
+void ZPlayer::set_selectable_map_list_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	p->ProcessSelectableMapList(data, size);
+}
+
+//#77: the server tells us how far the campaign is unlocked; the Select-Map menu
+//marks anything past it as locked. (Skirmish never sends this, so the default
+//"nothing locked" stands.)
+void ZPlayer::set_campaign_unlock_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	if(size < (int)sizeof(int)) return;
+	p->campaign_max_unlocked = PacketGetInt(data, 0);
+}
+
+//#93: the server's map filename, so an F12 dump names the exact map to reproduce on.
+void ZPlayer::set_map_name_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	if(size <= 0 || !data) { p->game_map_name.clear(); return; }
+	data[size-1] = 0;   //ensure null-terminated
+	p->game_map_name = data;
+}
+
+void ZPlayer::display_login_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	loginoff_packet *pi = (loginoff_packet*)data;
+
+	//good packet?
+	if(size != sizeof(loginoff_packet)) return;
+
+	if(pi->show_login)
+	{
+		//already shown?
+		if(p->active_menu == p->login_menu) return;
+		if(p->active_menu == p->create_user_menu) return;
+
+		//then show it
+		p->active_menu = p->login_menu;
+	}
+	else
+	{
+		//hide it if shown
+		if(p->active_menu == p->login_menu) p->active_menu = NULL;
+		if(p->active_menu == p->create_user_menu) p->active_menu = NULL;
+	}
+}
+
+void ZPlayer::set_grenade_amount_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	ZObject *obj;
+
+	obj = p->ProcessSetGrenadeState(data, size);
+
+	if(!obj) return;
+
+	if(p->zhud.GetSelectedObject() == obj)
+		p->zhud.ReRenderAll();
+
+	if(p->select_info.UpdateGroupMember(obj))
+		p->DetermineCursor();
+}
+
+void ZPlayer::pickup_grenade_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	int_packet *pi = (int_packet*)data;
+	ZObject *obj;
+
+	//good packet?
+	if(size != sizeof(int_packet)) return;
+
+	obj = GetObjectFromID(pi->ref_id, p->object_list);
+
+	if(!obj) return;
+
+	obj->DoPickupGrenadeAnim();
+
+	if(obj->GetOwner() == p->our_team && !p->zhud.GetAPortrait().DoingAnim())
+	{
+		p->zhud.GetAPortrait().SetObject(obj);
+		p->zhud.GetAPortrait().StartAnim(GRENADES_COLLECTED_ANIM);
+
+		//save space bar event
+		p->AddSpaceBarEvent(SpaceBarEvent(pi->ref_id, true));
+	}
+}
+
+void ZPlayer::do_portrait_anim_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	do_portrait_anim_packet *pi = (do_portrait_anim_packet*)data;
+	ZObject *obj;
+
+	//good packet?
+	if(size != sizeof(do_portrait_anim_packet)) return;
+
+	obj = GetObjectFromID(pi->ref_id, p->object_list);
+
+	if(!obj) return;
+
+	if(obj->GetOwner() != p->our_team) return;
+	if(p->zhud.GetAPortrait().DoingAnim()) return;
+
+	p->zhud.GetAPortrait().SetObject(obj);
+
+	//do the anim
+	switch(pi->anim_id)
+	{
+		case VEHICLE_CAPTURED_ANIM: p->zhud.GetAPortrait().StartAnim(pi->anim_id); break;
+		case GUN_CAPTURED_ANIM: p->zhud.GetAPortrait().StartAnim(pi->anim_id); break;
+		case TERRITORY_TAKEN_ANIM: p->zhud.GetAPortrait().StartAnim(pi->anim_id); break;
+		case TARGET_DESTROYED_ANIM: p->zhud.GetAPortrait().StartAnim(pi->anim_id); break;
+	}
+
+	//store space bar event
+	p->AddSpaceBarEvent(SpaceBarEvent(pi->ref_id, true));
+}
+
+void ZPlayer::team_ended_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	team_ended_packet *pi = (team_ended_packet*)data;
+
+	//good packet?
+	if(size != sizeof(team_ended_packet)) return;
+
+	if(pi->team != p->our_team) return;
+    p->match_result_known=true; p->match_won=pi->won;
+
+	vector<zhud_end_unit> end_animations;
+
+	for(vector<ZObject*>::iterator i=p->object_list.begin(); i!=p->object_list.end(); i++)
+		if((*i)->GetOwner() == p->our_team)
+	{
+		unsigned char ot, oid;
+
+		(*i)->GetObjectID(ot, oid);
+
+		switch(ot)
+		{
+		case CANNON_OBJECT:
+			end_animations.push_back(zhud_end_unit(ot, oid, (*i)->GetDriverType()));
+			break;
+		case VEHICLE_OBJECT:
+			end_animations.push_back(zhud_end_unit(ot, oid, (*i)->GetDriverType()));
+			break;
+		case ROBOT_OBJECT:
+			end_animations.push_back(zhud_end_unit(ot, oid, oid));
+			break;
+		}
+	}
+
+	p->zhud.StartEndAnimations(end_animations, pi->won);
+}
+
+void ZPlayer::set_team_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	p->ProcessSetTeam(data, size);
+}
+
+void ZPlayer::poll_buy_regkey(ZPlayer *p, char *data, int size, int dummy)
+{
+	if(size) return;
+
+	if(p->is_registered)
+	{
+		p->AddNewsEntry("the zod engine is already registered on this computer");
+	}
+	else
+	{
+		if(!file_can_be_written("registration.zkey"))
+		{
+			p->AddNewsEntry("can not open registration file for writing, please visit www.nighsoft.com for troubleshooting");
+			return;
+		}
+
+		buy_registration_packet packet;
+
+		memset(packet.buf, 0, 16);
+		SocketHandler::GetMAC(packet.buf);
+
+		p->client_socket.SendMessage(BUY_REGKEY, (const char*)&packet, sizeof(buy_registration_packet));
+	}
+}
+
+void ZPlayer::set_regkey(ZPlayer *p, char *data, int size, int dummy)
+{
+	buy_registration_packet *pi = (buy_registration_packet*)data;
+
+	//good packet?
+	if(size != sizeof(buy_registration_packet)) return;
+
+	if(p->is_registered)
+	{
+		p->AddNewsEntry("the zod engine is already registered on this computer");
+	}
+	else
+	{
+		FILE *fp;
+		int ret;
+
+		fp = fopen("registration.zkey", "w");
+
+		if(!fp)
+		{
+			p->AddNewsEntry("new registration key bought but could not save to file! please visit www.nighsoft.com");
+			return;
+		}
+
+		ret = fwrite(pi->buf, 16, 1, fp);
+	
+		if(!ret)
+		{
+			p->AddNewsEntry("new registration key bought but could not save to file! please visit www.nighsoft.com");
+			return;
+		}
+
+		fclose(fp);
+
+		//are we registered now?
+		if(!p->CheckRegistration())
+		{
+			p->AddNewsEntry("new registration key bought but we still are not registered! please visit www.nighsoft.com");
+			return;
+		}
+		else
+		{
+			p->AddNewsEntry("congratulations the zod engine is now registered");
+		}
+	}
+}
+
+void ZPlayer::set_build_queue_list_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	ZObject *obj;
+
+	obj = p->ProcessBuildingQueueList(data, size);
+}
+
+void ZPlayer::request_version_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	version_packet packet;
+
+	//check
+	if(strlen(GAME_VERSION) + 1 >= MAX_VERSION_PACKET_CHARS)
+	{
+		printf("ZPlayer::request_version_event: '%s' too large to fit in a %d char array\n", GAME_VERSION, MAX_VERSION_PACKET_CHARS);
+		return;
+	}
+
+	strcpy(packet.version, GAME_VERSION);
+
+	p->client_socket.SendMessage(GIVE_VERSION, (const char*)&packet, sizeof(version_packet));
+}
+
+void ZPlayer::get_version_event(ZPlayer *p, char *data, int size, int dummy)
+{
+	version_packet *pi = (version_packet*)data;
+	char temp_version[MAX_VERSION_PACKET_CHARS];
+	string message;
+
+	//good packet?
+	if(size != sizeof(version_packet)) return;
+
+	memcpy(temp_version, pi->version, MAX_VERSION_PACKET_CHARS);
+	temp_version[MAX_VERSION_PACKET_CHARS-1] = 0;
+
+	//if not the same as our version
+	if(strcmp(temp_version, GAME_VERSION))
+	{
+		message = "the server version is ";
+		message += temp_version;
+		message += ", which mismatches our version ";
+		message += GAME_VERSION;
+		message += "";
+
+		p->AddNewsEntry(message);
+	}
+	else
+	{
+		message = "the server version is ";
+		message += temp_version;
+
+		p->AddNewsEntry(message);
+	}
+
+}

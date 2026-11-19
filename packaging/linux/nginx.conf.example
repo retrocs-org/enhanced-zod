@@ -1,0 +1,29 @@
+# Replace the hostname and certificate paths. The Zod web service must listen
+# on 127.0.0.1:8088 with --trust-loopback-proxy. This overwrites X-Real-IP;
+# never forward the caller's original value.
+server {
+    listen 443 ssl;
+    server_name zod.example.com;
+    ssl_certificate /etc/letsencrypt/live/zod.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/zod.example.com/privkey.pem;
+    client_max_body_size 64k;
+    location / {
+        proxy_pass http://127.0.0.1:8088;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+}
+server {
+    listen 80;
+    server_name zod.example.com;
+    # Optional read-only discovery endpoint for the current native HTTP browser.
+    # Account, ticket, server-key and result endpoints remain HTTPS-only.
+    location = /matches {
+        limit_except GET { deny all; }
+        proxy_pass http://127.0.0.1:8088;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+    location / { return 308 https://$host$request_uri; }
+}

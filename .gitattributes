@@ -1,0 +1,31 @@
+# Binary game data and assets must NEVER get line-ending conversion. Without
+# this, a Windows checkout with core.autocrlf=true injects \r bytes into these
+# binary files, corrupting them - e.g. a .map then fails ZMap::Read and the
+# engine falls back to its featureless random map. (macOS/Linux were unaffected,
+# so this was a Windows-only "garbage map" bug.)
+*.map       binary
+*.bmp       binary
+*.png       binary
+*.ico       binary
+*.ttf       binary
+*.wav       binary
+*.ogg       binary
+*.mid       binary
+*.tileinfo  binary
+*.xcf       binary
+*.icescene  binary
+*.rar       binary
+*.zip       binary
+*.db        binary
+*.o         binary
+*.LST       binary
+*.MID       binary
+
+# Source files are stored CRLF in this repo and compile fine on every platform;
+# leave their endings ALONE (-text) so git never tries to renormalize them
+# (forcing eol here made every source file show as modified). Only the binary
+# rules above matter for the Windows corruption bug.
+*.cpp  -text
+*.h    -text
+*.txt  -text
+*.md   -text

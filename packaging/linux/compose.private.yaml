@@ -1,0 +1,15 @@
+services:
+  dedicated:
+    build:
+      context: ../..
+      target: dedicated-runtime
+    ports:
+      - "2137:2137/tcp"
+    volumes:
+      - game-state:/data
+    command: ["--mode", "private", "--state", "/data", "--name", "Private Zod server"]
+    restart: unless-stopped
+    stop_grace_period: 15s
+    security_opt: ["no-new-privileges:true"]
+volumes:
+  game-state:

@@ -1,0 +1,6022 @@
+#include "zmovie.h"
+#include "zplayer.h"
+#include "zmenu_theme.h"
+static double MenuRenderScale();
+#include "zhighscore.h"
+#include "zsavegame.h"
+#include "gmm_save_game.h"
+#include "mac_dock_icon.h"
+#include "zprefs.h"
+#include "zpath_debug.h"
+#include "zgamepad.h"
+#include <math.h>
+#include <set>   //#206: DumpRenderOrder dedupes wrecks by ref_id
+
+using namespace COMMON;
+
+static double MenuRenderScale();   //#196: defined near LoadMainMenu
+
+void selection_info::DeleteObject(ZObject *obj)
+{
+	ZObject::RemoveObjectFromList(obj, selected_list);
+
+	for(int i=0;i<10;i++)
+		ZObject::RemoveObjectFromList(obj, quick_group[i]);
+
+	SetupGroupDetails(false);
+}
+
+void selection_info::RemoveFromSelected(ZObject *obj)
+{
+	ZObject::RemoveObjectFromList(obj, selected_list);
+	SetupGroupDetails(false);
+}
+
+bool selection_info::AverageCoordsOfSelected(int &x, int &y)
+{
+	if(!selected_list.size()) return false;
+
+	x=0;
+	y=0;
+
+	for(vector<ZObject*>::iterator i=selected_list.begin(); i!=selected_list.end(); i++)
+	{
+		int cx, cy;
+
+		(*i)->GetCenterCords(cx, cy);
+
+		x+=cx;
+		y+=cy;
+	}
+
+	x/=selected_list.size();
+	y/=selected_list.size();
+
+	return true;
+}
+
+bool selection_info::GroupIsSelected(int group)
+{
+	if(!selected_list.size()) return false;
+	if(selected_list.size() != quick_group[group].size()) return false;
+
+	for(int i=0;i<selected_list.size();i++)
+		if(selected_list[i] != quick_group[group][i])
+			return false;
+
+	return true;
+}
+
+void selection_info::LoadGroup(int group)
+{
+	vector<ZObject*>::iterator i;
+
+	selected_list = quick_group[group];
+
+	//set the group number for all of the units
+	for(i=selected_list.begin(); i!=selected_list.end(); i++)
+		(*i)->SetGroup(group);
+
+	SetupGroupDetails();
+}
+
+void selection_info::SetGroup(int group)
+{
+	vector<ZObject*>::iterator i, e;
+
+	//clear out the list as it stands
+	i=quick_group[group].begin();
+	e=quick_group[group].end();
+	for(; i!=e; i++)
+		(*i)->SetGroup(-1);
+	
+
+	//save this list
+	quick_group[group] = selected_list;
+
+	//set the group number for all of the units
+	i=selected_list.begin();
+	e=selected_list.end();
+	for(; i!=e; i++)
+		(*i)->SetGroup(group);
+}
+
+bool selection_info::UpdateGroupMember(ZObject *obj)
+{
+	vector<ZObject*>::iterator i, e;
+
+	i=selected_list.begin();
+	e=selected_list.end();
+	for(; i!=e; i++)
+		if(obj == *i)
+		{
+			SetupGroupDetails();
+			return true;
+		}
+
+	return false;
+}
+
+void selection_info::SetupGroupDetails(bool show_waypoints)
+{
+	double &the_time = ztime->ztime;
+
+	vector<ZObject*>::iterator i, e;
+
+	have_explosives = false;
+	can_pickup_grenades = false;
+	can_move = false;
+	can_equip = false;
+	can_attack = false;
+
+	i=selected_list.begin();
+	e=selected_list.end();
+	for(; i!=e; i++)
+	{
+		unsigned char ot, oid;
+		
+		(*i)->GetObjectID(ot, oid);
+
+		if(ot == ROBOT_OBJECT) can_equip = true;
+		if(ot != CANNON_OBJECT) can_move = true;
+		if(ot == VEHICLE_OBJECT && oid == CRANE) can_repair = true;
+		
+		if((*i)->HasExplosives()) have_explosives = true;
+		if((*i)->CanAttack()) can_attack = true;
+		if((*i)->CanBeRepaired()) can_be_repaired = true;
+		if((*i)->CanPickupGrenades()) can_pickup_grenades = true;
+
+		//we need to reshow their waypoints and this is a good solve all location
+		(*i)->ShowWaypoints();
+	}
+}
+
+bool selection_info::ObjectIsSelected(ZObject *obj)
+{
+	if(!obj) return false;
+
+	for(vector<ZObject*>::iterator i=selected_list.begin(); i!=selected_list.end(); i++)
+		if(*i == obj)
+			return true;
+
+	return false;
+}
+
+ZPlayer::ZPlayer() : ZClient()
+{
+	gload_thread = 0;
+	graphics_loaded = false;
+	prev_w = init_w = 800;
+	prev_h = init_h = 600;
+	auto_aspect = true;
+	base_w = 800;
+	base_h = 600;
+	view_zoom = 1.0;
+	view_min_zoom = 0.7;
+	mouse_x = 0;
+	mouse_y = 0;
+	splash_fade = 255;
+	splash_dismissed = false;
+	intro_played = false;
+	frontend_presenting = false;
+	match_start_ztime = 0;
+	match_base_elapsed = 0;
+	restore_pending = false;
+	restore_elapsed = 0;
+	restore_kills = restore_lost = 0;
+	next_autosave_elapsed = 0;
+	player_name = "Player";
+	our_mode = PLAYER_MODE;
+	hover_object = NULL;
+	disable_zcursor = false;
+	lshift_down = false;
+	rshift_down = false;
+	right_down = false;
+	left_down = false;
+	up_down = false;
+	down_down = false;
+	lctrl_down = false;
+	rctrl_down = false;
+	lalt_down = false;
+	ralt_down = false;
+	pcursor_death_time = 0;
+	gui_window = NULL;
+	place_cannon = false;
+	collect_chat_message = false;
+	do_focus_to = false;
+	is_windowed = true;
+	window_has_focus = true;
+	use_opengl = true;
+	//music_on = true;
+	loaded_percent = 0;
+	show_chat_history = false;
+	fort_ref_id = -1;
+	connect_attempt_time = 0;
+	server_response_seen = false;
+	server_silence_warned = false;
+
+	//#88: summary art is loaded raw once and (re)scaled to the live logical
+	//resolution on demand, since zoom changes init_w/init_h mid-game
+	summary_won_raw = NULL;
+	summary_lost_raw = NULL;
+	summary_scaled_w = summary_scaled_h = -1;
+	ResetMatchStats();	//#88
+
+	//#79: menu-first background, lazy-loaded on first menu render
+	menu_bg_loaded = false;
+	menu_bg_raw = NULL;
+	menu_bg_scaled_w = menu_bg_scaled_h = -1;
+
+	ClearAsciiStates();
+
+	select_info.SetZTime(&ztime);
+	zhud.SetZTime(&ztime);
+
+	//setup minimap
+	zhud.GetMiniMap().Setup(&zmap, &object_list);
+	
+	//setup events
+	SetupEHandler();
+
+	//setup the comp message system
+	zcomp_msg.SetObjectList(&object_list);
+	zcomp_msg.SetZTime(&ztime);
+	zcomp_msg.SetRenderScale(MenuRenderScale());   //#196: scale the resume bar like the menus
+	
+	//give the tcp socket the event list so it can cram in events
+	client_socket.SetEventList(&ehandler.GetEventList());
+	//ZObject::SetEffectList(&effect_list);
+	ZEffect::SetSettings(&zsettings);
+	ZEffect::SetEffectList(&new_effect_list);
+	ZEffect::SetMap(&zmap);
+
+	//alloc menu memory
+	InitMenus();
+
+	//create and setup factory gui
+	gui_factory_list = new GWFactoryList(&ztime);
+	gui_factory_list->Hide();
+	gui_factory_list->SetOList(&ols);
+}
+
+//#88: zero the post-match summary state (start of a match / next-map load)
+void ZPlayer::ResetMatchStats()
+{
+    battle_notice.clear();battle_notice_until=0;last_factory_ref=-1;summary_menu_ready=false;objective_text.clear();objective_total=0;objective_x=objective_y=-1;
+	show_match_summary = false;
+	summary_pending = false;
+	summary_show_time = 0;
+	summary_end_time = 0;
+	summary_continue_sent = false;
+	match_won = false;
+    match_result_known = false;
+    match_zones_captured = 0; seen_zone_owners.clear(); last_idle_ref = -1;
+	match_duration = 0;
+	match_enemies_killed = 0;
+	match_units_lost = 0;
+	summary_line_count = 0;
+}
+
+//#120: the player dismissed the summary (click/Enter) - tell the server to load
+//the next map now instead of waiting out the safety fallback. Guarded so a flurry
+//of clicks only sends it once.
+void ZPlayer::SendContinueAfterEnd()
+{
+	if(!show_match_summary) return;
+	if(summary_continue_sent) return;
+
+	summary_continue_sent = true;
+    if(summary_menu_ready||!client_socket.SendMessage(CONTINUE_AFTER_END,NULL,0))CompleteMenuReturn();
+}
+
+//#136: drop back to the main menu after a match (server sends RETURN_TO_MENU in a
+//menu-driven session). Tear the game down like ProcessResetGame but, instead of
+//asking for a new map, open the main menu and idle - the player picks/generates
+//the next one. With no map loaded the render falls back to the menu background.
+void ZPlayer::CompleteMenuReturn(){bool next=frontend.CommunityBattle()&&summary_continue_sent;ReturnToMenu();if(next)frontend.ContinueCommunity();}
+
+void ZPlayer::ReturnToMenu()
+{
+	fort_ref_id = -1;
+	ResetMatchStats();
+	zmap.ClearMap();
+	ols.DeleteAllObjects();
+	select_info.ClearAll();
+	effect_list.clear();
+	space_event_list.clear();
+	ClearAnimals();
+	hover_object = NULL;
+	zhud.ResetGame();
+	if(gui_window) DeleteCurrentGuiWindow();
+
+	OpenStartMenu();
+}
+
+void ZPlayer::JoinHostedMatch(const string &host, int port, int team, ZGuiMainMenuBase *menu)
+{
+    if(!menu) return;
+    if(join_task.Pending()) {
+        if(menu->GetInstanceId()!=join_origin_id) {
+            if(auto *browser=dynamic_cast<GMMMultiplayer*>(menu)) browser->SetError("Another connection is finishing. Please retry shortly.");
+            if(auto *setup=dynamic_cast<GMMMultiplayerCreate*>(menu)) setup->SetError("Another connection is finishing. Please retry shortly.");
+        }
+        return;
+    }
+    int origin=menu->GetMenuType();
+    std::uint64_t id=menu->GetInstanceId(); join_origin_id=id;
+    join_task.Start([host,port,team,origin,id]() {
+        PendingJoin result; result.host=host; result.port=port; result.team=team; result.origin=origin; result.menu_id=id;
+        try { result.connection=ZNetConnect(host,port,result.error); }
+        catch(...) { result.error="Could not open connection. Please retry."; }
+        return result;
+    });
+}
+bool ZPlayer::PollHostedJoin()
+{
+    PendingJoin result;
+    if(!join_task.Poll(result)) return false;
+    join_origin_id=0;
+    if(gui_menu_list.empty() || gui_menu_list.front()->GetInstanceId()!=result.menu_id) {
+        for(auto *menu:gui_menu_list) if(menu->GetInstanceId()==result.menu_id) {
+            if(auto *browser=dynamic_cast<GMMMultiplayer*>(menu)) browser->SetError("Connection cancelled");
+            if(auto *setup=dynamic_cast<GMMMultiplayerCreate*>(menu)) setup->SetError("Connection cancelled");
+        }
+        return false;
+    }
+    if(!result.connection) {
+        string error="Could not join "+result.host+":"+to_string(result.port)+": "+result.error;
+        for(auto *menu:gui_menu_list) if(menu->GetInstanceId()==result.menu_id) {
+            if(auto *browser=dynamic_cast<GMMMultiplayer*>(menu)) browser->SetError(error);
+            if(auto *setup=dynamic_cast<GMMMultiplayerCreate*>(menu)) setup->SetError(error);
+        }
+        return false;
+    }
+    hosted_setup_available=false;
+    for(auto *menu:gui_menu_list) if(menu->GetInstanceId()==result.menu_id)
+        if(auto *setup=dynamic_cast<GMMMultiplayerCreate*>(menu)) {
+            hosted_setup=setup->GetSetupPreferences(); hosted_setup_available=true;
+        }
+    // Replace the old session only after the new TCP connection succeeds.
+    lobby_countdown=-1; lobby_pause_confirmed=false; cloud_disconnect_reason.clear(); managed_dedicated=false;
+    ReturnToMenu(); client_socket.ClearConnection(); player_info.clear(); p_id=-1; game_map_name.clear();
+    if(result.team>=NULL_TEAM && result.team<MAX_TEAM_TYPES) SetDesiredTeam((team_type)result.team);
+    if(zod_player_name.size()) SetPlayerName(zod_player_name);
+    remote_address=result.host;
+    connect_attempt_time=current_time(); server_response_seen=false; server_silence_warned=false;
+    bool ok=client_socket.Adopt(*result.connection);
+    CloseAllMenus();
+    LoadMainMenu(ok ? GMM_LOBBY : result.origin);
+    if(!ok) for(auto *menu:gui_menu_list) {
+        if(auto *browser=dynamic_cast<GMMMultiplayer*>(menu)) browser->SetError("Connection could not be attached. Please retry.");
+        if(auto *setup=dynamic_cast<GMMMultiplayerCreate*>(menu)) setup->SetError("Connection could not be attached. Please retry.");
+    }
+    return true;
+}
+
+//MP-prep: the single runtime entry point for (re)connecting the client to a
+//server. Setup() calls it for the initial connect; a future "Join by IP" menu
+//can call it to switch from the embedded loopback server to a remote host. If a
+//session is already live, drop back to a clean menu and release the old socket
+//first, so the handshake in ProcessConnect() starts from a blank slate instead
+//of stacking a second session on top of the old one. On the initial Setup()
+//connect there is no handler yet, so the teardown branch is skipped and launch
+//behaviour is unchanged (important: the menu/SDL isn't up at that point).
+bool ZPlayer::ConnectToServer(string address, int port)
+{
+	if(client_socket.GetHandler())
+	{
+		ReturnToMenu();
+		client_socket.ClearConnection();
+	}
+
+	remote_address = address;
+
+	//#254: arm the server-silence watchdog for this connect attempt
+	connect_attempt_time = current_time();
+	server_response_seen = false;
+	server_silence_warned = false;
+
+	if(!client_socket.Start(remote_address.c_str(), port))
+	{
+		printf("ZPlayer::ConnectToServer:socket not setup (%s:%d)\n", address.c_str(), port);
+		return false;
+	}
+
+	return true;
+}
+
+//#254: a healthy local server answers the connect handshake within milliseconds.
+//If nothing has arrived several seconds after the connect attempt, the classic
+//cause is a stale zod still holding the port: our own server can't bind (see
+//ServerSocket::Bind) and the client connected to the zombie, which never
+//replies - so every server-fed menu (Play Campaign, map lists) stays empty.
+//Say so once, in the log and on screen, instead of leaving the player guessing.
+void ZPlayer::CheckServerSilence()
+{
+	const double wait_secs = 5.0;
+
+	if(server_silence_warned || server_response_seen) return;
+	if(!connect_attempt_time) return;
+	if(current_time() - connect_attempt_time < wait_secs) return;
+
+	//the warning menu needs the menu art; the timer stays expired so the
+	//warning fires as soon as graphics are up
+	if(!graphics_loaded) return;
+
+	server_silence_warned = true;
+
+	ZDiag("client: no reply from game server '%s' within %.0fs - a stale zod may be holding "
+		"the port; server-fed menus (Play Campaign etc.) will be empty", remote_address.c_str(), wait_secs);
+
+	gmm_warning_flag wflags;
+	wflags.text1 = "game server not";
+	wflags.text2 = "responding - see log";
+    if(LobbyOpen()) {
+        for(auto *menu:gui_menu_list) if(auto *lobby=dynamic_cast<GMMLobby*>(menu))
+            lobby->SetError("Server is not responding. Leave and reconnect.");
+    } else LoadMainMenu(GMM_WARNING, false, wflags);
+}
+
+//#88: gap between stacked summary stat lines, shared by build + render
+#define SUMMARY_LINE_GAP 14
+
+//#88: render the tallied stats to ZSDL_Surfaces once, when the game ends, so
+//RenderMatchSummary just blits them each frame of the pause. The win/loss title
+//is baked into the background art, so only the stat lines are drawn here. Labels
+//mirror the original game's summary screen. A translucent backing strip sized to
+//the block keeps the text readable over the busy artwork.
+void ZPlayer::BuildMatchSummary()
+{
+	char buf[128];
+
+	summary_line_count = 0;
+
+	int secs = (int)match_duration;
+	if(secs < 0) secs = 0;
+	sprintf(buf, "BATTLE LASTED   %d:%02d:%02d", secs / 3600, (secs / 60) % 60, secs % 60);
+	summary_line_img[summary_line_count++] = ZFontEngine::GetFont(BIG_WHITE_FONT).Render(buf);
+
+	sprintf(buf, "UNITS KILLED   %d", match_enemies_killed);
+	summary_line_img[summary_line_count++] = ZFontEngine::GetFont(BIG_WHITE_FONT).Render(buf);
+
+	sprintf(buf, "UNITS LOST   %d", match_units_lost);
+	summary_line_img[summary_line_count++] = ZFontEngine::GetFont(BIG_WHITE_FONT).Render(buf);
+
+    sprintf(buf, "ZONES CAPTURED   %d", match_zones_captured);
+    summary_line_img[summary_line_count++] = ZFontEngine::GetFont(BIG_WHITE_FONT).Render(buf);
+
+	//backing strip sized to the stat block
+	int max_w = 0, total_h = 0;
+	for(int i=0;i<summary_line_count;i++)
+	{
+		SDL_Surface *s = summary_line_img[i].GetBaseSurface();
+		if(s && s->w > max_w) max_w = s->w;
+		if(s) total_h += s->h;
+		if(i) total_h += SUMMARY_LINE_GAP;
+	}
+
+	int sw = max_w + 80;
+	int sh = total_h + 50;
+	summary_strip_img.LoadNewSurface(sw, sh);
+	SDL_Rect fr; fr.x = 0; fr.y = 0; fr.w = sw; fr.h = sh;
+	summary_strip_img.FillRectOnToMe(&fr, 0, 0, 0);
+	summary_strip_img.SetAlpha(140);
+}
+
+//#88: cover-scale the raw summary art to the current logical resolution. No-op
+//unless the resolution changed (launch size, window resize, or a zoom step), so
+//it only does real work when needed - not every frame.
+void ZPlayer::EnsureSummaryScaled()
+{
+	if(summary_scaled_w == init_w && summary_scaled_h == init_h) return;
+
+	summary_scaled_w = init_w;
+	summary_scaled_h = init_h;
+
+	SDL_Surface *raws[2] = { summary_won_raw, summary_lost_raw };
+	ZSDL_Surface *dests[2] = { &summary_won_img, &summary_lost_img };
+
+	for(int k=0;k<2;k++)
+	{
+		if(!raws[k]) continue;
+
+		double fit_w = (double)init_w / raws[k]->w;
+		double fit_h = (double)init_h / raws[k]->h;
+		double fit = (fit_w > fit_h) ? fit_w : fit_h;	//cover (fill, crop overflow)
+
+		SDL_Surface *scaled = SDL_ScaleSurface(raws[k],
+			(int)(raws[k]->w * fit), (int)(raws[k]->h * fit), SDL_SCALEMODE_LINEAR);
+
+		if(scaled)
+		{
+			dests[k]->LoadBaseImage(scaled);	//takes ownership; frees prior scale
+			dests[k]->UseDisplayFormat();
+		}
+	}
+}
+
+//#79: background for the menu-first / idle screen - the banner art cover-scaled
+//to fill, so a fresh start isn't a black void. Loaded + scaled lazily (the menu
+//shows at a stable resolution, but re-scale if it ever changes). Falls back to a
+//dark fill if the image is missing.
+void ZPlayer::RenderMenuBackground()
+{
+	if(!menu_bg_loaded)
+	{
+		//#79: the splash the issue mocked up the menu over - the "Zod Engine /
+		//SDL3-port by fenio / VICTORY THROUGH BARBECUE" art (same image as the
+		//startup splash). It's a BMP, loaded like the splash screen is.
+		menu_bg_raw = SDL_LoadBMP(ZSDL_DataPath("assets/splash.bmp").c_str());
+		menu_bg_loaded = true;
+		menu_bg_scaled_w = menu_bg_scaled_h = -1;
+	}
+
+	if(menu_bg_raw && (menu_bg_scaled_w != init_w || menu_bg_scaled_h != init_h))
+	{
+		menu_bg_scaled_w = init_w;
+		menu_bg_scaled_h = init_h;
+
+		double fw = (double)init_w / menu_bg_raw->w;
+		double fh = (double)init_h / menu_bg_raw->h;
+		double f = (fw > fh) ? fw : fh;	//cover (fill, crop overflow)
+
+		SDL_Surface *scaled = SDL_ScaleSurface(menu_bg_raw,
+			(int)(menu_bg_raw->w * f), (int)(menu_bg_raw->h * f), SDL_SCALEMODE_LINEAR);
+		if(scaled) { menu_bg_img.LoadBaseImage(scaled); menu_bg_img.UseDisplayFormat(); }
+	}
+
+	if(menu_bg_img.GetBaseSurface())
+	{
+		SDL_Rect to;
+		to.x = (init_w - menu_bg_img.GetBaseSurface()->w) >> 1;
+		to.y = (init_h - menu_bg_img.GetBaseSurface()->h) >> 1;
+		menu_bg_img.BlitSurface(NULL, &to);
+	}
+	else
+	{
+		SDL_Rect r; r.x = 0; r.y = 0; r.w = init_w; r.h = init_h;
+		ZSDL_FillSurfaceRect(&r, 20, 22, 28);
+	}
+}
+
+//#88: full-screen win/loss artwork with the stat block over a translucent strip,
+//drawn above everything during the server's end-of-game pause.
+void ZPlayer::RenderMatchSummary()
+{
+	EnsureSummaryScaled();
+
+	//background art (cover-scaled to the live resolution), centered; overflow clipped
+	ZSDL_Surface *bg = match_won ? &summary_won_img : &summary_lost_img;
+	if(bg->GetBaseSurface())
+	{
+		SDL_Rect to;
+		to.x = (init_w - bg->GetBaseSurface()->w) >> 1;
+		to.y = (init_h - bg->GetBaseSurface()->h) >> 1;
+		bg->BlitSurface(NULL, &to);
+	}
+	else
+	{
+		//art missing - fall back to a plain dark wash so the stats still read
+		SDL_Rect r; r.x = 0; r.y = 0; r.w = init_w; r.h = init_h;
+		ZSDL_FillSurfaceRect(&r, 18, 18, 34);
+	}
+
+	if(summary_line_count <= 0) return;
+
+	int max_w = 0, total_h = 0, lh[5];
+	for(int i=0;i<summary_line_count;i++)
+	{
+		SDL_Surface *s = summary_line_img[i].GetBaseSurface();
+		lh[i] = s ? s->h : 0;
+		if(s && s->w > max_w) max_w = s->w;
+		total_h += lh[i];
+		if(i) total_h += SUMMARY_LINE_GAP;
+	}
+
+	//block sits in the lower third so it clears the baked-in title art
+	int block_x = (init_w - max_w) / 2;
+	int block_y = std::min((int)(init_h * 0.52), init_h - total_h - 94);
+
+	//backing strip, centered on the block
+	if(summary_strip_img.GetBaseSurface())
+	{
+		int sw = summary_strip_img.GetBaseSurface()->w;
+		int sh = summary_strip_img.GetBaseSurface()->h;
+		summary_strip_img.BlitSurface(NULL, (init_w - sw) / 2, block_y - (sh - total_h) / 2);
+	}
+
+	int y = block_y;
+	for(int i=0;i<summary_line_count;i++)
+	{
+		SDL_Surface *s = summary_line_img[i].GetBaseSurface();
+		int w = s ? s->w : 0;
+		summary_line_img[i].BlitSurface(NULL, block_x + (max_w - w) / 2, y);
+		y += lh[i] + SUMMARY_LINE_GAP;
+	}
+    ZSDL_Surface title;
+    title = ZFontEngine::GetFont(BIG_WHITE_FONT).Render(match_won ? "VICTORY" : "DEFEAT");
+    if(auto *s=title.GetBaseSurface()) title.BlitSurface(NULL,(init_w-s->w)/2, std::max(8,block_y-40));
+    const char *labels[]={"Continue [Enter]", hosted_setup_available ? "Rematch [Enter / R]" : "Rematch [R]", hosted_setup_available ? "Back to setup [Esc]" : "Main menu [Esc]"};
+    int count=2, width=std::min(180,(init_w-32)/count);
+    for(int slot=0;slot<count;++slot) {
+        int action=hosted_setup_available ? slot+1 : slot;
+        SDL_Rect r{(init_w-count*(width+8)+8)/2+slot*(width+8),init_h-52,width,30};
+        bool hover=mouse_x>=r.x && mouse_x<r.x+r.w && mouse_y>=r.y && mouse_y<r.y+r.h;
+        ZSDL_FillSurfaceRect(&r,hover ? 65 : 30,hover ? 80 : 40,hover ? 90 : 50);
+        ZSDL_Surface label; label=ZFontEngine::GetFont(SMALL_WHITE_FONT).Render(labels[action]);
+        if(auto *s=label.GetBaseSurface()) label.BlitSurface(NULL,r.x+(r.w-s->w)/2,r.y+(r.h-s->h)/2);
+    }
+}
+
+void ZPlayer::ProcessResetGame()
+{
+	//unset this
+	fort_ref_id = -1;
+
+	//#88: the next map is loading - drop the summary and zero the tally so the
+	//new match starts from a clean slate
+	ResetMatchStats();
+
+	//this battle's clock starts now - unless it is a saved battle coming
+	//back, which continues from its own time and tally
+	match_start_ztime = ztime.ztime;
+	match_base_elapsed = 0;
+	if(restore_pending)
+	{
+		restore_pending = false;
+		match_base_elapsed = restore_elapsed;
+		match_enemies_killed = restore_kills;
+		match_units_lost = restore_lost;
+	}
+	zhud.SetClock(match_start_ztime, match_base_elapsed);
+
+	//first autosave a few seconds into the battle (squads have formed up by
+	//then), or one interval after a loaded save
+	next_autosave_elapsed = match_base_elapsed + (match_base_elapsed > 0 ? ZSAVE_AUTOSAVE_INTERVAL : 4.0);
+
+	//clear stuff out
+	zmap.ClearMap();
+	
+	//clear object list
+	ols.DeleteAllObjects();
+	//for(vector<ZObject*>::iterator obj=object_list.begin(); obj!=object_list.end(); obj++)
+	//	delete *obj;
+
+	//object_list.clear();
+
+	//selection info
+	select_info.ClearAll();
+
+	//effect list
+	{
+		for(vector<ZEffect*>::iterator e=effect_list.begin(); e!=effect_list.begin(); e++)
+			delete *e;
+
+		effect_list.clear();
+	}
+
+	//space bar event list
+	space_event_list.clear();
+
+	//no more animals
+	ClearAnimals();
+
+	hover_object = NULL;
+
+	//hud
+	zhud.ResetGame();
+
+	//#75: pick up the chosen max-units-per-team for this game - drives the local
+	//unit-limit-reached check and the HUD's "units N/max" readout. (Single-player:
+	//the in-process server reads the same pref, so they match.)
+	max_units_per_team = zod_max_units_per_team;
+	zhud.SetMaxUnits(zod_max_units_per_team);
+
+	//gui window ie production
+	if(gui_window) DeleteCurrentGuiWindow();
+
+	//ask for the map
+	client_socket.SendMessage(REQUEST_MAP, NULL, 0);
+}
+
+void ZPlayer::SetUseOpenGL(bool use_opengl_)
+{
+	use_opengl = use_opengl_;
+}
+
+void ZPlayer::SetLoginName(string login_name_)
+{
+	login_name = login_name_;
+}
+
+void ZPlayer::SetLoginPassword(string login_password_)
+{
+	login_password = login_password_;
+}
+
+void ZPlayer::SetWindowed(bool is_windowed_)
+{
+	is_windowed = is_windowed_;
+}
+
+void ZPlayer::DisableCursor(bool disable_zcursor_)
+{
+	disable_zcursor = disable_zcursor_;
+}
+
+void ZPlayer::SetSoundsOff(bool setoff)
+{
+	ZSDL_SetMusicOn(!setoff);
+}
+
+void ZPlayer::SetMusicOff(bool setoff)
+{
+	//music_on = !setoff;
+	ZMusicEngine::SetMusicOn(!setoff);
+}
+
+void ZPlayer::SetPlayerTeam(team_type player_team)
+{
+	our_team = player_team;
+
+	cursor.SetTeam(our_team);
+	zhud.SetTeam(our_team);
+	zcomp_msg.SetTeam(our_team);
+	if(gui_factory_list) gui_factory_list->SetTeam(our_team);
+
+	RefindOurFortRefID();
+
+	//unselect stuff
+	select_info.ClearAll();
+	zhud.SetSelectedObject(NULL);
+	zhud.ReRenderAll();
+
+	//clear
+	space_event_list.clear();
+
+	//reset cursor
+	DetermineCursor();
+}
+
+void ZPlayer::SetDimensions(int w, int h)
+{
+	if(w > 0) prev_w = init_w = w;
+	if(h > 0) prev_h = init_h = h;
+}
+
+void ZPlayer::Setup()
+{
+	//randomizer
+	SetupRandomizer();
+
+	//registered?
+	CheckRegistration();
+
+	//#134: match ZOD_PORT so the client reaches a non-default server port
+	int net_port = getenv("ZOD_PORT") ? atoi(getenv("ZOD_PORT")) : 2137;
+	//MP-prep: initial connect goes through the runtime (re)connect seam. No
+	//handler exists yet, so this is a plain Start() - launch behaviour unchanged.
+	ConnectToServer(remote_address, net_port);
+
+	//setup gfile
+	//ZGFile::Init();
+	
+	InitSDL();
+
+	ZMusicEngine::Init();
+	ZFontEngine::Init();
+
+	//get it on
+	ZMusicEngine::PlaySplashMusic();
+	DoSplash();
+	ZVideo_Present();
+
+	//important to keep the server from crashing us
+	ZTeam::Init();
+	ZMap::Init();
+	zhud.Init();
+	ORock::Init();
+	SetupSelectionImages();
+
+	//if(!disable_zcursor) SDL_HideCursor();
+
+	gload_thread = SDL_CreateThread(Load_Graphics, "gfx_load", this);
+}
+
+void ZPlayer::InitSDL()
+{
+	int audio_rate = 22050;
+	Uint16 audio_format = SDL_AUDIO_S16LE; /* 16-bit stereo */
+	int audio_channels = 2;
+	int audio_buffers = 4096;
+
+	//init SDL
+	SDL_Init(SDL_INIT_VIDEO|SDL_INIT_AUDIO);
+	ZGamepad_Init();
+	ZVideo_SetPictureMode(zod_picture_mode);
+
+	//we handle touch explicitly (tap/drag/pinch); stop SDL also synthesizing
+	//mouse events from touch, or every tap would fire twice.
+	SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
+	touch_count = 0;
+	pinch_pending_zoom = 0;		//#111
+	pinch_zoom_dirty = false;	//#111
+
+	//remember the startup resolution as the zoom==1.0 baseline
+	base_w = init_w;
+	base_h = init_h;
+	view_zoom = 1.0;
+	view_min_zoom = 0.7;
+
+	//some stuff that just has to be right after init
+	game_icon = ZSDL_DataIMG_Load("assets/icon.png");
+	//ffuts
+
+	if(game_icon) ZVideo_SetIcon(game_icon);
+#ifdef __APPLE__
+	//SDL_SetWindowIcon (above) doesn't touch the macOS Dock, so a bare executable
+	//shows the generic "exec" icon. Set the Dock icon directly via Cocoa.
+	MacSetDockIcon(ZSDL_DataPath("assets/icon_mac.png").c_str());
+#endif
+	ZVideo_SetCaption("zod-ee " ZOD_VERSION);
+	atexit(ZSDL_Quit);//SDL_Quit);
+
+	// Mouse mode and render smoothing come from ~/.zod_prefs (editable in
+	// the in-game Options menu); env vars override per launch - see zprefs.
+
+#ifdef DISABLE_OPENGL
+	use_opengl = false;
+#endif
+
+	ZSDL_Surface::SetUseOpenGL(use_opengl);
+	ZSDL_Surface::SetScreenDimensions(init_w, init_h);
+
+	if(use_opengl)
+	{
+		//if(is_windowed)
+		//	screen = SDL_SetVideoMode(init_w, init_h, 32, SDL_HWSURFACE|SDL_DOUBLEBUF|SDL_RESIZABLE);
+		//else
+		//	screen = SDL_SetVideoMode(init_w, init_h, 32, SDL_HWSURFACE|SDL_DOUBLEBUF|SDL_RESIZABLE|SDL_FULLSCREEN);
+
+		screen = ZVideo_SetMode(init_w, init_h, !is_windowed);
+
+		InitOpenGL();
+		ResetOpenGLViewPort(init_w, init_h);
+	}
+	else
+	{
+		screen = ZVideo_SetMode(init_w, init_h, !is_windowed);
+
+		ZSDL_Surface::SetMainSoftwareSurface(screen);
+	}
+
+	//the window exists now: align the view to its real output aspect
+	AdaptViewAspect(true);
+
+	if(!disable_zcursor) SDL_HideCursor();
+
+	//some initial mouse stuff
+	//don't grab input in windowed mode, otherwise it hijacks the
+	//keyboard/mouse and you can't switch to other apps (press 'm' to toggle)
+	ZVideo_SetGrab(!is_windowed);
+	//SDL_EventState(SDL_EVENT_MOUSE_MOTION, SDL_IGNORE);
+	ZVideo_WarpMouse(init_w>>1, init_h>>1);
+	//SDL_EventState(SDL_EVENT_MOUSE_MOTION, SDL_ENABLE);
+
+	//Removed because some sdl_mixer libs dont have  
+	//this function and it is not 100% required
+	//if(ZAudio_Init(MIX_INIT_MOD | MIX_INIT_OGG) != (MIX_INIT_MOD | MIX_INIT_OGG))
+	//	printf("InitSDL::ZAudio_Init() error\n");
+
+	if(!ZAudio_Open(audio_rate, audio_format, audio_channels, audio_buffers))
+		printf("InitSDL::ZAudio_Open() error\n");
+
+	ZAudio_QuerySpec(&audio_rate, &audio_format, &audio_channels);
+	//#73: restore the saved volume instead of always starting at full
+	sound_setting = zod_volume_setting;
+	if(sound_setting < 0 || sound_setting >= MAX_SOUND_SETTINGS) sound_setting = SOUND_100;
+	ApplyVolume();
+
+	//TTF
+	TTF_Init();
+	ttf_font = TTF_OpenFont(ZSDL_DataPath("assets/arial.ttf").c_str(),10);
+	ttf_font_7 = TTF_OpenFont("assets/arial.ttf",7);
+	if (!ttf_font) printf("could not load assets/arial.ttf\n");
+
+	//splash sound best loaded here
+	//splash_music = ZSDL_LoadMusic("assets/sounds/ABATTLE.mp3");
+	//#137: scale the splash to COVER the logical resolution (fill, crop the
+	//overflow via the centered blit) - the same cover-scale RenderMenuBackground
+	//uses - so the loading splash fills the screen instead of sitting letterboxed
+	//with black bars top/bottom, matching how it looks once the menu is up.
+	{
+		SDL_Surface *raw = SDL_LoadBMP(ZSDL_DataPath("assets/splash.bmp").c_str());
+
+		if(raw)
+		{
+			double fit_w = (double)init_w / raw->w;
+			double fit_h = (double)init_h / raw->h;
+			double fit = (fit_w > fit_h) ? fit_w : fit_h;	//cover (fill, crop)
+
+			SDL_Surface *scaled = SDL_ScaleSurface(raw,
+				(int)(raw->w * fit), (int)(raw->h * fit), SDL_SCALEMODE_LINEAR);
+
+			if(scaled)
+			{
+				SDL_DestroySurface(raw);
+				splash_screen.LoadBaseImage(scaled);
+			}
+			else
+				splash_screen.LoadBaseImage(raw);
+		}
+	}
+	splash_screen.UseDisplayFormat(); //Regular needs this to do fading
+
+	//#88: win/loss summary backgrounds (reporter art). Loaded raw here; cover-
+	//scaling to the screen happens in EnsureSummaryScaled() so it tracks the live
+	//logical resolution (zoom changes it mid-game).
+	summary_won_raw = ZSDL_DataIMG_Load("assets/summary_won.png");
+	summary_lost_raw = ZSDL_DataIMG_Load("assets/summary_lost.png");
+	summary_scaled_w = summary_scaled_h = -1;
+
+//	if(splash_screen)
+//	{
+//		SDL_Surface* bmpFile2 = SDL_ConvertSurface( splash_screen , SDL_PIXELFORMAT_XRGB8888);
+//		SDL_DestroySurface( splash_screen );
+//		splash_screen = bmpFile2;
+//// 		SDL_Surface* tempScreen = SDL_CreateRGBSurface( SDL_SWSURFACE | SDL_SRCALPHA, splash_screen->w, splash_screen->h, 32, 0xff000000,0x00ff0000,0x0000ff00,0x000000ff);
+//// 		SDL_Surface* tempScreen2 = SDL_ConvertSurface( tempScreen , SDL_PIXELFORMAT_XRGB8888);
+//// 		SDL_DestroySurface( tempScreen );
+//	}
+
+	//test
+	//ZAudio_Sound *test_wav = ZAudio_LoadSound("test.wav");
+	//ZSDL_PlayChannel(-1, test_wav, 0);
+
+	//repeat music
+	//if(splash_music)
+	//{
+	//	ZSDL_PlayMusic(splash_music, -1);
+	//	ZAudio_SetMusicVolume(128);
+	//}
+}
+
+// View zoom: the map + HUD are composited into one fixed-resolution framebuffer
+// that the GPU upscales to fill the window, so zooming = rebuilding that
+// framebuffer at base_w/zoom (a smaller logical resolution shows fewer map
+// pixels stretched larger = zoomed in). Reuses the resolution-change re-layout
+// (same steps as resize_event), captures the new framebuffer surface, and holds
+// the current view centre. The HUD scales somewhat with zoom (it shares the
+// framebuffer); the zoom range is clamped to keep that subtle.
+void ZPlayer::RebuildView(int new_w, int new_h)
+{
+	//remember the map point currently at the centre of the view
+	int cx, cy;
+	zmap.GetViewCenter(cx, cy);
+
+	init_w = new_w;
+	init_h = new_h;
+
+	//rebuild the logical framebuffer at the new resolution (capture new surface!)
+	screen = ZVideo_SetMode(init_w, init_h, !is_windowed);
+	ZSDL_Surface::SetMainSoftwareSurface(screen);
+	ZSDL_Surface::SetScreenDimensions(init_w, init_h);
+	zhud.ReRenderAll();
+	zmap.SetViewingDimensions(init_w - HUD_WIDTH, init_h - HUD_HEIGHT);
+
+	//keep the same map point centred as the view size changed
+	zmap.CenterView(cx, cy);
+
+	prev_w = init_w;
+	prev_h = init_h;
+}
+
+//The desktop mode is only an estimate of the real fullscreen drawable
+//(scaled modes and notched displays differ), so after any mode change match
+//the logical width to the renderer's actual output aspect - this is what
+//removes the last letterbox stripes exactly.
+void ZPlayer::AdaptViewAspect(bool startup)
+{
+	int ow, oh;
+
+	if(!auto_aspect) return;
+	if(!ZVideo_GetOutputSize(ow, oh)) return;
+	if(oh <= 0) return;
+
+#ifdef __ANDROID__
+	//#140: the activity is locked landscape, but SDL can still report the render
+	//output in the device's natural (portrait) orientation. Taken as-is that makes
+	//the view 4:3-clamped and pillarboxed on the landscape screen. Use landscape
+	//dims. (This is the authoritative aspect path - it runs after the window exists
+	//and overrides the pre-window guess in main.cpp.)
+	if(oh > ow) { int t = ow; ow = oh; oh = t; }
+#endif
+
+	int new_base_w = ((int)lround((double)base_h * ow / oh)) & ~1;
+
+	if(new_base_w < (base_h * 4) / 3) new_base_w = (base_h * 4) / 3;
+	if(new_base_w > (base_h * 8) / 3) new_base_w = (base_h * 8) / 3;
+
+	if(new_base_w == base_w) return;
+
+	base_w = new_base_w;
+
+	if(startup)
+	{
+		//graphics aren't loaded yet: just rebuild the framebuffer; the HUD
+		//and map pick the new dimensions up when they initialize
+		init_w = (int)lround(base_w / view_zoom);
+		prev_w = init_w;
+		screen = ZVideo_SetMode(init_w, init_h, !is_windowed);
+		ZSDL_Surface::SetMainSoftwareSurface(screen);
+		ZSDL_Surface::SetScreenDimensions(init_w, init_h);
+		printf("view adapted to output: %dx%d\n", init_w, init_h);
+	}
+	else
+		RebuildView((int)lround(base_w / view_zoom), (int)lround(base_h / view_zoom));
+
+	if(zmap.Loaded()) AutoZoomToFillMap();
+}
+
+void ZPlayer::AutoZoomToFillMap()
+{
+	int map_w = zmap.GetMapBasics().width * 16;
+	int map_h = zmap.GetMapBasics().height * 16;
+
+	if(map_w <= 0 || map_h <= 0) return;
+
+	double zw = (double)base_w / (map_w + HUD_WIDTH);
+	double zh = (double)base_h / (map_h + HUD_HEIGHT);
+	double fill = (zw > zh) ? zw : zh;
+
+	fill = ceil(fill * 10.0 - 0.001) / 10.0;
+	//floor is the normal zoom-out limit (0.7): a big map fills well below it,
+	//so it keeps the full zoom-out range; only a map small enough that 0.7
+	//would show black gets a higher floor
+	if(fill < 0.7) fill = 0.7;
+	if(fill > 3.0) fill = 3.0;
+
+	view_min_zoom = fill;
+
+	if(view_zoom < view_min_zoom - 0.0001)
+	{
+		view_zoom = view_min_zoom;
+		RebuildView((int)lround(base_w / view_zoom), (int)lround(base_h / view_zoom));
+	}
+}
+
+void ZPlayer::ApplyZoom(double new_zoom)
+{
+	//snap to a fixed 10% grid so 100% is always a step and is exactly reachable
+	//on the way back (multiplicative steps drift off-grid once clamped)
+	new_zoom = lround(new_zoom * 10.0) / 10.0;
+	//can't zoom out past the level that fills the map (that's where the black
+	//edge appears); ceiling raised so small maps can fill on wide displays
+	if(new_zoom < view_min_zoom) new_zoom = view_min_zoom;
+	if(new_zoom > 3.0) new_zoom = 3.0;
+
+	bool rebuilt = false;
+	if(fabs(new_zoom - view_zoom) >= 0.0001)
+	{
+		view_zoom = new_zoom;
+		RebuildView((int)lround(base_w / view_zoom), (int)lround(base_h / view_zoom));
+		rebuilt = true;
+	}
+
+	//always report the current level (even at the clamp) so it's easy to find
+	//your way back to 100% — there's no dedicated reset key
+	char msg[64];
+	sprintf(msg, "zoom: %d%%", (int)lround(view_zoom * 100));
+	AddNewsEntry(msg);
+
+	//diagnostic: lets a remote tester confirm zoom input is reaching here and
+	//whether the framebuffer was rebuilt (vs clamped) - attach zod_diag.log
+	ZDiag("zoom -> %d%% (min %d%%, framebuffer %s)", (int)lround(view_zoom * 100),
+		(int)lround(view_min_zoom * 100), rebuilt ? "rebuilt" : "unchanged/clamped");
+}
+
+int ZPlayer::Load_Graphics(void *p)
+{
+	const int max_items = 80;
+	int loaded_items = 0;
+	double load_start_time = current_time();
+
+	ZCompMessageEngine::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	ZSoundEngine::Init(&((ZPlayer*)p)->zmap); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	if(!((ZPlayer*)p)->disable_zcursor) ZCursor::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	ZObject::Init(((ZPlayer*)p)->ttf_font_7); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	ZBuilding::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	ZCannon::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	ZVehicle::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	ZRobot::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	ABird::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	AHutAnimal::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	BFort::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	BRepair::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	BRadar::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	BRobot::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	BVehicle::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	BBridge::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	OFlag::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	OGrenades::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	ORockets::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	OHut::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	OMapObject::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	CGatling::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	CGun::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	CHowitzer::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	CMissileCannon::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	VJeep::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	VLight::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	VMedium::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	VHeavy::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	VAPC::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	VMissileLauncher::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	VCrane::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	RGrunt::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	RPsycho::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	RLaser::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	RPyro::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	RSniper::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	RTough::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	ELaser::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	EFlame::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	EPyroFire::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	EToughRocket::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	EToughMushroom::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	EToughSmoke::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	ELightRocket::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	ELightInitFire::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	EMoMissileRockets::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	EMissileCRockets::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	ERobotDeath::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	ERobotTurrent::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	EUnitParticle::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	EDeath::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	EStandard::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	EDeathSparks::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	ETurrentMissile::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	ESideExplosion::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	ECannonDeath::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	ERockParticle::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	ERockTurrent::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	EMapObjectTurrent::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	EBridgeTurrent::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	ECraneConco::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	ETrack::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	ETankDirt::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	ETankSmoke::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	ETankOil::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	ETankSpark::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	GWProduction::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	GWFactoryList::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	GWLogin::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	GWCreateUser::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	ZGuiMainMenuBase::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	GMMWButton::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	GMMWList::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	GMMWRadio::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	GMMWTeamColor::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	ZGuiButton::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	ZGuiScrollBar::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	ZPortrait::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+	ZVote::Init(); ((ZPlayer*)p)->loaded_percent = 100 * ++loaded_items / max_items;
+
+
+	//this should only ever
+	//need to be done once...
+#ifdef COLLECT_TEAM_COLORS
+	ZTeam::SaveAllPalettes();
+#endif	
+
+	printf("graphics loaded in %.2lfs\n", current_time() - load_start_time);
+	fflush(stdout);
+	((ZPlayer*)p)->graphics_loaded = true;
+
+	return 1;
+}
+void ZPlayer::InitAnimals()
+{
+	ClearAnimals();
+
+	//#98: birds are scattered across the whole map, so the number visible at once
+	//is roughly total * (viewport area / map area). The old count was map-area
+	//based (one per 650 tiles), which at high resolution - where the viewport
+	//covers much more of the map - showed a whole flock. Instead pick the total so
+	//that on average only ~1-2 are on screen, regardless of resolution or map size.
+	const double target_on_screen = 1.5;
+
+	double map_px = (double)(zmap.GetMapBasics().width * 16) * (double)(zmap.GetMapBasics().height * 16);
+
+	double view_w = (double)(init_w - HUD_WIDTH);
+	double view_h = (double)(init_h - HUD_HEIGHT);
+	if(view_w < 1) view_w = 1;
+	if(view_h < 1) view_h = 1;
+	double view_px = view_w * view_h;
+
+	int birds = (int)lround(target_on_screen * map_px / view_px);
+	if(birds < 1) birds = 1;		//always at least a lone bird
+	if(birds > 30) birds = 30;		//safety cap (tiny viewport / huge map)
+
+	for(int i=0;i<birds;i++)
+		bird_list.push_back(new ABird(&ztime, &zsettings, (planet_type)zmap.GetMapBasics().terrain_type, zmap.GetMapBasics().width * 16, zmap.GetMapBasics().height * 16));
+}
+
+void ZPlayer::ClearAnimals()
+{
+	bird_list.clear();
+}
+
+void ZPlayer::ProcessDisconnect()
+{
+	//MP-prep: a dropped connection used to dead-end here, freezing the client on
+	//the last frame with a "please restart" notice. Instead tear the session down
+	//to the main menu so the player can reconnect or pick another game. The socket
+	//is already released by ClientSocket::Process() before it fires DISCONNECT_EVENT,
+	//so there's nothing to close here - just reset client state. This is also the
+	//exact path a future "Leave Game / Disconnect" menu button will reuse.
+    bool was_lobby=LobbyOpen(),was_deploying=frontend.Loading();
+	AddNewsEntry("Connection to the game server lost.");
+	ReturnToMenu();
+    if(was_deploying)frontend.DeploymentFailed("Connection lost during deployment. Retry to reconnect.",true);
+    if(was_lobby) {
+        CloseAllMenus(); LoadMainMenu(GMM_MULTIPLAYER);
+        for(auto *menu:gui_menu_list) if(auto *browser=dynamic_cast<GMMMultiplayer*>(menu))
+            browser->SetError(cloud_disconnect_reason.empty() ? "Connection lost before match startup. Refresh or join again." : cloud_disconnect_reason);
+    }
+}
+
+void ZPlayer::AddNewsEntry(string message, int r, int g, int b)
+{
+	const double lasting_time = 17.0;
+	news_entry *new_entry;
+	SDL_Color textcolor;
+
+	if(!message.length()) return;
+
+	//alloc
+	new_entry = new news_entry;
+
+	//extract
+	new_entry->r = r;
+	new_entry->g = g;
+	new_entry->b = b;
+	new_entry->message = message;
+
+	//a hack to get software renderer working again...
+	//(don't ever allow setting to the invisible "color key" color
+	if(!new_entry->r && !new_entry->g && !new_entry->b)
+		new_entry->r = 1;
+
+	//make surface
+	textcolor.r = new_entry->r;
+	textcolor.g = new_entry->g;
+	textcolor.b = new_entry->b;
+	//new_entry.text_image = TTF_RenderText_Solid(p->ttf_font, new_entry.message.c_str(), textcolor);
+	//new_entry->text_image.LoadBaseImage(TTF_RenderText_Solid(p->ttf_font, new_entry->message.c_str(), textcolor));
+	new_entry->text_image.LoadBaseImage(ZFontEngine::GetFont(SMALL_WHITE_FONT).Render(new_entry->message.c_str()));
+	
+	//a hack to get software renderer working again...
+	new_entry->text_image.MakeAlphable();
+	//if(!use_opengl && new_entry->text_image.GetBaseSurface())
+	//{
+	//	ZSDL_ModifyBlack(new_entry->text_image.GetBaseSurface());
+	//	new_entry->text_image.UseDisplayFormat();
+	//	SDL_SetSurfaceColorKey(new_entry->text_image.GetBaseSurface(), true, 0x000000); 
+	//}
+
+	//set death time
+	new_entry->death_time = current_time() + lasting_time;
+
+	if(new_entry->text_image.GetBaseSurface())
+	  news_list.insert(news_list.begin(), new_entry);
+	else
+	  printf("ZPlayer::display_news_event: was not about to render news message:%s...\n", new_entry->message.c_str());
+}
+
+void ZPlayer::DisplayPlayerList()
+{
+	string team_players[MAX_TEAM_TYPES];
+	string spectators;
+	bool bot_player[MAX_TEAM_TYPES];
+	bool bot_player_ignored[MAX_TEAM_TYPES];
+	bool have_bot_players;
+	int tray_players;
+	int nobodies;
+	char c_message[50];
+
+	if(!player_info.size())
+	{
+		AddNewsEntry("No one is currently connected");
+		return;
+	}
+
+	//init
+	tray_players = 0;
+	nobodies = 0;
+	have_bot_players = false;
+	for(int i=0;i<MAX_TEAM_TYPES;i++)
+	{
+		bot_player[i] = false;
+		bot_player_ignored[i] = false;
+	}
+
+	for(vector<p_info>::iterator i=player_info.begin(); i!=player_info.end(); i++)
+	{
+		//char message[500];
+
+		//sprintf(message, "p:'%s' t:%s m:%s\n", i->name.c_str(), team_type_string[i->team].c_str(), player_mode_string[i->mode].c_str());
+
+		//AddNewsEntry(message);
+
+		switch(i->mode)
+		{
+		case NOBODY_MODE:
+			nobodies++;
+			break;
+		case PLAYER_MODE:
+			if(team_players[i->team].size())
+				team_players[i->team] += ", " + i->name;
+			else
+				team_players[i->team] += i->name;
+			break;
+		case BOT_MODE:
+			bot_player[i->team] = true;
+			bot_player_ignored[i->team] = i->ignored;
+			have_bot_players = true;
+			break;
+		case SPECTATOR_MODE:
+			if(spectators.size())
+				spectators += ", " + i->name;
+			else
+				spectators += i->name;
+			break;
+		case TRAY_MODE:
+			tray_players++;
+			break;
+		default:
+			break;
+		}
+	}
+
+	AddNewsEntry("--- Players connected ---");
+	for(int i=0; i<MAX_TEAM_TYPES; i++)
+		if(team_players[i].size() || bot_player[i])
+		{
+			if(bot_player[i])
+			{
+				if(bot_player_ignored[i])
+					AddNewsEntry(team_type_string[i] + " team -b: " + team_players[i]);
+				else
+					AddNewsEntry(team_type_string[i] + " team +b: " + team_players[i]);
+			}
+			else
+				AddNewsEntry(team_type_string[i] + " team: " + team_players[i]);
+		}
+
+	if(spectators.size())
+		AddNewsEntry("spectators: " + spectators);
+	
+	//if(have_bot_players)
+	//{
+	//	string message;
+
+	//	for(int i=0; i<MAX_TEAM_TYPES; i++)
+	//		if(bot_player[i])
+	//		{
+	//			if(message.size())
+	//				message += ", " + team_type_string[i];
+	//			else
+	//				message += team_type_string[i];
+	//		}
+
+	//	message = "bot teams: " + message;
+	//	AddNewsEntry(message);
+	//}
+
+	if(tray_players)
+	{
+		sprintf(c_message, "tray players: %d", tray_players);
+		AddNewsEntry(c_message);
+	}
+
+	if(nobodies)
+	{
+		sprintf(c_message, "nobodies: %d", nobodies);
+		AddNewsEntry(c_message);
+	}
+
+	AddNewsEntry("---------------------");
+
+}
+
+void ZPlayer::DisplayFactoryProductionList()
+{
+	vector<ZObject*> fort_list;
+	vector<ZObject*> robot_list;
+	vector<ZObject*> vehicle_list;
+
+	AddNewsEntry("------ Factories ------");
+
+	for(vector<ZObject*>::iterator i=object_list.begin(); i!=object_list.end(); i++)
+	{
+		if((*i)->GetOwner() != our_team) continue;
+
+		unsigned char ot, oid;
+
+		(*i)->GetObjectID(ot, oid);
+
+		if(ot != BUILDING_OBJECT) continue;
+
+		switch(oid)
+		{
+		case FORT_FRONT:
+		case FORT_BACK:
+			fort_list.push_back(*i);
+			break;
+		case ROBOT_FACTORY: robot_list.push_back(*i); break;
+		case VEHICLE_FACTORY: vehicle_list.push_back(*i); break;
+		}
+	}
+
+	for(vector<ZObject*>::iterator i=fort_list.begin(); i!=fort_list.end(); i++)
+		DisplayFactoryProductionListUnit(*i);
+
+	for(vector<ZObject*>::iterator i=robot_list.begin(); i!=robot_list.end(); i++)
+		DisplayFactoryProductionListUnit(*i);
+
+	for(vector<ZObject*>::iterator i=vehicle_list.begin(); i!=vehicle_list.end(); i++)
+		DisplayFactoryProductionListUnit(*i);
+
+	AddNewsEntry("--------------------");
+}
+
+void ZPlayer::DisplayFactoryProductionListUnit(ZObject *obj)
+{
+	string display_msg;
+	string build_unit;
+	char num_c[50];
+	unsigned char ot, oid;
+	unsigned char fot, foid;
+
+	if(!obj) return;
+
+	obj->GetObjectID(fot, foid);
+
+	switch(foid)
+		{
+		case FORT_FRONT:
+		case FORT_BACK:
+			display_msg = "fort ";
+			break;
+		case ROBOT_FACTORY: display_msg = "robot "; break;
+		case VEHICLE_FACTORY: display_msg = "vehicle "; break;
+		}
+
+	sprintf(num_c, "L%d: ", obj->GetLevel() + 1);
+	display_msg += num_c;
+
+	obj->GetBuildUnit(ot, oid);
+
+	switch(ot)
+	{
+	case ROBOT_OBJECT:
+		if(oid >= 0 && oid < MAX_ROBOT_TYPES) build_unit = robot_type_string[oid];
+		break;
+	case VEHICLE_OBJECT:
+		if(oid >= 0 && oid < MAX_VEHICLE_TYPES) build_unit = vehicle_type_string[oid];
+		break;
+	case CANNON_OBJECT:
+		if(oid >= 0 && oid < MAX_CANNON_TYPES) build_unit = cannon_type_string[oid];
+		break;
+	}
+
+	switch(obj->GetBuildState())
+	{
+	case BUILDING_PLACE:
+		display_msg += "placing cannon";
+		break;
+	case BUILDING_SELECT:
+		display_msg += "no production";
+		break;
+	case BUILDING_BUILDING:
+		display_msg += build_unit;
+		break;
+	case BUILDING_PAUSED:
+		display_msg += "paused";
+		break;
+	}
+
+	AddNewsEntry(display_msg);
+}
+
+void ZPlayer::SetupSelectionImages()
+{
+	int t;
+	SDL_Rect the_box;
+
+	the_box.x = 0;
+	the_box.y = 0;
+	the_box.w = 2;
+	the_box.h = 2;
+
+	for(t=0;t<MAX_TEAM_TYPES;t++)
+	{
+		int r,g,b;
+
+		r = team_color[t].r - (int)(team_color[t].r * 0.2);
+		g = team_color[t].g - (int)(team_color[t].g * 0.2);
+		b = team_color[t].b - (int)(team_color[t].b * 0.2);
+
+		//selection_img[t] = ZSDL_CreateSurface(4, 4, 32, 0xFF000000, 0x0000FF00, 0x00FF0000, 0x000000FF);
+		selection_img[t].LoadBaseImage(ZSDL_CreateSurface(4, 4, 32, 0xFF000000, 0x0000FF00, 0x00FF0000, 0x000000FF));
+		//SDL_FillSurfaceRect(selection_img[t], &the_box, SDL_MapRGB(selection_img[t]->format, r, g, b));
+		ZSDL_FillSurfaceRect(&the_box, r, g, b, &selection_img[t]);
+	}
+}
+
+void ZPlayer::Run()
+{
+	double whole_time;
+	double process_time;
+	double render_time;
+	double socket_time;
+
+	while(allow_run)
+	{
+		//whole_time = current_time();
+
+		ztime.UpdateTime();
+
+		//matchmaking lobby owns the start (ready-up); hide the click-to-resume bar
+		//so a stray click can't bypass it. Set before event processing + render.
+		zcomp_msg.SetSuppressResume(LobbyOpen());
+
+		//keep the lobby centered on the map view (not the full framebuffer, which
+		//includes the HUD). Done per-frame because the view dims aren't known yet
+		//when the lobby first opens (the match's map hasn't arrived).
+		RecenterLobby();
+
+		//check for tcp events
+		//socket_time = current_time();
+		ProcessSocketEvents();
+		//socket_time = current_time() - socket_time;
+		//client_socket.Process();
+
+		//#254: warn if the server never answered the connect handshake
+		CheckServerSilence();
+		
+		//check for sdl events
+		ProcessSDL();
+		
+		//process events
+		ehandler.ProcessEvents();
+
+		//carry out what the start menu asked for
+		ProcessFrontEndActions();
+
+		CheckAutosave();
+		
+		//do stuff
+		//process_time = current_time();
+		ProcessGame();
+		//process_time = current_time() - process_time;
+		
+		//render
+		//render_time = current_time();
+		RenderScreen();
+		//render_time = current_time() - render_time;
+
+		//whole_time = current_time() - whole_time;
+		
+		//printf("player:: whole_time:%lf \t socket_time:%lf \t process:%lf \t render:%lf\n", whole_time, socket_time, process_time, render_time);
+		
+		uni_pause(10);
+		//uni_pause(1000 * 4 / 60);
+	}
+}
+
+void ZPlayer::ProcessSocketEvents()
+{
+	char *message;
+	int size;
+	int pack_id;
+	SocketHandler* shandler;
+	int packets_processed = 0;
+	double time_took;
+
+	shandler = client_socket.GetHandler();
+
+	if(!shandler) return;
+	
+	//not connected, free it up
+	if(!shandler->Connected())
+	{
+		client_socket.ClearConnection();
+		
+		//event_list->push_back(new Event(OTHER_EVENT, DISCONNECT_EVENT, 0, NULL, 0));
+		ehandler.ProcessEvent(OTHER_EVENT, DISCONNECT_EVENT, NULL, 0, 0);
+	}
+	
+	else if(shandler->DoRecv())
+	{
+		//time_took = current_time();
+		/*
+		while(shandler->DoProcess(&message, &size, &pack_id))
+		{
+			ehandler.ProcessEvent(TCP_EVENT, pack_id, message, size, 0);
+			//event_list->push_back(new Event(TCP_EVENT, pack_id, 0, message, size));
+ 			//printf("ClientSocket::Process:got packet id:%d\n", pack_id);
+			packets_processed++;
+		}
+		*/
+		while(shandler->DoFastProcess(&message, &size, &pack_id))
+		{
+			server_response_seen = true;   //#254: the server is alive and talking
+			ehandler.ProcessEvent(TCP_EVENT, pack_id, message, size, 0);
+			//packets_processed++;
+		}
+		shandler->ResetFastProcess();
+		//time_took = current_time() - time_took;
+		//printf("packets_processed:%05d \t time_took:%lf\n", packets_processed, time_took);
+	}
+
+	/*
+	time_took = current_time();
+	while(shandler->PacketAvailable() && shandler->GetPacket(&message, &size, &pack_id))
+	{
+		//event_list->push_back(new Event(TCP_EVENT, pack_id, 0, message, size));	
+		ehandler.ProcessEvent(TCP_EVENT, pack_id, message, size, 0);
+		packets_processed++;
+	}
+	time_took = current_time() - time_took;
+	if(packets_processed > 0) printf("packets_processed:%05d \t time_took:%lf\n", packets_processed, time_took);
+	*/
+}
+
+void ZPlayer::ProcessGame()
+{
+    if(PollHostedJoin()) return;
+	double &the_time = ztime.ztime;
+
+	//#120/#180: once the game has ended, hold the summary back until every on-screen
+	//explosion sprite has finished animating, then add a 1s buffer before revealing.
+	//Real time, not ztime, since it's about the on-screen animations. effect_list
+	//holds all transient effects (explosions, death cascades, particles); it drains
+	//as they finish. A short floor lets the fort blast spawn first; a safety cap
+	//keeps a stray lingering effect from hanging the summary forever.
+	if(summary_pending)
+	{
+		if(summary_show_time == 0)
+		{
+			double since_end = current_time() - summary_end_time;
+			bool explosions_done = effect_list.empty() && since_end >= 0.5;
+			bool timed_out = since_end >= 15.0;
+			if(explosions_done || timed_out)
+				summary_show_time = current_time() + 1.0;
+		}
+		else if(current_time() >= summary_show_time)
+		{
+			summary_pending = false;
+			//the campaign's win / lose cutscene plays before the summary
+			frontend.RecordCampaignResult(match_won,(int)match_duration,match_enemies_killed,match_units_lost,zod_bot_difficulty);
+            if(zod_scenes) frontend.PlayLevelResult(match_won);
+			show_match_summary = true;
+		}
+	}
+
+	//#111: apply a pinch-zoom at most once per frame (the heavy RebuildView), so a
+	//burst of finger-motion events can't stack dozens of rebuilds into one frame.
+	if(pinch_zoom_dirty)
+	{
+		pinch_zoom_dirty = false;
+		ApplyZoom(pinch_pending_zoom);
+	}
+
+	//zmap.DoEffects(the_time);
+
+	ZMusicEngine::Process(object_list, zmap, our_team, fort_ref_id);
+
+	//fort under attack etc?
+	ProcessVerbalWarnings();
+
+	cursor.Process(the_time);
+	Pcursor.Process(the_time);
+
+	zcomp_msg.Process(current_time());
+
+	zhud.Process(the_time, object_list);
+		
+	//sort objects
+	sort (ols.prender_olist.begin(), ols.prender_olist.end(), sort_objects_func);
+
+ 	for(vector<ZObject*>::iterator i=ols.prender_olist.begin(); i!=ols.prender_olist.end(); i++)
+	{
+		(*i)->ProcessObject();
+ 		(*i)->Process();
+	}
+
+	//kill effects
+	for(vector<ZEffect*>::iterator i=effect_list.begin(); i!=effect_list.end();)
+	{
+		if((*i)->KillMe())
+		{
+			delete *i;
+			i=effect_list.erase(i);
+		}
+		else
+			i++;
+	}
+
+	//process effects
+	for(vector<ZEffect*>::iterator i=effect_list.begin(); i!=effect_list.end();i++)
+	{
+		(*i)->Process();
+
+		if((*i)->GetEFlags().unit_particles)
+			MissileObjectParticles((*i)->GetEFlags().x, (*i)->GetEFlags().y, (*i)->GetEFlags().unit_particles_radius, (*i)->GetEFlags().unit_particles_amount);
+	}
+
+	//the zeffects push new effects into this queue, so we need to move it to the real one
+	for(vector<ZEffect*>::iterator i=new_effect_list.begin(); i!=new_effect_list.end(); i++)
+		effect_list.push_back(*i);
+	new_effect_list.clear();
+
+	//animals
+	for(vector<ZObject*>::iterator i=bird_list.begin(); i!=bird_list.end();i++)
+		(*i)->Process();
+
+	//gui
+	if(gui_window) 
+	{
+		if(gui_window->KillMe())
+			DeleteCurrentGuiWindow();
+		else
+			gui_window->Process();
+	}
+
+	if(gui_factory_list) gui_factory_list->Process();
+
+	//main menus
+	{
+		for(vector<ZGuiMainMenuBase*>::iterator i=gui_menu_list.begin();i!=gui_menu_list.end();)
+		{
+			if((*i)->KillMe())
+			{
+				delete *i;
+				i = gui_menu_list.erase(i);
+			}
+			else
+				++i;
+		}
+
+        for(auto *menu : gui_menu_list) menu->Process();
+        // Async create results are produced during Process(), not a mouse click.
+        for(auto *menu : gui_menu_list) {
+            auto &flags = menu->GetGMMFlags();
+            if(flags.join_match && flags.join_port > 0) {
+                if(menu != gui_menu_list.front()) {
+                    flags.join_match=false;
+                    if(auto *browser=dynamic_cast<GMMMultiplayer*>(menu)) browser->SetError("Connection cancelled");
+                    if(auto *setup=dynamic_cast<GMMMultiplayerCreate*>(menu)) setup->SetError("Connection cancelled");
+                    continue;
+                }
+                string host = flags.join_host;
+                int port = flags.join_port, team = flags.join_team;
+                flags.join_match = false;
+                JoinHostedMatch(host, port, team, menu);
+                return; //connecting destroys the old menus
+            }
+        }
+	}
+
+	//placing a cannon?
+	SetPlaceCannonCords();
+
+	//scroll
+	ProcessScroll();
+	ProcessFocusCamerato();
+}
+
+void ZPlayer::ProcessVerbalWarnings()
+{
+	double &the_time = ztime.ztime;
+
+	static double next_fort_under_attack_msg_time = 0;
+	static double next_your_losing_msg_time = 0;
+
+	if(!graphics_loaded) return;
+
+	if(team_units_available[our_team] <= 0) return;
+
+	//it in fort crazy mode and we need to redisplay the fort msg?
+	if(ZMusicEngine::GetDangerLevel() == M_FORT && the_time >= next_fort_under_attack_msg_time)
+	{
+		next_fort_under_attack_msg_time = the_time + 10;
+
+		ZSoundEngine::PlayWav(COMP_FORT_UNDER_ATTACK);
+		zcomp_msg.DisplayMessage(FORT_MSG, fort_ref_id);
+
+		//save space bar event
+		AddSpaceBarEvent(SpaceBarEvent(fort_ref_id));
+	}
+
+	if(the_time >= next_your_losing_msg_time)
+	{
+		int our_unit_count;
+		int next_worst_unit_count = 0;
+		double our_territory_percentage;
+		double next_worst_territory_percentage;
+
+		our_unit_count = team_units_available[our_team];
+		our_territory_percentage = team_zone_percentage[our_team];
+
+		//find next worst
+		for(int i=RED_TEAM;i<MAX_TEAM_TYPES;i++)
+		{
+			if(i == our_team) continue;
+			if(team_units_available[i])
+			{
+				//first enemy?
+				if(!next_worst_unit_count)
+				{
+					next_worst_unit_count = team_units_available[i];
+					next_worst_territory_percentage = team_zone_percentage[i];
+
+					continue;
+				}
+				
+				if(next_worst_unit_count > team_units_available[i])
+					next_worst_unit_count = team_units_available[i];
+
+				if(next_worst_territory_percentage > team_zone_percentage[i])
+					next_worst_territory_percentage = team_zone_percentage[i];
+			}
+		}
+
+		our_unit_count *= 1.7;
+		our_territory_percentage *= 1.7;
+
+		if(next_worst_unit_count > our_unit_count && 
+			next_worst_territory_percentage > our_territory_percentage)
+		{
+			next_your_losing_msg_time = the_time + 8;
+		
+			ZSoundEngine::PlayWav(COMP_YOUR_LOSING_0 + (rand() % MAX_COMP_LOSING_MESSAGES));
+		}
+	}
+}
+
+void ZPlayer::PlayBuildingSounds()
+{
+	bool do_play_radar = false;
+	bool do_play_robot = false;
+	bool do_play_vehicle = false;
+
+	for(vector<ZObject*>::iterator i=object_list.begin(); i!=object_list.end(); i++)
+	{
+		unsigned char ot, oid;
+		int x, y, w, h;
+
+		(*i)->GetObjectID(ot, oid);
+
+		if(ot != BUILDING_OBJECT) continue;
+		if((*i)->IsDestroyed()) continue;
+
+		//radar
+		if(oid == RADAR && (*i)->GetOwner() != NULL_TEAM)
+		{
+			(*i)->GetCords(x, y);
+			(*i)->GetDimensionsPixel(w, h);
+
+			if(zmap.WithinView(x, y, w, h)) do_play_radar = true;
+		}
+
+		//robot factory
+		if(oid == ROBOT_FACTORY || oid == VEHICLE_FACTORY)
+		{
+			(*i)->GetCords(x, y);
+			(*i)->GetDimensionsPixel(w, h);
+
+			if(zmap.WithinView(x, y, w, h))
+				if((*i)->GetBuildState() != BUILDING_SELECT)
+					if((*i)->GetOwner() != NULL_TEAM)
+						do_play_robot = true;
+		}
+
+		//vehicle factory
+
+	}
+
+	if(do_play_radar)
+		ZSoundEngine::RepeatWav(RADAR_SND);
+	else
+		ZSoundEngine::StopRepeatWav(RADAR_SND);
+
+	if(do_play_robot)
+		ZSoundEngine::RepeatWav(ROBOT_FACTORY_SND);
+	else
+		ZSoundEngine::StopRepeatWav(ROBOT_FACTORY_SND);
+}
+
+void ZPlayer::MissileObjectParticles(int x_, int y_, int radius, int particles)
+{
+	radius *= 0.8;
+
+	for(vector<ZObject*>::iterator i=object_list.begin(); i!=object_list.end(); i++)
+	{
+		unsigned char ot, oid;
+		int ox, oy;
+		int w, h;
+
+		(*i)->GetObjectID(ot, oid);
+
+		if(!(ot == CANNON_OBJECT || ot == VEHICLE_OBJECT || ot == ROBOT_OBJECT)) continue;
+
+		(*i)->GetCords(ox, oy);
+		(*i)->GetDimensionsPixel(w, h);
+
+		//if(obj.loc.x > x + width_pix) return false;
+		//if(obj.loc.x + obj.width_pix < x) return false;
+		//if(obj.loc.y > y + height_pix) return false;
+		//if(obj.loc.y + obj.height_pix < y) return false;
+
+		if(ox > x_ + radius) continue;
+		if(ox + w < x_ - radius) continue;
+		if(oy > y_ + radius) continue;
+		if(oy + h < y_ - radius) continue;
+
+		//if(ox + w > x_ - radius) continue;
+		//if(oy + h > y_ - radius) continue;
+		//if(ox < x_ + radius) continue;
+		//if(oy < y_ + radius) continue;
+
+		int particle_amount = 14 + (rand() % particles);
+
+		if(ot == ROBOT_OBJECT)
+			particle_amount /= 2;
+
+		for(int i=0;i<particle_amount;i++)
+			new_effect_list.push_back((ZEffect*)(new EUnitParticle(&ztime, ox + (rand() % w), oy + (rand() % h))));
+	}
+}
+
+void ZPlayer::RenderScreen()
+{
+	double &the_time = ztime.ztime;
+
+	//the original game's intro videos, once per launch, as soon as the splash is gone
+	if(!intro_played && zod_scenes && graphics_loaded && frontend.Visible() && !zmap.Loaded()
+		&& !(splash_screen.GetBaseSurface() && splash_fade >= 5))
+	{
+		intro_played = true;
+		if(ZMovie_PlayClip("E_LOGO") != ZMOVIE_SKIPPED)
+			ZMovie_PlayClip("E_INTRO");
+	}
+
+	//the Z-style front-end owns the window while no map is loaded (zfrontend.cpp)
+	bool want_frontend = FrontEndWanted();
+	if(!want_frontend && frontend_presenting)
+	{
+		frontend_presenting = false;
+		ZVideo_SetFramebufferMode();
+		if(!disable_zcursor) SDL_HideCursor();
+	}
+	if(want_frontend)
+	{
+		//Scenes off: no intro splash (now or over the first level)
+		if(!zod_scenes) { splash_dismissed = true; splash_fade = 0; }
+
+		if(!frontend_presenting)
+		{
+			frontend_presenting = true;
+			ZVideo_SetCanvasMode(ZFrontEnd::CANVAS_W, ZFrontEnd::CANVAS_H);
+			SDL_ShowCursor();
+			ZMusicEngine::PlayMenuMusic();
+		}
+		frontend.Render();
+		return;
+	}
+
+	if(graphics_loaded && zmap.Loaded())
+	{
+		//a map arrived: the start menu is done until the next ReturnToMenu
+		if(frontend.Visible()) frontend.Hide();
+
+		//render base
+		//we do not keep track if the image is in the map area in opengl
+		//so we just render it all full then put the hud back over it
+		if(splash_fade >= 5 || use_opengl)
+			zhud.ReRenderAll();
+		
+		zmap.DoRender(screen);
+		zmap.DoEffects(the_time, screen);
+		RenderSmallMapFiller();
+
+		//draw zones
+		zmap.DoZoneEffects(the_time, screen);
+
+		//render objects
+		RenderObjects();
+
+		//mouse stuff
+		RenderMouse();
+		RenderPreviousCursor();
+
+		//render gui?
+		RenderGUI();
+
+		//place cannon?
+		RenderPlaceCannon();
+
+		//a font test
+		//SDL_Surface *surface = ZFontEngine::GetFont(SMALL_WHITE_FONT).Render("Light * The quick brown fox jumps over the lazy dog 12:34:56");
+		//SDL_Surface *surface = ZFontEngine::GetFont(GREEN_BUILDING_FONT).Render("Light * THE QUICK BROWN FOX JUMPED OVER THE LAZY DOG 10:34 +:++");
+		//if(surface)
+		//{
+		//	SDL_BlitSurface( surface, NULL, screen, NULL);
+		//	SDL_DestroySurface(surface);
+		//}
+
+		//vote
+		zvote.DoRender(zmap);
+
+		//comp messages
+		zcomp_msg.DoRender(zmap, screen);
+
+		//render news
+		RenderNews();
+
+		//render a main menu like login
+		if(active_menu) active_menu->DoRender(zmap, screen);
+
+		//(almost)last because opengl uses it to render over overflows
+		zhud.DoRender(screen, init_w, init_h);
+
+		RenderSelectionReadout();
+		//main menus go over everything
+		RenderMainMenu();
+
+		//#88: post-match summary sits above the HUD/menus during the end pause
+		if(show_match_summary) { ZMenuTheme::beginText(nullptr); RenderMatchSummary(); RenderNews(); zvote.DoRender(zmap); }
+
+		//render cursor
+		if(!disable_zcursor) 
+		{
+			cursor.Render(zmap, screen, mouse_x, mouse_y);
+			//if(mouse_x > screen->w - (HUD_WIDTH + 16) || mouse_y > screen->h - (HUD_HEIGHT + 16))
+			if(mouse_x > init_w - (HUD_WIDTH + 16) || mouse_y > init_h - (HUD_HEIGHT + 16))
+				zhud.ReRenderAll();
+		}
+
+		//place some sounds
+		PlayBuildingSounds();
+	}
+	else if(graphics_loaded)
+	{
+		//#79: menu-first / idle - no map is loaded yet. Draw the banner background
+		//and let the menus render over it so the player can pick a map or adjust
+		//settings before anything loads. (Picking a map flips us into the game
+		//branch above once the server sends it.)
+		//
+		//Hold it back until the startup splash has finished fading - DoSplash draws
+		//the SAME art fit-scaled and centered, so showing the cover-scaled menu
+		//background underneath at the same time looked like a splash inside a splash.
+		bool splash_showing = splash_screen.GetBaseSurface() && splash_fade >= 5;
+		if(!splash_showing)
+		{
+			RenderMenuBackground();
+
+			//a login prompt (multiplayer) and the main menu both live outside the map
+			if(active_menu) active_menu->DoRender(zmap, screen);
+			RenderMainMenu();
+			RenderNews();
+
+			if(!disable_zcursor)
+				cursor.Render(zmap, screen, mouse_x, mouse_y);
+		}
+	}
+
+	DoSplash();
+
+	ZVideo_Present();
+}
+
+void ZPlayer::RenderSmallMapFiller()
+{
+	int map_w, map_h;
+	int w_dif, h_dif;
+	SDL_Rect box;
+
+	map_w = zmap.GetMapBasics().width * 16;
+	map_h = zmap.GetMapBasics().height * 16;
+
+	//w_dif = (screen->w - HUD_WIDTH) - map_w;
+	//h_dif = (screen->h - HUD_HEIGHT) - map_h;
+	w_dif = (init_w - HUD_WIDTH) - map_w;
+	h_dif = (init_h - HUD_HEIGHT) - map_h;
+
+	//side need blacked out?
+	if(w_dif > 0)
+	{
+		box.x = map_w;
+		box.y = 0;
+		box.w = w_dif;
+		//box.h = screen->h - HUD_HEIGHT;
+		box.h = init_h - HUD_HEIGHT;
+
+		//SDL_FillSurfaceRect(screen, &box, SDL_MapRGB(SDL_GetPixelFormatDetails(screen->format), SDL_GetSurfacePalette(screen), 0, 0, 0));
+		ZSDL_FillSurfaceRect(&box, 0, 0, 0);
+	}
+
+	//bottom need blacked out?
+	if(h_dif > 0)
+	{
+		box.x = 0;
+		box.y = map_h;
+		//box.w = screen->w - HUD_WIDTH;
+		box.w = init_w - HUD_WIDTH;
+		box.h = h_dif;
+
+		//SDL_FillSurfaceRect(screen, &box, SDL_MapRGB(SDL_GetPixelFormatDetails(screen->format), SDL_GetSurfacePalette(screen), 0, 0, 0));
+		ZSDL_FillSurfaceRect(&box, 0, 0, 0);
+	}
+}
+
+void ZPlayer::RenderMouse()
+{
+	double &the_time = ztime.ztime;
+	static int draw_shift = 0;
+	static double next_shift_time = 0;
+	const double shift_tick = 0.1;
+	SDL_Rect dim;
+	SDL_Rect to_rect;
+	int shift_x, shift_y;
+	int x, y;
+
+	//#107: don't even draw the drag-select rectangle before the round starts -
+	//selection is frozen (handled in the input events), so the box would be a lie.
+	if(lbutton.down && !ztime.IsPaused() && !lbutton.started_over_hud && !lbutton.started_over_gui)
+	{
+		//move forward
+		if(the_time > next_shift_time)
+		{
+			draw_shift++;
+			if(draw_shift>=4) draw_shift = 0;
+
+			next_shift_time = the_time + shift_tick;
+		}
+
+		zmap.GetViewShift(shift_x, shift_y);
+		x = lbutton.map_x - shift_x;
+		y = lbutton.map_y - shift_y;
+
+		if(x < mouse_x) 
+		{
+			dim.x = x;
+			dim.w = mouse_x - x;
+		}
+		else 
+		{
+			dim.x = mouse_x;
+			dim.w = x - mouse_x;
+		}
+
+		if(y < mouse_y)
+		{
+			dim.y = y;
+			dim.h = mouse_y - y;
+		}
+		else 
+		{
+			dim.y = mouse_y;
+			dim.h = y - mouse_y;
+		}
+
+		//set max distants we can travel while drawing base on the actual screen
+		//int max_x = screen->w - HUD_WIDTH - 1;
+		//int max_y = screen->h - HUD_HEIGHT - 1;
+		int max_x = init_w - HUD_WIDTH - 1;
+		int max_y = init_h - HUD_HEIGHT - 1;
+		int start_x, start_y;
+
+		if(dim.y < 0) start_y = 0;
+		else start_y = dim.y;
+
+		if(dim.x < 0) start_x = 0;
+		else start_x = dim.x;
+
+		//to optimise, force use the var - but set it to the orig if it is within the max's
+		if(dim.w+dim.x < max_x) max_x = dim.w+dim.x;
+		if(dim.h+dim.y < max_y) max_y = dim.h+dim.y;
+
+		to_rect.y = dim.y;
+		//if(to_rect.y < screen->h - HUD_HEIGHT - 1 && to_rect.y > 0)
+		if(to_rect.y < init_h - HUD_HEIGHT - 1 && to_rect.y > 0)
+		for(to_rect.x=start_x+(4-draw_shift);to_rect.x<max_x;to_rect.x+=4)
+			selection_img[our_team].BlitSurface(NULL, &to_rect);
+			//SDL_BlitSurface( selection_img[our_team], NULL, screen, &to_rect);
+		
+		to_rect.y = dim.y + dim.h;
+		//if(to_rect.y < screen->h - HUD_HEIGHT - 1 && to_rect.y > 0)
+		if(to_rect.y < init_h - HUD_HEIGHT - 1 && to_rect.y > 0)
+		for(to_rect.x=start_x+draw_shift;to_rect.x<max_x;to_rect.x+=4)
+			selection_img[our_team].BlitSurface(NULL, &to_rect);
+			//SDL_BlitSurface( selection_img[our_team], NULL, screen, &to_rect);
+
+		to_rect.x = dim.x;
+		//if(to_rect.x < screen->w - HUD_WIDTH - 1 && to_rect.x > 0)
+		if(to_rect.x < init_w - HUD_WIDTH - 1 && to_rect.x > 0)
+		for(to_rect.y=start_y+draw_shift;to_rect.y<max_y;to_rect.y+=4)
+			selection_img[our_team].BlitSurface(NULL, &to_rect);
+			//SDL_BlitSurface( selection_img[our_team], NULL, screen, &to_rect);
+
+		to_rect.x = dim.x + dim.w;
+		//if(to_rect.x < screen->w - HUD_WIDTH - 1 && to_rect.x > 0)
+		if(to_rect.x < init_w - HUD_WIDTH - 1 && to_rect.x > 0)
+		for(to_rect.y=start_y+(4-draw_shift);to_rect.y<max_y;to_rect.y+=4)
+			selection_img[our_team].BlitSurface(NULL, &to_rect);
+			//SDL_BlitSurface( selection_img[our_team], NULL, screen, &to_rect);
+
+		//this for now, till we get the official selection box system up
+		//draw_box(screen, dim, team_color[our_team], screen->w - HUD_WIDTH, screen->h - HUD_HEIGHT);
+	}
+}
+
+void ZPlayer::ReSetupButtons()
+{
+	vector<ZObject*>::iterator i;
+	bool robot_available = false;
+	bool vehicle_available = false;
+	bool gun_available = false;
+	bool building_available = false;
+	bool change_made = false;
+	int tbut;
+
+	//check button availability
+	if(our_team != NULL_TEAM)
+		for(i=object_list.begin();i!=object_list.end();i++)
+			if((*i)->GetOwner() == our_team)
+		{
+			unsigned char ot, oid;
+
+			(*i)->GetObjectID(ot, oid);
+
+			switch(ot)
+			{
+			case BUILDING_OBJECT:
+				building_available = true;
+				break;
+			case CANNON_OBJECT:
+				gun_available = true;
+				break;
+			case VEHICLE_OBJECT:
+				vehicle_available = true;
+				break;
+			case ROBOT_OBJECT:
+				robot_available = true;
+				break;
+			}
+		}
+
+	//set button availability
+	tbut = B_BUTTON;
+	if(building_available)
+	{
+		if(zhud.GetButton(tbut).CurrentState() == B_INACTIVE)
+		{
+			zhud.GetButton(tbut).SetState(B_ACTIVE);
+			change_made = true;
+		}
+	}
+	else
+	{
+		if(zhud.GetButton(tbut).CurrentState() != B_INACTIVE)
+		{
+			zhud.GetButton(tbut).SetState(B_INACTIVE);
+			change_made = true;
+		}
+	}
+
+	tbut = G_BUTTON;
+	if(gun_available)
+	{
+		if(zhud.GetButton(tbut).CurrentState() == B_INACTIVE)
+		{
+			zhud.GetButton(tbut).SetState(B_ACTIVE);
+			change_made = true;
+		}
+	}
+	else
+	{
+		if(zhud.GetButton(tbut).CurrentState() != B_INACTIVE)
+		{
+			zhud.GetButton(tbut).SetState(B_INACTIVE);
+			change_made = true;
+		}
+	}
+
+	tbut = V_BUTTON;
+	if(vehicle_available)
+	{
+		if(zhud.GetButton(tbut).CurrentState() == B_INACTIVE)
+		{
+			zhud.GetButton(tbut).SetState(B_ACTIVE);
+			change_made = true;
+		}
+	}
+	else
+	{
+		if(zhud.GetButton(tbut).CurrentState() != B_INACTIVE)
+		{
+			zhud.GetButton(tbut).SetState(B_INACTIVE);
+			change_made = true;
+		}
+	}
+
+	tbut = R_BUTTON;
+	if(robot_available)
+	{
+		if(zhud.GetButton(tbut).CurrentState() == B_INACTIVE)
+		{
+			zhud.GetButton(tbut).SetState(B_ACTIVE);
+			change_made = true;
+		}
+	}
+	else
+	{
+		if(zhud.GetButton(tbut).CurrentState() != B_INACTIVE)
+		{
+			zhud.GetButton(tbut).SetState(B_INACTIVE);
+			change_made = true;
+		}
+	}
+
+	if(change_made)
+		zhud.ReRenderAll();
+}
+
+void ZPlayer::HandleButton(hud_buttons button)
+{
+	switch(button)
+	{
+	case A_BUTTON: A_Button(); break;
+	case B_BUTTON: B_Button(); break;
+	case D_BUTTON: D_Button(); break;
+	case G_BUTTON: G_Button(); break;
+	case MENU_BUTTON: Menu_Button(); break;
+	case R_BUTTON: R_Button(); break;
+	case T_BUTTON: T_Button(); break;
+	case V_BUTTON: V_Button(); break;
+	case Z_BUTTON: Z_Button(); break;
+	default: break;
+	}
+}
+
+void ZPlayer::A_Button()
+{
+
+}
+
+void ZPlayer::B_Button()
+{
+	if(gui_factory_list) gui_factory_list->ToggleShow();
+}
+
+void ZPlayer::D_Button()
+{
+
+}
+
+void ZPlayer::G_Button()
+{
+	//RandomlySelectUnitType(CANNON_OBJECT);
+	OrderlySelectUnitType(CANNON_OBJECT);
+}
+
+void ZPlayer::Menu_Button()
+{
+	LoadMainMenu(GMM_MAIN_MAIN);
+}
+
+void ZPlayer::R_Button()
+{
+	//RandomlySelectUnitType(ROBOT_OBJECT);
+	OrderlySelectUnitType(ROBOT_OBJECT);
+}
+
+void ZPlayer::T_Button()
+{
+
+}
+
+void ZPlayer::V_Button()
+{
+	//RandomlySelectUnitType(VEHICLE_OBJECT);
+	OrderlySelectUnitType(VEHICLE_OBJECT);
+}
+
+void ZPlayer::Z_Button()
+{
+
+}
+
+void ZPlayer::OrderlySelectUnitType(int type)
+{
+	ZObject* the_choice;
+	static double last_time = -100;
+	double the_time = current_time();
+	static int last_ref_id_default = -1;
+	static int last_ref_id_cannon = -1;
+	static int last_ref_id_robot = -1;
+	static int last_ref_id_vehicle = -1;
+	int *last_ref_id = &last_ref_id_default;
+
+	if(our_team == NULL_TEAM) return;
+
+	//different id for each type
+	switch(type)
+	{
+		case CANNON_OBJECT: last_ref_id=&last_ref_id_cannon; break;
+		case ROBOT_OBJECT: last_ref_id=&last_ref_id_robot; break;
+		case VEHICLE_OBJECT: last_ref_id=&last_ref_id_vehicle; break;
+	}
+
+	the_choice = NULL;
+
+	//do next in line like normal
+	if(the_time - last_time < 7)
+	{
+		the_choice = ZObject::NextSelectableObjectAboveID(object_list, type, our_team, *last_ref_id);
+
+		if(!the_choice) the_choice = ZObject::NextSelectableObjectAboveID(object_list, type, our_team, -1);
+	}
+	else
+	{
+		//choose the nearest to mouse
+		int map_x, map_y;
+
+		zmap.GetMapCoords(mouse_x, mouse_y, map_x, map_y);
+
+		the_choice = ZObject::NearestSelectableObject(object_list, type, our_team, map_x, map_y);
+	}
+
+	//make the selection
+	if(the_choice)
+	{
+		int ox, oy;
+
+		select_info.Clear();
+		select_info.selected_list.push_back(the_choice);
+		select_info.SetupGroupDetails();
+		DetermineCursor();
+		GiveHudSelected();
+
+		the_choice->GetCenterCords(ox, oy);
+		FocusCameraTo(ox, oy);
+
+		*last_ref_id = the_choice->GetRefID();
+		last_time = the_time;
+	}
+}
+
+void ZPlayer::RandomlySelectUnitType(int type)
+{
+	vector<ZObject*>::iterator i;
+	vector<ZObject*> temp_choice_list;
+	ZObject* the_choice = NULL;
+
+	if(our_team == NULL_TEAM) return;
+
+	for(i=object_list.begin();i!=object_list.end();i++)
+		if((*i)->GetOwner() == our_team)
+	{
+		unsigned char ot, oid;
+
+		(*i)->GetObjectID(ot, oid);
+
+		if(ot == type) temp_choice_list.push_back(*i);
+	}
+
+	if(temp_choice_list.size())
+		the_choice = temp_choice_list[rand() % temp_choice_list.size()];
+
+	if(the_choice)
+	{
+		int ox, oy;
+
+		select_info.Clear();
+		select_info.selected_list.push_back(the_choice);
+		select_info.SetupGroupDetails();
+		DetermineCursor();
+		GiveHudSelected();
+
+		the_choice->GetCenterCords(ox, oy);
+		FocusCameraTo(ox, oy);
+	}
+}
+
+void ZPlayer::FocusCameraToFort()
+{
+	int shift_x, shift_y, view_w, view_h;
+	int goto_x, goto_y;
+
+	if(!zmap.Loaded()) return;
+	if(our_team == NULL_TEAM) return;
+
+	//find our fort
+	for(vector<ZObject*>::iterator i=object_list.begin(); i!=object_list.end(); i++)
+	{
+		unsigned char ot, oid;
+
+		if((*i)->GetOwner() != our_team) continue;
+
+		(*i)->GetObjectID(ot, oid);
+
+		if(ot != BUILDING_OBJECT) continue;
+		if(!(oid == FORT_FRONT || oid == FORT_BACK)) continue;
+
+		zmap.GetViewShiftFull(shift_x, shift_y, view_w, view_h);
+
+		(*i)->GetCenterCords(goto_x, goto_y);
+
+		//center the fort: offset by half the view in each axis. The Y offset must
+		//use the view HEIGHT, not the width (#74) - with the old view_w here, a
+		//wide screen pushed the fort far below the visible area, so on game start
+		//you couldn't see your own fort. SetViewShift clamps to the map edges, so
+		//a fort near a corner of a small map still lands on-screen.
+		goto_x = goto_x - (view_w >> 1);
+		goto_y = goto_y - (view_h >> 1);
+
+		zmap.SetViewShift(goto_x, goto_y);
+		return;
+	}
+}
+
+void ZPlayer::FocusCameraTo(int map_x, int map_y)
+{
+	int shift_x, shift_y, view_w, view_h;
+	double dx, dy;
+
+	zmap.GetViewShiftFull(shift_x, shift_y, view_w, view_h);
+
+	//set desired location
+	focus_to_x = map_x - (view_w >> 1);
+	focus_to_y = map_y - (view_h >> 1);
+
+	//are we already there?
+	if(shift_x == focus_to_x && shift_y == focus_to_y) return;
+
+	//set original distance
+	dx = focus_to_x - shift_x;
+	dy = focus_to_y - shift_y;
+	focus_to_original_distance = sqrt((dx *dx) + (dy * dy));
+
+	last_focus_to_time = current_time();
+
+	//final_focus_to_time = last_focus_to_time + (focus_to_original_distance / 40);
+	final_focus_to_time = last_focus_to_time + 0.7;
+
+	do_focus_to = true;
+}
+
+void ZPlayer::ProcessFocusCamerato()
+{
+	double the_time = current_time();
+	int shift_x, shift_y, view_w, view_h;
+	double dx, dy;
+	double end_dx, end_dy;
+	bool shifted_x, shifted_y;
+
+	if(!do_focus_to) return;
+
+	zmap.GetViewShiftFull(shift_x, shift_y, view_w, view_h);
+
+	//printf("shift_x:%d shift_y:%d\n", shift_x, shift_y);
+
+	dx = focus_to_x - shift_x;
+	dy = focus_to_y - shift_y;
+
+	//exit conditions
+	if((!dx && !dy))
+	{
+		do_focus_to = false;
+		return;
+	}
+
+	//normal move
+	end_dx = dx * 0.1;
+	end_dy = dy * 0.1;
+
+	if(!((int)end_dx) && dx)
+	{
+		if(dx > 0) end_dx = 1;
+		else end_dx = -1;
+	}
+
+	if(!((int)end_dy) && dy)
+	{
+		if(dy > 0) end_dy = 1;
+		else end_dy = -1;
+	}
+	
+	if(end_dx > 0)
+		shifted_x = zmap.ShiftViewRight((int)end_dx);
+	else
+		shifted_x = zmap.ShiftViewLeft((int)-end_dx);
+
+	if(end_dy > 0)
+		shifted_y = zmap.ShiftViewDown((int)end_dy);
+	else
+		shifted_y = zmap.ShiftViewUp((int)-end_dy);
+
+	if(!shifted_x && !shifted_y)
+		do_focus_to = false;
+	else if(!shifted_x && !dy)
+		do_focus_to = false;
+	else if(!shifted_y && !dx)
+		do_focus_to = false;
+
+	return;
+}
+
+void ZPlayer::StartMouseScrolling(int new_mouse_x, int new_mouse_y)
+{
+	if(!(mouse_x < 10) && (new_mouse_x < 10)) 
+	{
+		horz_scroll_over = 0;
+		last_horz_scroll_time = current_time();
+	}
+	else if(!(mouse_x > init_w - 10) && (new_mouse_x > init_w - 10)) 
+	{
+		horz_scroll_over = 0;
+		last_horz_scroll_time = current_time();
+	}
+
+	if(!(mouse_y < 10) && (new_mouse_y < 10)) 
+	{
+		vert_scroll_over = 0;
+		last_vert_scroll_time = current_time();
+	}
+	else if(!(mouse_y > init_h - 10) && (new_mouse_y > init_h - 10)) 
+	{
+		vert_scroll_over = 0;
+		last_vert_scroll_time = current_time();
+	}
+}
+
+// Edge scrolling: scroll when the cursor is near a window edge. No longer
+// requires the mouse to be grabbed (windowed mode disables grab), so moving the
+// mouse to an edge scrolls the map again.
+bool ZPlayer::DoMouseScrollRight()
+{
+	return window_has_focus && !mbutton.down && !rbutton.dragged && (mouse_x > init_w - 10);
+}
+
+bool ZPlayer::DoMouseScrollLeft()
+{
+	return window_has_focus && !mbutton.down && !rbutton.dragged && (mouse_x < 10);
+}
+
+bool ZPlayer::DoMouseScrollUp()
+{
+	return window_has_focus && !mbutton.down && !rbutton.dragged && (mouse_y < 10);
+}
+
+bool ZPlayer::DoMouseScrollDown()
+{
+	return window_has_focus && !mbutton.down && !rbutton.dragged && (mouse_y > init_h - 10);
+}
+
+bool ZPlayer::DoKeyScrollRight()
+{
+	return (right_down && !left_down);
+}
+
+bool ZPlayer::DoKeyScrollLeft()
+{
+	return (!right_down && left_down);
+}
+
+bool ZPlayer::DoKeyScrollUp()
+{
+	return (up_down && !down_down);
+}
+
+bool ZPlayer::DoKeyScrollDown()
+{
+	return (!up_down && down_down);
+}
+
+void ZPlayer::ProcessScroll()
+{
+	double the_time = current_time();
+	const double shift_speed = 400;
+	double time_diff;
+	double the_shift;
+
+	//no scrolling when we are
+	//currently flying towards a location
+	//(such as when jumping to a selected unit)
+	if(do_focus_to) return;
+
+	//dont scroll if it isn't all loaded
+	if(!graphics_loaded) return;
+
+	if(DoKeyScrollUp() || DoMouseScrollUp())//up_down && !down_down)
+	{
+		time_diff = the_time - last_vert_scroll_time;
+
+		the_shift = time_diff * shift_speed;
+		the_shift += vert_scroll_over;
+
+		if(the_shift >= 1)
+		{
+			last_vert_scroll_time = the_time;
+			vert_scroll_over = the_shift - (int)the_shift;
+			zmap.ShiftViewUp((int)the_shift);
+		}
+	}
+	else if(DoKeyScrollDown() || DoMouseScrollDown())//!up_down && down_down)
+	{
+		time_diff = the_time - last_vert_scroll_time;
+
+		the_shift = time_diff * shift_speed;
+		the_shift += vert_scroll_over;
+
+		if(the_shift >= 1)
+		{
+			last_vert_scroll_time = the_time;
+			vert_scroll_over = the_shift - (int)the_shift;
+			zmap.ShiftViewDown((int)the_shift);
+		}
+	}
+
+	if(DoKeyScrollRight() || DoMouseScrollRight())//right_down && !left_down)
+	{
+		time_diff = the_time - last_horz_scroll_time;
+
+		the_shift = time_diff * shift_speed;
+		the_shift += horz_scroll_over;
+
+
+
+		if(the_shift >= 1)
+		{
+			last_horz_scroll_time = the_time;
+			horz_scroll_over = the_shift - (int)the_shift;
+			zmap.ShiftViewRight((int)the_shift);
+		}
+	}
+	else if(DoKeyScrollLeft() || DoMouseScrollLeft())//!right_down && left_down)
+	{
+		time_diff = the_time - last_horz_scroll_time;
+
+		the_shift = time_diff * shift_speed;
+		the_shift += horz_scroll_over;
+
+		if(the_shift >= 1)
+		{
+			last_horz_scroll_time = the_time;
+			horz_scroll_over = the_shift - (int)the_shift;
+			zmap.ShiftViewLeft((int)the_shift);
+		}
+	}
+}
+
+void ZPlayer::RenderPreviousCursor()
+{
+	double &the_time = ztime.ztime;
+
+	if(the_time < pcursor_death_time)
+	{
+		//int shift_x, shift_y;
+		//zmap.GetViewShift(shift_x, shift_y);
+
+		//shift_x = pcursor_x - shift_x;
+		//shift_y = pcursor_y - shift_y;
+
+		//Pcursor.Render(zmap, screen, shift_x, shift_y, true);
+		Pcursor.Render(zmap, screen, pcursor_x, pcursor_y, true);
+	}
+}
+
+void ZPlayer::SetPcursor()
+{
+	switch(cursor.GetCursor())
+	{
+	case PLACE_C:
+		Pcursor.SetCursor(PLACED_C);
+		break;
+	case ATTACK_C:
+		Pcursor.SetCursor(ATTACKED_C);
+		break;
+	case GRAB_C:
+		Pcursor.SetCursor(GRABBED_C);
+		break;
+	case GRENADE_C:
+		Pcursor.SetCursor(GRENADED_C);
+		break;
+	case REPAIR_C:
+		Pcursor.SetCursor(REPAIRED_C);
+		break;
+	case ENTER_C:
+		Pcursor.SetCursor(ENTERED_C);
+		break;
+	case EXIT_C:
+		Pcursor.SetCursor(EXITED_C);
+		break;
+	case CANNON_C:
+		Pcursor.SetCursor(CANNONED_C);
+		break;
+	default:
+		Pcursor.SetCursor(PLACED_C);
+		break;
+	}
+}
+
+void ZPlayer::ShowPcursor(int mx, int my)
+{
+	double &the_time = ztime.ztime;
+
+	pcursor_death_time = the_time + 3.0;
+	pcursor_x = mx;
+	pcursor_y = my;
+}
+
+void ZPlayer::RenderNews()
+{
+	double the_time = current_time();
+	const int y_int = 15;
+	const double start_fade_time = 5;
+	const int max_news_history = 50;
+	double time_left;
+	int max_news_width;
+	SDL_Rect from_rect, to_rect;
+
+	//max_news_width = screen->w - (5 + 100);
+	max_news_width = init_w - (5 + 100);
+
+	from_rect.x = 0;
+	from_rect.y = 0;
+	from_rect.h = 40;
+	to_rect.x = 5;
+	//to_rect.y = screen->h - (36 + y_int);
+	to_rect.y = init_h - (36 + y_int);
+	to_rect.w = 0;
+	to_rect.h = 0;
+
+	if(gui_factory_list && gui_factory_list->IsVisible()) to_rect.x += 142;
+
+	//cut down to size
+	while(news_list.size() > max_news_history)
+	{
+		//vector<news_entry*>::iterator i;
+
+		////i = news_list.end()--;
+		//i = news_list.begin() + (news_list.size()-1);
+
+		//delete *i;
+		//news_list.erase(i);
+		delete news_list.back();
+		news_list.pop_back();
+	}
+
+	for(vector<news_entry*>::iterator i=news_list.begin(); i!=news_list.end();)
+	{
+		news_entry *cur_entry;
+
+		cur_entry = *i;
+
+		time_left = cur_entry->death_time - the_time;
+
+		//do not draw this news piece?
+		if(!show_chat_history && time_left <= 0)
+		{
+			//delete *i;
+			//i = news_list.erase(i);
+			i++;
+			continue;
+		}
+
+		//start fading?
+		if(!show_chat_history && time_left < start_fade_time)
+		{
+			double fade_alpha;
+
+			fade_alpha = (time_left / start_fade_time) * 255;
+
+			//SDL_SetAlpha(i->text_image,SDL_RLEACCEL | SDL_SRCALPHA,(Uint8)fade_alpha);
+			cur_entry->text_image.SetAlpha(fade_alpha);
+		}
+		else
+			cur_entry->text_image.SetAlpha(255);
+
+		//make sure it does not draw over the hud
+
+		from_rect.w = max_news_width;
+
+		//      printf("rendering text %s [%d %d %d %d] [%d %d %d %d]\n", i->message.c_str(), from_rect.x, from_rect.y, from_rect.w, from_rect.h, to_rect.x, to_rect.y, to_rect.w, to_rect.h);
+
+		cur_entry->text_image.BlitSurface(&from_rect, &to_rect);
+		//SDL_BlitSurface( i->text_image, &from_rect, screen, &to_rect);
+
+		to_rect.y -= y_int;
+		i++;
+	}
+}
+
+//#206: dump, for each wreck (destroyed vehicle), what overlaps it in the render
+//list and whether each is drawn OVER (after) or under (before) it - i.e. the
+//actual depth order that decides whether a wreck wrongly covers a unit/building.
+//Reusable: set ZOD_RENDER_DUMP to have it fire (rate-limited) whenever a wreck is
+//on screen, or it's called on the F12 diagnostics dump.
+void ZPlayer::DumpRenderOrder(bool dedupe)
+{
+	//#206: a wreck is on screen only briefly. In auto mode (dedupe) we dump each
+	//distinct wreck exactly once - so the capture never misses one that dies near
+	//a building, whatever the timing - and produce nothing once there's nothing
+	//new. F12 (dedupe=false) always dumps the wrecks on screen right now.
+	static set<int> dumped;
+
+	int n = (int)ols.prender_olist.size();
+	int wrecks = 0;
+
+	for(int wi = 0; wi < n; wi++)
+	{
+		ZObject *w = ols.prender_olist[wi];
+		unsigned char wot, woid;
+		w->GetObjectID(wot, woid);
+		if(!(w->IsDestroyed() && wot == VEHICLE_OBJECT)) continue;
+		if(dedupe)
+		{
+			if(dumped.count(w->GetRefID())) continue;   //already dumped this wreck
+			dumped.insert(w->GetRefID());
+		}
+
+		wrecks++;
+		int wx, wy, ww, wh;
+		w->GetCords(wx, wy);
+		w->GetDimensionsPixel(ww, wh);
+		ZDiag("render-order: WRECK '%s' draw#%d/%d tile(%d,%d) box[%d,%d %dx%d]",
+			w->GetObjectName().c_str(), wi, n, wx / 16, wy / 16, wx, wy, ww, wh);
+
+		for(int oi = 0; oi < n; oi++)
+		{
+			if(oi == wi) continue;
+			ZObject *o = ols.prender_olist[oi];
+
+			int ox, oy, ow, oh;
+			o->GetCords(ox, oy);
+			o->GetDimensionsPixel(ow, oh);
+			if(ox > wx + ww || ox + ow < wx || oy > wy + wh || oy + oh < wy) continue;   //no footprint overlap
+
+			unsigned char oot, ooid;
+			o->GetObjectID(oot, ooid);
+			//log the depth sort-key (bottom edge = y+height) for both, so we can see
+			//whether the wreck sorts in front for the RIGHT reason (it's lower on
+			//screen) or anomalously. wreck key = wy+wh.
+			ZDiag("    overlap: '%s' draw#%d ot=%d oid=%d destroyed=%d depthkey=%d (wreck depthkey=%d) -> %s wreck",
+				o->GetObjectName().c_str(), oi, oot, ooid, o->IsDestroyed() ? 1 : 0,
+				oy + oh, wy + wh,
+				oi > wi ? "OVER (drawn after)" : "under (drawn before)");
+		}
+	}
+
+	if(!wrecks && !dedupe) ZDiag("render-order: no wrecks (destroyed vehicles) on screen");
+}
+
+void ZPlayer::RenderObjects()
+{
+	//#206: opt-in render-order trace for wreck-layering bugs. Dedupes internally,
+	//so each wreck is dumped once the frame it appears - never missed, never spammy.
+	if(getenv("ZOD_RENDER_DUMP")) DumpRenderOrder(true);
+
+	//draw effects pre stuff
+	for(vector<ZEffect*>::iterator i=effect_list.begin(); i!=effect_list.end(); i++)
+		(*i)->DoPreRender(zmap, screen);
+
+	//draw objects pre stuff
+	for(vector<ZObject*>::iterator i=ols.prender_olist.begin(); i!=ols.prender_olist.end(); i++)
+	{
+		double rox, roy; (*i)->GetRenderOffset(rox, roy); zmap.SetRenderOffset(rox, roy);
+		(*i)->DoPreRender(zmap, screen);
+	}
+	zmap.SetRenderOffset(0, 0);
+
+	//draw objects
+	for(vector<ZObject*>::iterator i=ols.prender_olist.begin(); i!=ols.prender_olist.end(); i++)
+	{
+		double rox, roy; (*i)->GetRenderOffset(rox, roy); zmap.SetRenderOffset(rox, roy);
+		(*i)->DoRender(zmap, screen);
+	}
+	zmap.SetRenderOffset(0, 0);
+
+	//draw waypoints AFTER the objects, so the path line and its end marker
+	//(move destination / attack crosshair / capture hand) sit on TOP of units
+	//and buildings rather than being hidden behind them (issue #17)
+	if(gui_window && gui_window->GetBuildingObj())
+		gui_window->GetBuildingObj()->DoRenderWaypoints(zmap, screen, object_list, true);
+	for(vector<ZObject*>::iterator i=ols.non_mapitem_olist.begin(); i!=ols.non_mapitem_olist.end(); i++)
+		(*i)->DoRenderWaypoints(zmap, screen, object_list);
+
+	//draw after effects
+	for(vector<ZObject*>::iterator i=ols.prender_olist.begin(); i!=ols.prender_olist.end(); i++)
+	{
+		double rox, roy; (*i)->GetRenderOffset(rox, roy); zmap.SetRenderOffset(rox, roy);
+		(*i)->DoAfterEffects(zmap, screen);
+	}
+	zmap.SetRenderOffset(0, 0);
+	
+	//effects
+	for(vector<ZEffect*>::iterator i=effect_list.begin(); i!=effect_list.end(); i++)
+		(*i)->DoRender(zmap, screen);
+
+	//animals
+	for(vector<ZObject*>::iterator i=bird_list.begin(); i!=bird_list.end();i++)
+		(*i)->DoRender(zmap, screen);
+	
+	//draw selection stuff (offset so the box/radius track the smoothed sprite)
+	for(vector<ZObject*>::iterator i=select_info.selected_list.begin(); i!=select_info.selected_list.end(); i++)
+	{
+		double rox, roy; (*i)->GetRenderOffset(rox, roy); zmap.SetRenderOffset(rox, roy);
+		(*i)->RenderSelection(zmap, screen);
+		(*i)->RenderAttackRadius(zmap, screen, select_info.selected_list);
+	}
+	zmap.SetRenderOffset(0, 0);
+
+	////draw attack radius for the chosen one
+	//if(zhud.GetSelectedObject())
+	//	zhud.GetSelectedObject()->RenderAttackRadius(zmap, screen);
+	
+	//draw hover names
+	if(hover_object)
+	{
+		//if it has a leader render it instead
+		if(hover_object->GetGroupLeader())
+		{
+			hover_object->GetGroupLeader()->RenderHover(zmap, screen, our_team);
+		}
+		else
+		{
+			hover_object->RenderHover(zmap, screen, our_team);
+		}
+	}
+}
+
+void ZPlayer::RenderGUI()
+{
+	if(gui_window) gui_window->DoRenderScaled(zmap, screen);   //#207: scaled like the menus
+
+	if(gui_factory_list) gui_factory_list->DoRender(zmap, screen);
+}
+
+void ZPlayer::BackFromMenu()
+{
+    if(!gui_menu_list.empty()) {
+        delete gui_menu_list.front();gui_menu_list.erase(gui_menu_list.begin());
+        if(gui_menu_list.empty() && !zmap.Loaded() && zod_frontend) OpenStartMenu();
+    } else if(!zmap.Loaded()) OpenStartMenu();
+    else LoadMainMenu(GMM_MAIN_MAIN);
+}
+
+void ZPlayer::RenderMainMenu()
+{
+	//diag: log what's actually being rendered (type + coords) whenever the open
+	//menu set changes, so an "I see no menu" report is checkable against reality.
+	static int last_logged_count = -1;
+	if((int)gui_menu_list.size() != last_logged_count)
+	{
+		last_logged_count = (int)gui_menu_list.size();
+		ZDiag("render: %d menu(s) in list (map_loaded=%d)", last_logged_count, (int)zmap.Loaded());
+		for(size_t i=0; i<gui_menu_list.size(); i++)
+		{
+			int mx, my, mw, mh;
+			gui_menu_list[i]->GetCoords(mx, my);
+			gui_menu_list[i]->GetDimensions(mw, mh);
+			ZDiag("render:   menu[%d] type=%d at (%d,%d) %dx%d", (int)i, gui_menu_list[i]->GetMenuType(), mx, my, mw, mh);
+		}
+	}
+
+	// Only the active page is visible; older pages remain available for Back.
+	for(auto *menu:gui_menu_list) menu->SetRenderScale(MenuRenderScale());
+    ZMenuTheme::beginText(ZVideo_GetRenderer());
+    if(zmap.Loaded()&&gui_menu_list.empty()&&!show_match_summary){RenderObjectiveHUD();RenderBattleFeedback();}
+    if(!gui_menu_list.empty()) gui_menu_list.front()->DoRender(zmap, screen);
+    ZMenuTheme::endText();
+}
+
+void ZPlayer::DetermineCursor()
+{
+	//only one cursor when we are selecting
+	if(lbutton.down) cursor.SetCursor(CURSOR_C);
+
+	else if(select_info.selected_list.size())
+	{
+		if(hover_object)
+		{
+			unsigned char ot, oid;
+			hover_object->GetObjectID(ot, oid);
+
+			if(select_info.can_repair && hover_object->CanBeRepairedByCrane(our_team))
+			{
+				cursor.SetCursor(REPAIR_C);
+			}
+			else if(select_info.can_be_repaired && hover_object->CanRepairUnit(our_team))
+			{
+				cursor.SetCursor(REPAIR_C);
+			}
+			else if(hover_object->GetOwner() != our_team)
+			{
+				if(select_info.can_move)
+				{
+					if(ot == MAP_ITEM_OBJECT && oid == GRENADES_ITEM && select_info.can_pickup_grenades)
+						cursor.SetCursor(GRAB_C);
+					else if(ot == MAP_ITEM_OBJECT && oid == FLAG_ITEM && select_info.can_move)
+						cursor.SetCursor(GRAB_C);
+					else if((ot == CANNON_OBJECT || ot == VEHICLE_OBJECT) && hover_object->GetOwner() == NULL_TEAM && select_info.can_equip)
+						cursor.SetCursor(ENTER_C);
+					else
+					{
+						if(hover_object_can_enter_fort)
+							cursor.SetCursor(PLACE_C);
+						else
+						{
+							if(!select_info.can_attack || (!select_info.have_explosives && hover_object->AttackedOnlyByExplosives()))
+								cursor.SetCursor(NONO_C);
+							else
+								cursor.SetCursor(ATTACK_C);
+						}
+					}
+				}
+				else
+				{
+					//we have an object under us, but we only have cannons selected
+					if(!(ot == MAP_ITEM_OBJECT && oid == FLAG_ITEM))
+					{
+						if(hover_object_can_enter_fort)
+							cursor.SetCursor(PLACE_C);
+						else
+						{
+							if(!select_info.can_attack || (!select_info.have_explosives && hover_object->AttackedOnlyByExplosives()))
+								cursor.SetCursor(NONO_C);
+							else
+								cursor.SetCursor(ATTACK_C);
+						}
+					}
+					else
+						cursor.SetCursor(CANNON_C);
+				}
+
+			}
+			else
+			{
+				int i = GetObjectIndex(hover_object, select_info.selected_list);
+
+				//if(ot == CANNON_OBJECT && i!= -1)
+				if(hover_object->CanEjectDrivers() && select_info.selected_list.size() == 1 && i!= -1)
+					cursor.SetCursor(EXIT_C);
+				else
+					cursor.SetCursor(PLACE_C);
+			}
+		}
+		else
+		{
+			if(select_info.can_move)
+				cursor.SetCursor(PLACE_C);
+			else
+				cursor.SetCursor(CANNON_C);
+		}
+	}
+	else
+	{
+		//normal cursor
+		cursor.SetCursor(CURSOR_C);
+	}
+}
+
+void ZPlayer::ExitProgram()
+{
+	ZGamepad_Shutdown();
+	ZAudio_Close();
+	exit(0);
+}
+
+// Replay a tap as a left mouse click at (x,y): drives selection/commands the
+// same way the desktop mouse does (motion to place the cursor, then click).
+void ZPlayer::TapAsLeftClick(int x, int y)
+{
+	int shift_x, shift_y;
+
+	mouse_x = x;
+	mouse_y = y;
+	ehandler.ProcessEvent(SDL_EVENT, MOTION_EVENT, NULL, 0, 0);
+
+	zmap.GetViewShift(shift_x, shift_y);
+	lbutton.x = x;
+	lbutton.y = y;
+	lbutton.map_x = x + shift_x;
+	lbutton.map_y = y + shift_y;
+	ehandler.ProcessEvent(SDL_EVENT, LCLICK_EVENT, NULL, 0, 0);
+	ehandler.ProcessEvent(SDL_EVENT, LUNCLICK_EVENT, NULL, 0, 0);
+}
+
+void ZPlayer::HandleFingerDown(const SDL_TouchFingerEvent &t)
+{
+	// coords are render-space pixels here (SDL_ConvertEventToRenderCoordinates
+	// un-normalizes touch events in the poll loop)
+	if(touch_count == 0)
+	{
+		touch_count = 1;
+		touch_id1 = t.fingerID;
+		touch_x1 = touch_start_x = t.x;
+		touch_y1 = touch_start_y = t.y;
+		touch_moved = false;
+	}
+	else if(touch_count == 1)
+	{
+		touch_count = 2;
+		touch_id2 = t.fingerID;
+		touch_x2 = t.x;
+		touch_y2 = t.y;
+		float dx = touch_x2 - touch_x1, dy = touch_y2 - touch_y1;
+		touch_pinch0 = SDL_sqrtf(dx * dx + dy * dy);
+		if(touch_pinch0 < 1.0f) touch_pinch0 = 1.0f;
+		touch_zoom0 = view_zoom;
+	}
+}
+
+void ZPlayer::HandleFingerMotion(const SDL_TouchFingerEvent &t)
+{
+	if(touch_count == 1 && t.fingerID == touch_id1)
+	{
+		// one-finger drag pans the camera (drag the map under the finger).
+		// Keep the sub-pixel remainder so slow drags still scroll.
+		int dx = (int)(t.x - touch_x1);
+		int dy = (int)(t.y - touch_y1);
+		if(dx || dy)
+		{
+			int shift_x, shift_y;
+			zmap.GetViewShift(shift_x, shift_y);
+			zmap.SetViewShift(shift_x - dx, shift_y - dy);
+			do_focus_to = false;
+			touch_x1 += dx;
+			touch_y1 += dy;
+		}
+
+		float mvx = t.x - touch_start_x, mvy = t.y - touch_start_y;
+		if(mvx * mvx + mvy * mvy > 16.0f * 16.0f) touch_moved = true;
+	}
+	else if(touch_count == 2)
+	{
+		if(t.fingerID == touch_id1)      { touch_x1 = t.x; touch_y1 = t.y; }
+		else if(t.fingerID == touch_id2) { touch_x2 = t.x; touch_y2 = t.y; }
+
+		float dx = touch_x2 - touch_x1, dy = touch_y2 - touch_y1;
+		float dist = SDL_sqrtf(dx * dx + dy * dy);
+		if(dist < 1.0f) dist = 1.0f;
+		//#111: don't RebuildView here (ProcessSDL drains the whole queue in one
+		//frame, so a pinch would do dozens of rebuilds and freeze). Just record the
+		//latest target; ProcessGame applies it once per frame.
+		//#197: cap one pinch to a ~10% zoom step. The raw finger-distance ratio
+		//scaled zoom 1:1 (spread 2x -> zoom 2x), which zoomed far too fast on
+		//Android. Now a single gesture changes zoom by at most +/-10%; lift and
+		//re-pinch to keep going (3 pinches ~= 30%).
+		float ratio = dist / touch_pinch0;
+		if(ratio < 0.9f) ratio = 0.9f;
+		else if(ratio > 1.1f) ratio = 1.1f;
+		pinch_pending_zoom = touch_zoom0 * ratio;
+		pinch_zoom_dirty = true;
+	}
+}
+
+void ZPlayer::HandleFingerUp(const SDL_TouchFingerEvent &t)
+{
+	if(touch_count == 1 && t.fingerID == touch_id1)
+	{
+		// a finger that came down and lifted without dragging is a tap = click
+		if(!touch_moved) TapAsLeftClick((int)touch_x1, (int)touch_y1);
+		touch_count = 0;
+	}
+	else if(touch_count == 2)
+	{
+		// either finger lifting ends a pan/pinch; no tap is generated
+		touch_count = 0;
+	}
+}
+
+void ZPlayer::ProcessSDL()
+{
+	SDL_Event event;
+	key_event the_key;
+	int shift_x, shift_y;
+
+	//controller sticks move the cursor and scroll once per frame
+	ZGamepad_Update(frontend_presenting);
+
+	while(SDL_PollEvent(&event) && (ZVideo_ConvertEventCoords(&event), true))
+	{
+		//the splash auto-dismisses after a few seconds (see DoSplash); a
+		//click or key skips it early, and is swallowed so it doesn't leak
+		//into the game underneath
+		if(!splash_dismissed && splash_fade >= 5
+			&& (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_KEY_DOWN
+			    || event.type == SDL_EVENT_FINGER_DOWN || event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN))
+		{
+			if(graphics_loaded) splash_dismissed = true;
+			continue;
+		}
+
+		//controller events become mouse/key events (pushed back onto the queue)
+		if(ZGamepad_HandleEvent(event, frontend_presenting)) continue;
+
+		//the front-end takes all input while it is on screen
+		if(frontend_presenting)
+		{
+			if(event.type == SDL_EVENT_QUIT) ExitProgram();
+			else frontend.HandleEvent(event);
+			continue;
+		}
+
+		switch( event.type )
+	{
+		case SDL_EVENT_QUIT:
+			ExitProgram();
+			break;
+		case SDL_EVENT_WINDOW_RESIZED:
+			// Window resizes are handled automatically by the scaled-framebuffer
+			// renderer (SDL_RenderSetLogicalSize in sdl12_compat.cpp), which scales
+			// the fixed logical resolution to any window size. Re-syncing init_w/h
+			// to the window here would collapse that logical framebuffer, so it's
+			// intentionally a no-op now.
+			break;
+		case SDL_EVENT_WINDOW_FOCUS_LOST:
+			// A release outside the window may never arrive on Windows. Do not let
+			// the next motion resume an interrupted right/middle-button drag.
+			window_has_focus = false;
+			rbutton.down = false;
+			rbutton.dragged = false;
+			mbutton.down = false;
+			break;
+		case SDL_EVENT_WINDOW_FOCUS_GAINED:
+			window_has_focus = true;
+			last_vert_scroll_time = last_horz_scroll_time = current_time();
+			vert_scroll_over = horz_scroll_over = 0;
+			break;
+		case SDL_EVENT_MOUSE_WHEEL:
+			// When a UI panel is open the wheel scrolls it (production list, menus).
+			// Otherwise, two-finger / wheel scrolling pans the map in both axes.
+			// NB: gui_factory_list is always allocated, so test IsVisible(), not
+			// just the pointer — otherwise the pan branch is never reached.
+			// #101: gui_menu_list holds the open GMM menus (Options, etc.). Without
+			// it here the wheel fell through to map-pan while the Options menu was
+			// up, so it never adjusted the hovered volume / game-speed control.
+			if (active_menu || gui_window || (gui_factory_list && gui_factory_list->IsVisible()) || gui_menu_list.size())
+			{
+				if (event.wheel.y > 0)
+					ehandler.ProcessEvent(SDL_EVENT, WHEELUP_EVENT, NULL, 0, 0);
+				else if (event.wheel.y < 0)
+					ehandler.ProcessEvent(SDL_EVENT, WHEELDOWN_EVENT, NULL, 0, 0);
+			}
+			else if (CtrlDown())
+			{
+				// Ctrl + wheel (or Ctrl + two-finger scroll) zooms the view.
+				if (event.wheel.y > 0)      ApplyZoom(view_zoom + 0.1);
+				else if (event.wheel.y < 0) ApplyZoom(view_zoom - 0.1);
+			}
+			else
+			{
+				const float pan = 30.0f;  // map pixels per scroll unit
+				int dx = (int)(event.wheel.x * pan);
+				int dy = (int)(event.wheel.y * pan);
+
+				do_focus_to = false;  // cancel any in-progress camera glide
+
+				if (dx > 0)      zmap.ShiftViewRight(dx);
+				else if (dx < 0) zmap.ShiftViewLeft(-dx);
+				if (dy > 0)      zmap.ShiftViewUp(dy);
+				else if (dy < 0) zmap.ShiftViewDown(-dy);
+			}
+			break;
+		case SDL_EVENT_MOUSE_MOTION:
+			StartMouseScrolling(event.motion.x, event.motion.y);
+			mouse_x = event.motion.x;
+			mouse_y = event.motion.y;
+			//ehandler.AddEvent(new Event(SDL_EVENT, MOTION_EVENT, 0, NULL, 0));
+			ehandler.ProcessEvent(SDL_EVENT, MOTION_EVENT, NULL, 0, 0);
+			break;
+		case SDL_EVENT_MOUSE_BUTTON_DOWN:
+			mouse_x = event.button.x;
+			mouse_y = event.button.y;
+			zmap.GetViewShift(shift_x, shift_y);
+			switch(event.button.button)
+			{
+			case SDL_BUTTON_LEFT:
+				lbutton.x = event.button.x;
+				lbutton.y = event.button.y;
+				lbutton.map_x = lbutton.x + shift_x;
+				lbutton.map_y = lbutton.y + shift_y;
+				//ehandler.AddEvent(new Event(SDL_EVENT, LCLICK_EVENT, 0, NULL, 0));
+				ehandler.ProcessEvent(SDL_EVENT, LCLICK_EVENT, NULL, 0, 0);
+				break;
+			case SDL_BUTTON_RIGHT:
+				rbutton.x = event.button.x;
+				rbutton.y = event.button.y;
+				rbutton.map_x = rbutton.x + shift_x;
+				rbutton.map_y = rbutton.y + shift_y;
+				//ehandler.AddEvent(new Event(SDL_EVENT, RCLICK_EVENT, 0, NULL, 0));
+				ehandler.ProcessEvent(SDL_EVENT, RCLICK_EVENT, NULL, 0, 0);
+				break;
+			//#138: the side buttons (mouse 4/5) drag-pan the view like the middle button
+			case SDL_BUTTON_MIDDLE:
+			case SDL_BUTTON_X1:
+			case SDL_BUTTON_X2:
+				mbutton.x = event.button.x;
+				mbutton.y = event.button.y;
+				mbutton.map_x = ((init_w - HUD_WIDTH) >> 1) + shift_x;
+				mbutton.map_y = ((init_h - HUD_HEIGHT) >> 1) + shift_y;
+				//ehandler.AddEvent(new Event(SDL_EVENT, MCLICK_EVENT, 0, NULL, 0));
+				ehandler.ProcessEvent(SDL_EVENT, MCLICK_EVENT, NULL, 0, 0);
+				break;
+			// SDL2: mouse wheel is its own SDL_EVENT_MOUSE_WHEEL event (handled above).
+			}
+			break;
+		case SDL_EVENT_MOUSE_BUTTON_UP:
+			mouse_x = event.button.x;
+			mouse_y = event.button.y;
+			switch(event.button.button)
+			{
+			case SDL_BUTTON_LEFT:
+				//ehandler.AddEvent(new Event(SDL_EVENT, LUNCLICK_EVENT, 0, NULL, 0));
+				ehandler.ProcessEvent(SDL_EVENT, LUNCLICK_EVENT, NULL, 0, 0);
+				break;
+			case SDL_BUTTON_RIGHT:
+				//ehandler.AddEvent(new Event(SDL_EVENT, RUNCLICK_EVENT, 0, NULL, 0));
+				ehandler.ProcessEvent(SDL_EVENT, RUNCLICK_EVENT, NULL, 0, 0);
+				break;
+			case SDL_BUTTON_MIDDLE:
+			case SDL_BUTTON_X1:	//#138
+			case SDL_BUTTON_X2:	//#138
+				//ehandler.AddEvent(new Event(SDL_EVENT, MUNCLICK_EVENT, 0, NULL, 0));
+				ehandler.ProcessEvent(SDL_EVENT, MUNCLICK_EVENT, NULL, 0, 0);
+				break;
+			}
+			break;
+		case SDL_EVENT_FINGER_DOWN:
+			HandleFingerDown(event.tfinger);
+			break;
+		case SDL_EVENT_FINGER_MOTION:
+			HandleFingerMotion(event.tfinger);
+			break;
+		case SDL_EVENT_FINGER_UP:
+		case SDL_EVENT_FINGER_CANCELED:
+			HandleFingerUp(event.tfinger);
+			break;
+		case SDL_EVENT_KEY_DOWN:
+			//zoom keys handled here by SDL3 keycode, so they work regardless of
+			//keyboard layout, numpad vs main row, or text-input/unicode quirks
+			//(the old unicode path dropped numpad +/- and was platform-fragile).
+			//Skipped while typing a chat message so '-'/'=' insert normally.
+			if(!collect_chat_message)
+			{
+				SDL_Keycode zk = event.key.key;
+				if(zk == SDLK_EQUALS || zk == SDLK_PLUS || zk == SDLK_KP_PLUS)
+					ApplyZoom(view_zoom + 0.1);
+				else if(zk == SDLK_MINUS || zk == SDLK_KP_MINUS)
+					ApplyZoom(view_zoom - 0.1);
+			}
+			the_key.the_key = event.key.key;
+			the_key.the_unicode = (event.key.key < 128) ? event.key.key : 0;
+			//Shift+\ -> '|' for the screenshot key. Shift doesn't change the keycode
+			//(it stays SDLK_BACKSLASH), and the real '|' only arrives via TEXT_INPUT,
+			//which isn't active during gameplay - so without this, Shift+\ delivered
+			//'\' and just re-triggered the dump. Derive '|' from the modifier here.
+			if(event.key.key == SDLK_BACKSLASH && (SDL_GetModState() & SDL_KMOD_SHIFT))
+				the_key.the_unicode = '|';
+			ehandler.ProcessEvent(SDL_EVENT, KEYDOWN_EVENT_, (char*)&the_key, sizeof(key_event), 0);
+			break;
+		case SDL_EVENT_KEY_UP:
+			the_key.the_key = event.key.key;
+			the_key.the_unicode = (event.key.key < 128) ? event.key.key : 0;
+			ehandler.ProcessEvent(SDL_EVENT, KEYUP_EVENT_, (char*)&the_key, sizeof(key_event), 0);
+			break;
+		case SDL_EVENT_TEXT_INPUT:
+			if (event.text.text[0])
+			{
+				the_key.the_key = 0;
+				the_key.the_unicode = (unsigned char)event.text.text[0];
+				ehandler.ProcessEvent(SDL_EVENT, KEYDOWN_EVENT_, (char*)&the_key, sizeof(key_event), 0);
+			}
+			break;
+	}
+	}
+}
+
+void ZPlayer::DoSplash()
+{
+	const float fade_per_second = 510; //full fade in ~0.5s once dismissed
+	static double last_time;
+	static bool did_init = false;
+
+	if(!splash_screen.GetBaseSurface()) return;
+
+	//draw?
+	if(splash_fade >= 5)
+	{
+		SDL_Rect to_rect;
+		
+		//auto-dismiss 3s after loading finishes (a click or key skips
+		//early). Fade advances per FRAME - the old code measured from the
+		//first frame ever, so the speed compounded.
+		if(graphics_loaded && !splash_dismissed)
+		{
+			const double splash_seconds = 3.0;
+			static double loaded_time = -1;
+
+			if(loaded_time < 0) loaded_time = current_time();
+			if(current_time() - loaded_time >= splash_seconds) splash_dismissed = true;
+		}
+
+		if(graphics_loaded && splash_dismissed)
+		{
+			if(!did_init)
+			{
+				last_time = current_time();
+				did_init = true;
+			}
+
+			double now = current_time();
+			splash_fade -= (float)(now - last_time) * fade_per_second;
+			last_time = now;
+			if(splash_fade < 0) splash_fade = 0;
+			
+			ZAudio_SetMusicVolume((80)*splash_fade/255);
+			//ZAudio_SetMusicVolume((int)(128.0 * splash_fade / 255));
+
+			//if(splash_screen)
+			//SDL_SetAlpha(splash_screen,SDL_RLEACCEL | SDL_SRCALPHA,(Uint8)splash_fade);
+			splash_screen.SetAlpha(splash_fade);
+		}
+		
+		//render
+		//to_rect.x = (screen->w - splash_screen->w) >> 1;
+		//to_rect.y = (screen->h - splash_screen->h) >> 1;
+		to_rect.x = (init_w - splash_screen.GetBaseSurface()->w) >> 1;
+		to_rect.y = (init_h - splash_screen.GetBaseSurface()->h) >> 1;
+
+		splash_screen.BlitSurface(NULL, &to_rect);
+		//zmap.RenderZSurface(&splash_screen, init_w >> 1, init_h >> 1, true);
+
+		//if(splash_screen)
+		//SDL_BlitSurface(splash_screen, NULL, screen, &to_rect);
+
+		//(the Michael Bok / Nighsoft credit overlay is part of the splash art
+		//now, on the chalkboard sign)
+
+		//#72: while assets are still loading on the gfx thread (Load_Graphics
+		//bumps loaded_percent across 80 items), draw a progress bar + percent over
+		//the splash so the wait shows real progress instead of a frozen screen.
+		//Gone once graphics_loaded - then the splash just lingers 3s and fades.
+		if(!graphics_loaded)
+		{
+			int pct = loaded_percent;
+			if(pct < 0) pct = 0; else if(pct > 100) pct = 100;
+
+			int bar_w = init_w / 3;
+			if(bar_w < 200) bar_w = 200;
+			int bar_h = 12;
+			int bar_x = (init_w - bar_w) >> 1;
+			int bar_y = init_h - (init_h / 7);
+
+			//"Loading... NN%" label, rendered first so the backing panel can size to it
+			char buf[32];
+			snprintf(buf, sizeof(buf), "Loading... %d%%", pct);
+			ZSDL_Surface pct_img;
+			pct_img = ZFontEngine::GetFont(SMALL_WHITE_FONT).Render(buf);
+			int txt_h = pct_img.GetBaseSurface() ? pct_img.GetBaseSurface()->h : 0;
+
+			SDL_Rect r;
+			//dark backing panel so the bar + label stay legible over the busy
+			//splash art (same idea as the match-summary strip)
+			int pad = 10;
+			int panel_top = bar_y - txt_h - 8 - pad;
+			r.x = bar_x - pad; r.y = panel_top;
+			r.w = bar_w + (pad * 2); r.h = (bar_y + bar_h + pad) - panel_top;
+			ZSDL_FillSurfaceRect(&r, 12, 12, 12);
+
+			//border, then dark track, then the filled portion
+			r.x = bar_x - 2; r.y = bar_y - 2; r.w = bar_w + 4; r.h = bar_h + 4;
+			ZSDL_FillSurfaceRect(&r, 96, 96, 96);
+			r.x = bar_x; r.y = bar_y; r.w = bar_w; r.h = bar_h;
+			ZSDL_FillSurfaceRect(&r, 24, 24, 24);
+			r.w = bar_w * pct / 100;
+			ZSDL_FillSurfaceRect(&r, 90, 127, 90);
+
+			if(pct_img.GetBaseSurface())
+				pct_img.BlitSurface(NULL, (init_w - pct_img.GetBaseSurface()->w) >> 1,
+				                     bar_y - txt_h - 8);
+		}
+
+
+		//load the normal music
+		if(splash_fade < 5)
+		{
+			ZMusicEngine::PlayPlanetMusic(zmap.GetMapBasics().terrain_type);
+			ZAudio_SetMusicVolume(80);
+		}
+			//if(music_on) zmap.PlayMusic();
+	}
+	
+}
+
+void ZPlayer::SelectZObject(ZObject *obj)
+{
+	if(!obj) return;
+
+	//select leader instead
+	if(obj->GetGroupLeader()) obj = obj->GetGroupLeader();
+
+	if(!obj->Selectable()) return;
+	if(obj->GetOwner() != our_team) return;
+
+	select_info.Clear();
+
+	select_info.selected_list.push_back(obj);
+	select_info.SetupGroupDetails();
+
+	DetermineCursor();
+	GiveHudSelected();
+	ClearDevWayPointsOfSelected();
+}
+
+void ZPlayer::SelectAllOfType(int type)
+{
+	if(our_team == NULL_TEAM) return;
+	if(type != -1 && !(type == ROBOT_OBJECT || type == VEHICLE_OBJECT || type == CANNON_OBJECT)) return;
+
+	select_info.Clear();
+
+	for(vector<ZObject*>::iterator i=ols.passive_engagable_olist.begin(); i!=ols.passive_engagable_olist.end(); ++i)
+	{
+		unsigned char ot, oid;
+
+		(*i)->GetObjectID(ot, oid);
+
+		if(type != -1)
+		{
+			if(ot != type) continue;
+		}
+		else
+		{
+			if(ot != ROBOT_OBJECT && ot != VEHICLE_OBJECT) continue;
+		}
+		if((*i)->GetOwner() != our_team) continue;
+		if(!(*i)->Selectable()) continue;
+
+		select_info.selected_list.push_back(*i);
+	}
+
+	select_info.SetupGroupDetails();
+
+	DetermineCursor();
+	GiveHudSelected();
+}
+
+//Classic (original-Z) mouse: a plain left click on open ground or an enemy
+//while units are selected issues the order, like the 1996 game did. Returns
+//true when the click was consumed as an order; clicks on own selectable
+//units and box drags fall through to the normal selection path.
+bool ZPlayer::ClassicLeftClickOrder()
+{
+	int shift_x, shift_y;
+	int mouse_x_map, mouse_y_map;
+
+	if(!lbutton.down) return false;
+	if(!select_info.selected_list.size()) return false;
+
+	zmap.GetViewShift(shift_x, shift_y);
+	mouse_x_map = mouse_x + shift_x;
+	mouse_y_map = mouse_y + shift_y;
+
+	//a drag is a box select
+	if(abs(lbutton.map_x - mouse_x_map) > CLICK_DRAG_SLOP || abs(lbutton.map_y - mouse_y_map) > CLICK_DRAG_SLOP) return false;
+
+	//#106: leaving a cannon (or any vehicle carrying drivers) is confirmed with
+	//the LEFT button in classic mode, matching the original game - and crucially
+	//the only way to eject on touch, where there's no right button. A single
+	//ejectable unit, left-clicked on itself, drops its driver(s). This must come
+	//before the re-selection check below, since the occupied unit is one of our
+	//own selectable units under the cursor and would otherwise just re-select.
+	if(select_info.selected_list.size() == 1)
+	{
+		vector<ZObject*>::iterator i = select_info.selected_list.begin();
+
+		if((*i)->CanEjectDrivers() && (*i)->UnderCursor(mouse_x_map, mouse_y_map))
+		{
+			eject_vehicle_packet the_packet;
+			the_packet.ref_id = (*i)->GetRefID();
+			client_socket.SendMessage(EJECT_VEHICLE, (char*)&the_packet, sizeof(eject_vehicle_packet));
+
+			if(!ShiftDown())
+			{
+				select_info.Clear();
+				DetermineCursor();
+				GiveHudSelected();
+			}
+
+			return true;
+		}
+	}
+
+	//clicking one of our own selectable units means (re)selection
+	for(vector<ZObject*>::iterator i=object_list.begin(); i!=object_list.end(); i++)
+	{
+		if((*i)->GetOwner() != our_team) continue;
+		if(!(*i)->Selectable()) continue;
+		if((*i)->UnderCursor(mouse_x_map, mouse_y_map)) return false;
+	}
+
+	//it is an order
+	AddDevWayPointToSelected();
+
+	if(!ShiftDown())
+	{
+		SendDevWayPointsOfSelected();
+
+		//the 1996 game is modal: the order ends the interaction, the
+		//selection drops and the cursor returns to the arrow - otherwise
+		//a later click near another unit redirects the old selection
+		select_info.Clear();
+		DetermineCursor();
+		GiveHudSelected();
+	}
+
+	return true;
+}
+
+//#102: has the held left-drag moved beyond the click slop, i.e. is it a real box
+//drag rather than a jittery click? motion_event uses this to avoid running the
+//box-select (which clears the selection) mid-click: a click that drifts a pixel
+//or two would otherwise wipe the selection before the unclick could turn it into
+//an order - the long-standing "command not taken" (worse when clicking fast).
+bool ZPlayer::DragExceedsSlop()
+{
+	int shift_x, shift_y;
+
+	if(!lbutton.down) return false;
+
+	zmap.GetViewShift(shift_x, shift_y);
+
+	int mx = mouse_x + shift_x;
+	int my = mouse_y + shift_y;
+
+	return abs(lbutton.map_x - mx) > CLICK_DRAG_SLOP || abs(lbutton.map_y - my) > CLICK_DRAG_SLOP;
+}
+
+// F12: append the full state of the currently-selected unit(s) to zod_diag.log.
+// Built for bug reports - "my unit won't move / won't attack" is undebuggable
+// from a screenshot, but this dump shows the unit's orders, attack target and
+// health, which is what we actually need.
+void ZPlayer::DumpDiagnostics()
+{
+	vector<ZObject*> &sel = select_info.selected_list;
+
+	ZDiag("=== F12 dump: %d unit(s) selected ===", (int)sel.size());
+
+	//#206: include the wreck depth-order trace, so a "wreck renders on top" report
+	//is debuggable straight from an F12 dump (point at the wreck, press F12).
+	DumpRenderOrder();
+	//#93: name the exact map (+ paused state) so the dump is a self-contained
+	//reproduction - reload this map, place the unit at its tile, give the order,
+	//and you get the same route.
+	ZDiag("map: %s%s", game_map_name.empty() ? "(unknown - server didn't send it)" : game_map_name.c_str(),
+		ztime.IsPaused() ? "   [game PAUSED]" : "");
+
+	ZDiag("our_team=%d   game_time=%.1f", our_team, ztime.ztime);
+	//#difficulty: bot behaviour depends on it, so a "bot too passive/aggressive"
+	//report needs to know which level was active.
+	ZDiag("bot AI difficulty: %s", bot_difficulty_name[(zod_bot_difficulty >= 0 && zod_bot_difficulty < MAX_BOT_DIFFICULTY) ? zod_bot_difficulty : BOT_DIFF_NORMAL]);
+
+	//interface/cursor context, so a "no grab cursor / wrong cursor" report is
+	//debuggable from the dump alone. The cursor is a CLIENT decision made in
+	//DetermineCursor() from hover_object + the selected unit's capabilities -
+	//none of which the server-side census below captures. Log the exact inputs
+	//and the cursor actually shown at the moment the dump was taken, so e.g. a
+	//missing grab cursor reads as "hover=NULL" or "flag but can_move=no".
+	{
+		static const char *cursor_name[MAX_CURSOR_TYPES] = {
+			"CURSOR", "PLACE", "PLACED", "ATTACK", "ATTACKED", "GRAB", "GRABBED",
+			"GRENADE", "GRENADED", "REPAIR", "REPAIRED", "NONO", "CANNON", "CANNONED",
+			"ENTER", "ENTERED", "EXIT", "EXITED" };
+
+		int wx = 0, wy = 0;
+		zmap.GetMapCoords(mouse_x, mouse_y, wx, wy);
+		int mmx = 0, mmy = 0;
+		bool over_mini = zhud.OverMiniMap(mouse_x, mouse_y, init_w, init_h, mmx, mmy);
+		cursor_type cc = cursor.GetCursor();
+
+		ZDiag("--- cursor/interface context (why the cursor was what it was) ---");
+		ZDiag("  mouse: screen(%d,%d) world tile(%d,%d)%s", mouse_x, mouse_y,
+			wx / 16, wy / 16, over_mini ? "   [over minimap]" : "");
+		ZDiag("  cursor shown: %s", (cc >= 0 && cc < MAX_CURSOR_TYPES) ? cursor_name[cc] : "?");
+
+		unsigned char hot = 0, hoid = 0;
+		bool is_flag = false, is_gren = false;
+		if(hover_object)
+		{
+			hover_object->GetObjectID(hot, hoid);
+			is_flag = (hot == MAP_ITEM_OBJECT && hoid == FLAG_ITEM);
+			is_gren = (hot == MAP_ITEM_OBJECT && hoid == GRENADES_ITEM);
+			ZDiag("  hover: ref#%d %s (ot=%d oid=%d) T=%d   can_enter_fort=%s",
+				hover_object->GetRefID(), hover_object->GetObjectName().c_str(),
+				(int)hot, (int)hoid, hover_object->GetOwner(),
+				hover_object_can_enter_fort ? "yes" : "no");
+		}
+		else
+			ZDiag("  hover: NULL (nothing detected under the cursor - this alone yields a move/PLACE cursor, never GRAB)");
+
+		ZDiag("  selection caps: can_move=%s can_pickup_grenades=%s can_equip=%s can_attack=%s can_repair=%s can_be_repaired=%s have_explosives=%s",
+			select_info.can_move ? "y" : "n", select_info.can_pickup_grenades ? "y" : "n",
+			select_info.can_equip ? "y" : "n", select_info.can_attack ? "y" : "n",
+			select_info.can_repair ? "y" : "n", select_info.can_be_repaired ? "y" : "n",
+			select_info.have_explosives ? "y" : "n");
+
+		//focused grab diagnosis: the cursor only becomes GRAB over a flag/grenades
+		//item with a movable selection. Spell out which precondition failed, since
+		//"sometimes no grab" is exactly this decision going the other way.
+		if(!hover_object)
+			ZDiag("  grab-check: no hover_object -> grab impossible; if you expected one, the flag wasn't detected under the cursor (hover-pick miss)");
+		else if(!is_flag && !is_gren)
+			ZDiag("  grab-check: hover is not a flag/grenades item -> grab not expected here");
+		else if(!select_info.can_move)
+			ZDiag("  grab-check: over a %s but selection can_move=no -> no grab (only movable units capture)", is_flag ? "flag" : "grenades");
+		else if(is_gren && !select_info.can_pickup_grenades)
+			ZDiag("  grab-check: over grenades but can_pickup_grenades=no -> no grab");
+		else
+			ZDiag("  grab-check: over a %s with a movable selection -> grab SHOULD show", is_flag ? "flag" : "grenades");
+	}
+
+	//#122: a full scene snapshot, so ANY report is debuggable from this dump alone
+	//- not just whatever unit happened to be selected. Every object's kind, owner,
+	//tile and health. This is what makes "cannons sitting in front of the fort", a
+	//stranded unit, a mis-zoned building, etc. visible without asking the reporter
+	//for more. tile = top-left in map tiles; cross-reference fort vs cannon tiles.
+	{
+		ZDiag("--- objects (%d)  [tile=top-left, T=team] ---", (int)object_list.size());
+		for(vector<ZObject*>::iterator i=object_list.begin(); i!=object_list.end(); i++)
+		{
+			ZObject *o = *i;
+			if(!o) continue;
+
+			unsigned char ot, oid;
+			o->GetObjectID(ot, oid);
+
+			int ox, oy;
+			o->GetCords(ox, oy);
+
+			ZDiag("  ref#%d %s (ot=%d oid=%d) T=%d tile(%d,%d) hp=%d%s",
+				o->GetRefID(), o->GetObjectName().c_str(), (int)ot, (int)oid, o->GetOwner(),
+				ox / 16, oy / 16, o->GetHealth(), o->IsDestroyed() ? " DESTROYED" : "");
+		}
+	}
+
+	//#122: zones, because building/cannon placement is restricted to the owning
+	//team's zone - so a placement complaint needs the zone bounds too.
+	{
+		vector<map_zone_info> &zinfo = zmap.GetZoneInfoList();
+		ZDiag("--- zones (%d)  [tile bounds, T=team] ---", (int)zinfo.size());
+		for(vector<map_zone_info>::iterator z=zinfo.begin(); z!=zinfo.end(); z++)
+			ZDiag("  zone#%d T=%d tile(%d,%d) size(%dx%d)",
+				z->id, (int)z->owner, z->x / 16, z->y / 16, z->w / 16, z->h / 16);
+	}
+
+	if(sel.empty())
+		ZDiag("(no unit selected - dumping the unit nearest the cursor instead; select a unit OR point at it and press F12 to get its orders/route)");
+
+	//gather the full movement group(s) of whatever is selected, de-duplicated, so
+	//pressing F12 on any member dumps the whole leader+minions picture (the grab
+	//bugs live in that relationship, not in one unit)
+	vector<ZObject*> dump;
+	for(vector<ZObject*>::iterator i=sel.begin(); i!=sel.end(); i++)
+	{
+		ZObject *o = *i;
+		if(!o) continue;
+
+		ZObject *leader = o->GetGroupLeader() ? o->GetGroupLeader() : o;
+
+		vector<ZObject*> grp;
+		grp.push_back(leader);
+		for(vector<ZObject*>::iterator m=leader->GetMinionList().begin(); m!=leader->GetMinionList().end(); m++)
+			if(*m) grp.push_back(*m);
+
+		for(vector<ZObject*>::iterator g=grp.begin(); g!=grp.end(); g++)
+		{
+			bool dup = false;
+			for(vector<ZObject*>::iterator d=dump.begin(); d!=dump.end(); d++)
+				if(*d == *g) { dup = true; break; }
+			if(!dup) dump.push_back(*g);
+		}
+	}
+
+	//also dump the unit nearest the mouse cursor, so a unit you can't (or didn't)
+	//select is still diagnosable: point at it and press F12. This is the path for
+	//"this unit won't move / can't be selected" - its order, route and movement
+	//flags get logged the same as a selected unit's.
+	{
+		int wx = 0, wy = 0;
+		zmap.GetMapCoords(mouse_x, mouse_y, wx, wy);
+
+		ZObject *nearest = NULL;
+		int best_d2 = 64 * 64;	//within ~4 tiles of the cursor
+		for(vector<ZObject*>::iterator i=object_list.begin(); i!=object_list.end(); i++)
+		{
+			ZObject *o = *i;
+			if(!o) continue;
+			unsigned char ot, oid;
+			o->GetObjectID(ot, oid);
+			if(!(ot == ROBOT_OBJECT || ot == VEHICLE_OBJECT || ot == CANNON_OBJECT)) continue;
+
+			int cx, cy;
+			o->GetCenterCords(cx, cy);
+			int d2 = (cx - wx)*(cx - wx) + (cy - wy)*(cy - wy);
+			if(d2 < best_d2) { best_d2 = d2; nearest = o; }
+		}
+
+		if(nearest)
+		{
+			bool dup = false;
+			for(vector<ZObject*>::iterator d=dump.begin(); d!=dump.end(); d++)
+				if(*d == nearest) { dup = true; break; }
+			if(!dup)
+			{
+				ZDiag("--- unit nearest cursor (world tile %d,%d), dumped regardless of selection ---", wx / 16, wy / 16);
+				dump.push_back(nearest);
+			}
+		}
+	}
+
+	for(vector<ZObject*>::iterator i=dump.begin(); i!=dump.end(); i++)
+	{
+		ZObject *o = *i;
+		if(!o) continue;
+
+		int cx, cy;
+		o->GetCenterCords(cx, cy);
+
+		//role within the movement group
+		const char *role = "solo";
+		if(o->GetGroupLeader())            role = "MINION";
+		else if(o->GetMinionList().size()) role = "LEADER";
+
+		ZDiag("unit %s  health=%d  tile(%d,%d)  %s%s%s",
+			ZPathLog_UnitDesc(o).c_str(), o->GetHealth(), cx / 16, cy / 16,
+			role,
+			o->IsMoving() ? " moving" : " stopped",
+			o->IsOnGrabDetour() ? " ON-GRAB-DETOUR" : "");
+
+		//movement + ownership detail - spots the "ghost"/"won't move" units (#54):
+		//owner team, whether it physically can move, whether it's destroyed, and
+		//for vehicles/cannons whether anyone is actually crewing it.
+		{
+			unsigned char ot, oid;
+			o->GetObjectID(ot, oid);
+			//pathfinding uses a different tile table per unit kind + explosives
+			//(robots wade water; explosives let a unit path through rock), so log
+			//both - they're needed to reproduce a route (#93).
+			ZDiag("   owner=%d  canmove=%s  destroyed=%s  %s  explosives=%s%s",
+				o->GetOwner(), o->CanMove() ? "yes" : "no", o->IsDestroyed() ? "yes" : "no",
+				ot == ROBOT_OBJECT ? "robot-pathing" : "vehicle-pathing",
+				o->HasExplosives() ? "yes" : "no",
+				(ot == VEHICLE_OBJECT || ot == CANNON_OBJECT)
+					? (o->GetDrivers().size() ? "  crewed" : "  DRIVERLESS") : "");
+		}
+
+		if(o->GetGroupLeader())
+			ZDiag("   leader: %s", ZPathLog_UnitDesc(o->GetGroupLeader()).c_str());
+		if(o->GetMinionList().size())
+			ZDiag("   minions: %d", (int)o->GetMinionList().size());
+
+		vector<waypoint> &wps = o->GetWayPointList();
+		if(wps.empty())
+			ZDiag("   orders: none (idle)");
+		else
+			for(vector<waypoint>::iterator w=wps.begin(); w!=wps.end(); w++)
+				ZDiag("   order: %-14s tile(%d,%d) ref#%d  [%s]",
+					ZPathLog_WPModeName(w->mode), w->x / 16, w->y / 16, w->ref_id,
+					w->player_given ? "player" : (w->attack_to ? "grab" : "engine"));
+
+		ZObject *atk = o->GetAttackObject();
+		if(atk) ZDiag("   attacking: %s", ZPathLog_UnitDesc(atk).c_str());
+
+		//#93: the actual A* route the unit is following (the path the server
+		//relayed, that we draw the route line from). This is what makes a
+		//"weird path finding" report diagnosable from one dump - it shows the
+		//detours/bulges around terrain that the order alone can't. Empty for a
+		//direct (no-A*) hop.
+		{
+			vector<ZPath_Finding_AStar::pf_point> &route = o->GetClientRoute();
+			if(route.empty())
+				ZDiag("   route: direct (no A* legs)");
+			else
+			{
+				string legs;
+				int shown = 0;
+				const int max_legs = 30;
+				for(vector<ZPath_Finding_AStar::pf_point>::iterator r=route.begin(); r!=route.end() && shown<max_legs; ++r, ++shown)
+				{
+					char buf[24];
+					snprintf(buf, sizeof(buf), " t(%d,%d)", r->x / 16, r->y / 16);
+					legs += buf;
+				}
+				ZDiag("   route (%d legs):%s%s", (int)route.size(), legs.c_str(),
+					(int)route.size() > max_legs ? " ..." : "");
+			}
+		}
+	}
+
+	//nearby grabbable objects, so ref#N in the orders above can be matched to a
+	//real vehicle/cannon/flag (and we can see what is being chased)
+	if(!dump.empty())
+	{
+		int ax, ay;
+		dump.front()->GetCenterCords(ax, ay);
+		ZDiag("nearby grabbables (within ~12 tiles of first unit):");
+		bool any = false;
+		for(vector<ZObject*>::iterator i=object_list.begin(); i!=object_list.end(); i++)
+		{
+			ZObject *o = *i;
+			if(!o) continue;
+
+			unsigned char ot, oid;
+			o->GetObjectID(ot, oid);
+
+			bool is_flag = (ot == MAP_ITEM_OBJECT && oid == FLAG_ITEM);
+			if(!o->CanBeEntered() && !is_flag) continue;
+
+			int ox, oy;
+			o->GetCenterCords(ox, oy);
+			int dt = (abs(ox - ax) + abs(oy - ay)) / 16;
+			if(dt > 12) continue;
+
+			ZDiag("   %s tile(%d,%d) ref#%d  ~%d tiles  owner=%d",
+				ZPathLog_UnitDesc(o).c_str(), ox / 16, oy / 16, o->GetRefID(), dt, o->GetOwner());
+			any = true;
+		}
+		if(!any) ZDiag("   (none)");
+	}
+
+	//per-team census of alive fighting units + forts. The match ends only when
+	//<=1 team has any robot/vehicle/cannon, so this shows why a game has or hasn't
+	//ended - e.g. a single stranded unit keeping a team "alive" forever (#54).
+	{
+		int team_units[MAX_TEAM_TYPES], team_forts[MAX_TEAM_TYPES];
+		for(int t=0; t<MAX_TEAM_TYPES; t++) { team_units[t] = 0; team_forts[t] = 0; }
+
+		for(vector<ZObject*>::iterator i=object_list.begin(); i!=object_list.end(); i++)
+		{
+			ZObject *o = *i;
+			if(!o || o->IsDestroyed()) continue;
+
+			int owner = o->GetOwner();
+			if(owner < 0 || owner >= MAX_TEAM_TYPES) continue;
+
+			unsigned char ot, oid;
+			o->GetObjectID(ot, oid);
+
+			if(ot == ROBOT_OBJECT || ot == VEHICLE_OBJECT || ot == CANNON_OBJECT) team_units[owner]++;
+			else if(ot == BUILDING_OBJECT && (oid == FORT_FRONT || oid == FORT_BACK)) team_forts[owner]++;
+		}
+
+		ZDiag("team census (alive fighting units / forts):");
+		for(int t=1; t<MAX_TEAM_TYPES; t++)
+			if(team_units[t] || team_forts[t])
+				ZDiag("   team %d: %d unit(s), %d fort(s)", t, team_units[t], team_forts[t]);
+	}
+
+	ZDiag("to report: open an issue at https://github.com/fenio/zod/issues and attach this file");
+
+	char msg[200];
+	snprintf(msg, sizeof(msg), "dumped full game state (%d unit(s) selected) to %s - attach it to an issue at github.com/fenio/zod/issues",
+		(int)sel.size(), ZDiag_Path());
+	AddNewsEntry(msg);
+}
+
+void ZPlayer::CollectSelectables()
+{
+	int shift_x, shift_y;
+	int mouse_x_map, mouse_y_map;
+	int map_left, map_right, map_top, map_bottom;
+
+	if(!lbutton.down) return;
+
+	select_info.Clear();
+
+	zmap.GetViewShift(shift_x, shift_y);
+
+	mouse_x_map = mouse_x + shift_x;
+	mouse_y_map = mouse_y + shift_y;
+
+	if(mouse_x_map < lbutton.map_x)
+	{
+		map_left = mouse_x_map;
+		map_right = lbutton.map_x;
+	}
+	else
+	{
+		map_left = lbutton.map_x;
+		map_right = mouse_x_map;
+	}
+
+	if(mouse_y_map < lbutton.map_y)
+	{
+		map_top = mouse_y_map;
+		map_bottom = lbutton.map_y;
+	}
+	else
+	{
+		map_top = lbutton.map_y;
+		map_bottom = mouse_y_map;
+	}
+
+	//are we only selecting one unit?
+	if(abs(lbutton.map_x - mouse_x_map) <= CLICK_DRAG_SLOP && abs(lbutton.map_y - mouse_y_map) <= CLICK_DRAG_SLOP)
+	{
+		vector<ZObject*> choice_list;
+
+#ifdef __ANDROID__
+		//#196: touch taps are imprecise and units are small, so a tap had to land
+		//exactly on the sprite. Widen the single-tap selection hit-box (map space)
+		//so a near miss still selects the unit. Tap only - the box-drag path below
+		//is unaffected.
+		const int touch_sel_margin = 10;
+		map_left   -= touch_sel_margin;
+		map_right  += touch_sel_margin;
+		map_top    -= touch_sel_margin;
+		map_bottom += touch_sel_margin;
+#endif
+
+		for(vector<ZObject*>::iterator i=object_list.begin(); i!=object_list.end(); i++)
+		{
+			ZObject *pot_obj;
+
+			pot_obj = *i;
+
+			//ordering of checks is important, arg
+			if(pot_obj->GetOwner() != our_team) continue;
+			if(!pot_obj->WithinSelection(map_left, map_right, map_top, map_bottom)) continue;
+
+			//if it is a minion, select its leader for a potential selection choice
+			if(pot_obj->GetGroupLeader()) pot_obj = pot_obj->GetGroupLeader();
+
+			if(!pot_obj->Selectable()) continue;
+
+			//it already in the list?
+			for(vector<ZObject*>::iterator j=choice_list.begin(); j!=choice_list.end(); j++)
+				if(*j == pot_obj) 
+				{
+					pot_obj = NULL;
+					break;
+				}
+
+			//put it in the list
+			if(pot_obj) choice_list.push_back(pot_obj);
+		}
+
+		if(choice_list.size())
+			select_info.selected_list.push_back(choice_list[rand() % choice_list.size()]);
+
+	}
+	else //selecting all possible units
+	{
+		//so who have we selected
+		for(vector<ZObject*>::iterator i=object_list.begin(); i!=object_list.end(); i++)
+		{
+			if(!(*i)->BoxSelectable()) continue;   //box drag skips cannons (issue #40)
+			if((*i)->GetOwner() != our_team) continue;
+			if(!(*i)->WithinSelection(map_left, map_right, map_top, map_bottom)) continue;
+			select_info.selected_list.push_back(*i);
+			//printf("selected:%s\n", (*i)->GetObjectName().c_str());
+		}
+	}
+
+	//now do this basically to get the correct mouse cursor
+	select_info.SetupGroupDetails();
+}
+
+bool ZPlayer::CouldCollectSelectables()
+{
+	int shift_x, shift_y;
+	int mouse_x_map, mouse_y_map;
+	int map_left, map_right, map_top, map_bottom;
+	bool would_be_single_unit;
+
+	zmap.GetViewShift(shift_x, shift_y);
+
+	mouse_x_map = mouse_x + shift_x;
+	mouse_y_map = mouse_y + shift_y;
+
+	if(mouse_x_map < lbutton.map_x)
+	{
+		map_left = mouse_x_map;
+		map_right = lbutton.map_x;
+	}
+	else
+	{
+		map_left = lbutton.map_x;
+		map_right = mouse_x_map;
+	}
+
+	if(mouse_y_map < lbutton.map_y)
+	{
+		map_top = mouse_y_map;
+		map_bottom = lbutton.map_y;
+	}
+	else
+	{
+		map_top = lbutton.map_y;
+		map_bottom = mouse_y_map;
+	}
+
+	if(abs(lbutton.map_x - mouse_x_map) <= CLICK_DRAG_SLOP && abs(lbutton.map_y - mouse_y_map) <= CLICK_DRAG_SLOP)
+		would_be_single_unit = true;
+	else
+		would_be_single_unit = false;
+
+	//so who have we selected
+	for(vector<ZObject*>::iterator i=object_list.begin(); i!=object_list.end(); i++)
+	{
+		ZObject *obj;
+
+		obj = *i;
+
+		//the group leader would be chosen
+		//if we were only selecting one unit
+		if(would_be_single_unit && obj->GetGroupLeader()) obj = obj->GetGroupLeader();
+		
+		//match CollectSelectables: a box drag won't pick up cannons (issue #40),
+		//so the cursor must not advertise a box-select over only cannons
+		if(would_be_single_unit ? !obj->Selectable() : !obj->BoxSelectable()) continue;
+		if(obj->GetOwner() != our_team) continue;
+		if(!obj->WithinSelection(map_left, map_right, map_top, map_bottom)) continue;
+
+		return true;
+	}
+
+	return false;
+}
+
+void ZPlayer::ClearDevWayPointsOfSelected()
+{
+	for(vector<ZObject*>::iterator i=select_info.selected_list.begin(); i!=select_info.selected_list.end(); i++)
+		(*i)->GetWayPointDevList().clear();
+}
+
+void ZPlayer::MapCoordsOfMouseWithHud(int &map_x, int &map_y)
+{
+	zmap.GetMapCoords(mouse_x, mouse_y, map_x, map_y);
+	zhud.OverMiniMap(mouse_x, mouse_y, init_w, init_h, map_x, map_y);
+}
+
+void ZPlayer::LoadControlGroup(int n)
+{
+	if(n<0) return;
+	if(n>=10) return;
+
+	//select the group or jump to them?
+	if(select_info.GroupIsSelected(n))
+	{
+		int tx, ty;
+
+		if(select_info.AverageCoordsOfSelected(tx, ty)) FocusCameraTo(tx, ty);
+	}
+	else
+	{
+		select_info.LoadGroup(n);
+		DetermineCursor();
+		ClearDevWayPointsOfSelected();
+		GiveHudSelected();
+	}
+}
+
+bool ZPlayer::UnitNearHostiles(ZObject *obj)
+{
+	if(!obj) return false;
+
+	for(vector<ZObject*>::iterator i=ols.passive_engagable_olist.begin(); i!=ols.passive_engagable_olist.end(); ++i)
+	{
+		ZObject *eobj = *i;
+
+		if(obj==eobj) continue;
+		if(obj->GetOwner() == eobj->GetOwner()) continue;
+		if(eobj->GetOwner() == NULL_TEAM) continue;
+		if(eobj->IsDestroyed()) continue;
+		if(!obj->WithinAgroRadius(eobj)) continue;
+
+		return true;
+	}
+
+	return false;
+}
+
+void ZPlayer::AddDevWayPointToSelected()
+{
+	//no commanding units while the game is paused (#76). This covers the
+	//"Click to Start / Resume Game" screen at the start of a match - you can still
+	//select and look around, but move/attack orders are ignored until you kick the
+	//round off (and, consistently, during any later pause).
+	if(ztime.IsPaused()) return;
+
+	waypoint new_waypoint;
+	bool coords_from_mini_map;
+
+	//MapCoordsOfMouseWithHud(new_waypoint.x, new_waypoint.y);
+	zmap.GetMapCoords(mouse_x, mouse_y, new_waypoint.x, new_waypoint.y);
+	coords_from_mini_map = zhud.OverMiniMap(mouse_x, mouse_y, init_w, init_h, new_waypoint.x, new_waypoint.y);
+
+	//if(hover_object && !coords_from_mini_map)
+	//	new_waypoint.ref_id = hover_object->GetRefID();
+	//else
+	//	new_waypoint.ref_id = -1;
+
+	//new_waypoint.mode = MOVE_WP;
+	new_waypoint.player_given = true;
+
+	for(vector<ZObject*>::iterator i=select_info.selected_list.begin(); i!=select_info.selected_list.end(); i++)
+	{
+		unsigned char ot, oid;
+		unsigned char hot, hoid;
+		int hcx, hcy;
+
+		new_waypoint.mode = MOVE_WP;
+		new_waypoint.ref_id = -1;
+		new_waypoint.attack_to = true;
+
+		if(UnitNearHostiles(*i)) new_waypoint.attack_to = false;
+		if(CtrlDown()) new_waypoint.attack_to = true;
+		if(AltDown()) new_waypoint.attack_to = false;
+
+		(*i)->GetObjectID(ot, oid);
+
+		//set the mode
+		if(hover_object && !coords_from_mini_map)
+		{
+			new_waypoint.ref_id = hover_object->GetRefID();
+
+			hover_object->GetObjectID(hot, hoid);
+			hover_object->GetCenterCords(hcx, hcy);
+
+			if((*i)->CanBeRepaired() && hover_object->CanRepairUnit(our_team))
+			{
+				new_waypoint.mode = UNIT_REPAIR_WP;
+				new_waypoint.x = hcx - 8;
+				new_waypoint.y = hcy;
+			}
+			else
+			{
+				switch(ot)
+				{
+				case CANNON_OBJECT:
+					if(hot == MAP_ITEM_OBJECT && hoid == FLAG_ITEM) break;
+
+					//enemy for attacking
+					if(hover_object->GetOwner() != our_team)
+						new_waypoint.mode = ATTACK_WP;
+					break;
+				case VEHICLE_OBJECT:
+					if(hot == MAP_ITEM_OBJECT && hoid == FLAG_ITEM) break;
+
+					//it a crane?
+					if(oid == CRANE && hover_object->CanBeRepairedByCrane(our_team))
+					{
+						new_waypoint.mode = CRANE_REPAIR_WP;
+						hover_object->GetCraneCenter(new_waypoint.x, new_waypoint.y);
+						break;
+					}
+
+					//enter fort?
+					if(hover_object_can_enter_fort)
+					{
+						new_waypoint.mode = ENTER_FORT_WP;
+						break;
+					}
+
+					//they attack everything, unless you are selecting an APC
+					if(hover_object->GetOwner() != our_team)
+						new_waypoint.mode = ATTACK_WP;
+
+					break;
+				case ROBOT_OBJECT:
+					if(hot == MAP_ITEM_OBJECT && hoid == FLAG_ITEM) break;
+
+					//grenades?
+					if((hot == MAP_ITEM_OBJECT && hoid == GRENADES_ITEM) && (*i)->CanPickupGrenades())
+					{
+						new_waypoint.mode = PICKUP_GRENADES_WP;
+						break;
+					}
+
+					//capturable item?
+					if(hover_object->GetOwner() == NULL_TEAM &&
+						(hot == CANNON_OBJECT || hot == VEHICLE_OBJECT))
+					{
+						new_waypoint.mode = ENTER_WP;
+						break;
+					}
+
+					//enter fort?
+					if(hover_object_can_enter_fort)
+					{
+						new_waypoint.mode = ENTER_FORT_WP;
+						break;
+					}
+
+					//attack
+					if(hover_object->GetOwner() != our_team)
+						new_waypoint.mode = ATTACK_WP;
+
+
+					break;
+				}
+			}
+		}
+
+		//add it to the list
+		(*i)->GetWayPointDevList().push_back(new_waypoint);
+	}
+
+	//setting a rally point?
+	if(gui_window && gui_window->GetBuildingObj() && !select_info.selected_list.size())
+	{
+		waypoint new_rallypoint;
+
+		MapCoordsOfMouseWithHud(new_rallypoint.x, new_rallypoint.y);
+		new_rallypoint.ref_id = -1;
+		new_rallypoint.mode = MOVE_WP;
+		new_rallypoint.player_given = true;
+		new_rallypoint.attack_to = true;
+
+		gui_window->GetBuildingObj()->GetWayPointDevList().push_back(new_rallypoint);
+	}
+
+	SetPcursor();
+}
+
+bool ZPlayer::DevWayPointsNoWay()
+{
+	if(select_info.selected_list.size() != 1) return false;
+
+	ZObject *obj;
+
+	obj = select_info.selected_list[0];
+
+	if(!obj->GetWayPointDevList().size()) return false;
+	if(obj->GetWayPointDevList()[0].mode != ATTACK_WP) return false;
+
+	ZObject *vobj;
+
+	vobj = ZObject::GetObjectFromID(obj->GetWayPointDevList()[0].ref_id, object_list);
+
+	if(!vobj) return false;
+
+	unsigned char a_ot, a_oid, v_ot, v_oid;
+
+	obj->GetObjectID(a_ot, a_oid);
+	vobj->GetObjectID(v_ot, v_oid);
+
+	return zunitrating.CrossReference(a_ot, a_oid, v_ot, v_oid) == UCR_WILL_DIE;
+
+}
+
+void ZPlayer::SendDevWayPointsOfObj(ZObject *obj)
+{
+	char *data;
+	int size;
+
+	if(!obj) return;
+
+	//are we registered?
+	if(!is_registered)
+	{
+		unsigned char ot, oid;
+
+		obj->GetObjectID(ot, oid);
+
+		if(UnitRequiresActivation(ot, oid))
+		{
+			AddNewsEntry("move unit error: registration required, please visit www.nighsoft.com");
+			return;
+		}
+	}
+
+	CreateWaypointSendData(obj->GetRefID(), obj->GetWayPointDevList(), data, size);
+
+	//no data made?
+	if(!data) return;
+
+	//send
+	if(!client_socket.SendMessage(SEND_WAYPOINTS, data, size))BattleFeedback("Order not sent: server disconnected.");
+
+	//free data
+	free(data);
+}
+
+void ZPlayer::SendDevWayPointsOfSelected()
+{
+	vector<ZObject*>::iterator i;
+	vector<waypoint>::iterator j;
+	bool no_way = false;
+	ZObject *remove_obj_from_selected = NULL;
+
+	no_way = DevWayPointsNoWay();
+
+	if(AsciiDown('z'))
+	{
+		//send only the nearest to its target
+
+		if(select_info.selected_list.size() && (*select_info.selected_list.begin())->GetWayPointDevList().size())
+		{
+			waypoint &wp = *(*select_info.selected_list.begin())->GetWayPointDevList().begin();
+			
+			remove_obj_from_selected = ZObject::NearestObjectToCoords(select_info.selected_list, wp.x, wp.y);
+
+			if(remove_obj_from_selected) SendDevWayPointsOfObj(remove_obj_from_selected);
+		}
+	}
+	else
+	{
+		for(i=select_info.selected_list.begin(); i!=select_info.selected_list.end(); i++)
+			SendDevWayPointsOfObj(*i);
+	}
+
+	//Collapse the double destination marker (#38): a command used to draw BOTH the
+	//Pcursor feedback pulse here AND the waypoint-line end-marker, overlapping at
+	//the destination for the same 3s and not always agreeing (e.g. a capture order
+	//showed the hand plus a plain cross). The waypoint end-marker (DoRenderWaypoints)
+	//already draws exactly one action-specific marker - hand to capture, crosshair
+	//to attack, cross to move - so we no longer raise the redundant Pcursor.
+	//(void)ShowPcursor; -- intentionally not shown
+
+	//ok its sent, so clear the lists
+	ClearDevWayPointsOfSelected();
+
+	//tell the hud we gave a command
+	zhud.GiveSelectedCommand(no_way);
+
+	//did a one unit per target?
+	if(remove_obj_from_selected)
+	{
+		select_info.RemoveFromSelected(remove_obj_from_selected);
+		if(zhud.GetSelectedObject() == remove_obj_from_selected || !select_info.selected_list.size()) GiveHudSelected();
+		DetermineCursor();
+	}
+
+	//setting a rally point?
+	if(gui_window && gui_window->GetBuildingObj() && !select_info.selected_list.size())
+	{
+		ZObject *obj;
+		char *data;
+		int size;
+
+		obj = gui_window->GetBuildingObj();
+
+		CreateWaypointSendData(obj->GetRefID(), obj->GetWayPointDevList(), data, size);
+
+		//no data made?
+		if(data)
+		{
+			//send
+			client_socket.SendMessage(SEND_RALLYPOINTS, data, size);
+
+			//free data
+			free(data);
+		}
+
+		obj->GetWayPointDevList().clear();
+	}
+}
+
+void ZPlayer::GiveHudSelected()
+{
+	if(select_info.selected_list.size())
+	{
+		int choice = rand()%select_info.selected_list.size();
+		zhud.SetSelectedObject(select_info.selected_list[choice]);
+	}
+	else
+		zhud.SetSelectedObject(NULL);
+}
+
+void ZPlayer::DeleteObjectCleanUp(ZObject *obj)
+{
+	unsigned char ot, oid;
+
+	if(!obj) return;
+
+	obj->GetObjectID(ot, oid);
+
+	//if(ot == MAP_ITEM_OBJECT && oid == ROCK_ITEM) ORock::SetupRockRenders(zmap, object_list);
+	if(ot == MAP_ITEM_OBJECT && oid == ROCK_ITEM) ORock::EditRockRender(zmap, object_list, obj, false);
+
+	obj->DeathMapEffects(zmap);
+
+	if(hover_object == obj) hover_object = NULL;
+
+	select_info.DeleteObject(obj);
+
+	zhud.DeleteObject(obj);
+
+	vector<ZObject*>::iterator i;
+	for(i=object_list.begin();i!=object_list.end();i++)
+		(*i)->RemoveObject(obj);
+
+	ProcessChangeObjectAmount();
+}
+
+void ZPlayer::ProcessChangeObjectAmount()
+{
+	//make the buttons available that let you cycle through your units
+	ReSetupButtons();
+
+	//reset hud etc
+	CheckUnitLimitReached();
+	zhud.SetUnitAmount(team_units_available[our_team]);
+	zhud.SetTeamUnitAmounts(team_units_available);
+}
+
+void ZPlayer::ClearAsciiStates()
+{
+	for(int i=0;i<ASCII_DOWN_MAX;i++) ascii_down[i] = false;
+}
+
+void ZPlayer::SetAsciiState(int c, bool is_down)
+{
+	c -= 'a';
+
+	if(c<0) return;
+	if(c>=ASCII_DOWN_MAX) return;
+
+	ascii_down[c] = is_down;
+}
+
+bool ZPlayer::AsciiDown(int c)
+{
+	c -= 'a';
+
+	if(c<0) return false;
+	if(c>=ASCII_DOWN_MAX) return false;
+
+	return ascii_down[c];
+}
+
+bool ZPlayer::ShiftDown()
+{
+	return lshift_down || rshift_down;
+}
+
+bool ZPlayer::CtrlDown()
+{
+	//lctrl_down/rctrl_down are set from a key switch that still uses SDL1 keycodes
+	//(case 305/306), which never match SDL3's keycodes - so they stay false and
+	//Ctrl+wheel zoom / Ctrl-attack-move never fired. Ask SDL for the live modifier
+	//state instead (same fix AltDown already uses).
+#ifdef __APPLE__
+	//macOS turns Ctrl+click into a right click before the game sees it, and
+	//Ctrl+number belongs to Mission Control - so Cmd does Ctrl's job here
+	return (SDL_GetModState() & (SDL_KMOD_CTRL | SDL_KMOD_GUI)) != 0;
+#else
+	return (SDL_GetModState() & SDL_KMOD_CTRL) != 0;
+#endif
+}
+
+bool ZPlayer::AltDown()
+{
+	//the lalt_down/ralt_down members were never maintained (the key switch
+	//below still uses SDL1 keycodes), so ask SDL for the live state instead
+	return (SDL_GetModState() & SDL_KMOD_ALT) != 0;
+}
+
+bool ZPlayer::IsOverHUD(int x, int y, int w, int h)
+{
+	if(x + w >= init_w - HUD_WIDTH) return true;
+	if(y + h >= init_h - HUD_HEIGHT) return true;
+
+	return false;
+}
+
+void ZPlayer::MainMenuMove(double px, double py)
+{
+	for(vector<ZGuiMainMenuBase*>::iterator i=gui_menu_list.begin(); i!=gui_menu_list.end(); ++i)
+		(*i)->Move(px, py);
+}
+
+bool ZPlayer::MainMenuMotion()
+{
+	if(!gui_menu_list.empty())
+	{
+        auto i=gui_menu_list.begin();
+		int px, py;
+
+		(*i)->GetCoords(px, py);
+
+		if((*i)->Motion(mouse_x, mouse_y))
+		{
+			int x,y,w,h;
+
+			(*i)->GetCoords(x, y);
+			(*i)->GetDimensions(w, h);
+
+			if(IsOverHUD(x,y,w,h)) zhud.ReRenderAll();
+			else if(IsOverHUD(px,py,w,h)) zhud.ReRenderAll();
+
+			return true;
+		}
+	}
+
+	return !gui_menu_list.empty();
+}
+
+bool ZPlayer::MainMenuWheelUp()
+{
+	if(!gui_menu_list.empty())
+        if(gui_menu_list.front()->WheelUpButton())
+		{
+			ApplyMenuWheelFlags(gui_menu_list.front()->GetGMMFlags());
+			return true;
+		}
+
+	return false;
+}
+
+bool ZPlayer::MainMenuWheelDown()
+{
+	if(!gui_menu_list.empty())
+        if(gui_menu_list.front()->WheelDownButton())
+		{
+			ApplyMenuWheelFlags(gui_menu_list.front()->GetGMMFlags());
+			return true;
+		}
+
+	return false;
+}
+
+//#73: a wheel turn over the Options Volume/Speed buttons sets the same flags a
+//click would, but the wheel path doesn't run through UnClick where those are
+//normally applied - so apply the volume/speed ones here.
+void ZPlayer::ApplyMenuWheelFlags(gmm_flag &the_flags)
+{
+	if(the_flags.set_volume) SetSoundSetting(the_flags.set_volume_value);
+    if(the_flags.set_music){SetMusicOff(!zod_music);ZMusicEngine::Stop();ZMusicEngine::ApplyStyle();if(zod_music)ZMusicEngine::PlayPlanetMusic(zmap.GetMapBasics().terrain_type);}
+
+	if(the_flags.set_game_speed)
+	{
+		float_packet the_data;
+
+		the_data.game_speed = the_flags.set_game_speed_value;
+		client_socket.SendMessage(SET_GAME_SPEED, (char*)&the_data, sizeof(float_packet));
+	}
+}
+
+bool ZPlayer::MainMenuKeyPress(int c)
+{
+	if(!gui_menu_list.empty())
+        if(gui_menu_list.front()->KeyPress(c))
+			return true;
+
+	return false;
+}
+
+bool ZPlayer::MainMenuAbsorbLClick()
+{
+	for(vector<ZGuiMainMenuBase*>::iterator i=gui_menu_list.begin(); i!=gui_menu_list.end() && i==gui_menu_list.begin(); ++i)
+		if((*i)->Click(mouse_x, mouse_y))
+		{
+			gmm_flag &the_flags = (*i)->GetGMMFlags();
+
+			//move this to the front
+			if(gui_menu_list.begin() != i)
+			{
+				//this method would be a hell of a no no
+				//if we weren't immediately leaving the loop anyways
+				ZGuiMainMenuBase* temp = *i;
+				gui_menu_list.erase(i);
+				gui_menu_list.insert(gui_menu_list.begin(), temp);
+			}
+
+			//volume/speed are applied on UNclick now (the options menu uses
+			//buttons, which fire on release) - see MainMenuAbsorbLUnClick
+
+			return true;
+		}
+
+	return !gui_menu_list.empty();
+}
+
+bool ZPlayer::MainMenuAbsorbLUnClick()
+{
+	for(vector<ZGuiMainMenuBase*>::iterator i=gui_menu_list.begin(); i!=gui_menu_list.end() && i==gui_menu_list.begin(); ++i)
+		if((*i)->UnClick(mouse_x, mouse_y))
+		{
+			gmm_flag &the_flags = (*i)->GetGMMFlags();
+
+			if(the_flags.open_main_menu) LoadMainMenu(the_flags.open_main_menu_type, false, the_flags.warning_flags);
+
+			if(the_flags.reshuffle_teams) client_socket.SendMessage(RESHUFFLE_TEAMS, NULL, 0);
+
+			if(the_flags.change_team) SendPlayerTeam(the_flags.change_team_type);
+
+			if(the_flags.reset_map) client_socket.SendMessage(RESET_MAP, NULL, 0);
+
+			if(the_flags.quit_game) ExitProgram();
+
+			if(the_flags.pause_game) SendSetPaused(true);
+
+			if(the_flags.start_bot) 
+			{
+				int_packet the_data;
+
+				the_data.team = the_flags.start_bot_team;
+				client_socket.SendMessage(START_BOT_EVENT, (char*)&the_data, sizeof(int_packet));
+			}
+
+			if(the_flags.stop_bot) 
+			{
+				int_packet the_data;
+
+				the_data.team = the_flags.stop_bot_team;
+				client_socket.SendMessage(STOP_BOT_EVENT, (char*)&the_data, sizeof(int_packet));
+			}
+
+			if(the_flags.change_map) 
+			{
+				int_packet the_data;
+
+				the_data.map_num = the_flags.change_map_number;
+				if(!client_socket.SendMessage(SELECT_MAP, (char*)&the_data, sizeof(int_packet)))frontend.DeploymentFailed("No connection to the game server. Return to the menu and retry.");
+			}
+
+			if(the_flags.generate_map)
+			{
+				generate_map_packet the_data;
+				the_data.enemies = the_flags.gen_enemies;
+				the_data.width = the_flags.gen_width;
+				the_data.height = the_flags.gen_height;
+				the_data.terrain = the_flags.gen_terrain;
+				the_data.tech = the_flags.gen_tech;
+				the_data.vehicles = the_flags.gen_vehicles;
+				client_socket.SendMessage(GENERATE_MAP, (char*)&the_data, sizeof(generate_map_packet));
+			}
+
+			//lobby: un-pause the match so it starts for everyone
+			if(the_flags.start_match) SendSetPaused(false);
+
+			//matchmaking lobby: tell the server my ready state (it auto-starts when all ready)
+            if(the_flags.toggle_ready && !SendReady(the_flags.ready_value))
+                if(auto *lobby=dynamic_cast<GMMLobby*>(*i)) lobby->SetError("Ready could not be sent. Leave and reconnect.");
+            if(the_flags.leave_match) {
+                client_socket.ClearConnection(); hosted_setup_available=false; lobby_countdown=-1;
+                ReturnToMenu(); CloseAllMenus(); LoadMainMenu(GMM_MULTIPLAYER); return true;
+            }
+
+			if(the_flags.set_volume) SetSoundSetting(the_flags.set_volume_value);
+    if(the_flags.set_music){SetMusicOff(!zod_music);ZMusicEngine::Stop();ZMusicEngine::ApplyStyle();if(zod_music)ZMusicEngine::PlayPlanetMusic(zmap.GetMapBasics().terrain_type);}
+
+			if(the_flags.set_game_speed)
+			{
+				float_packet the_data;
+
+				the_data.game_speed = the_flags.set_game_speed_value;
+				client_socket.SendMessage(SET_GAME_SPEED, (char*)&the_data, sizeof(float_packet));
+			}
+
+			//back to the Z-style start menu: freeze the local game (the next
+			//map the player picks resets it) and tear the client view down.
+			//ReturnToMenu closes the menu stack, so return straight away.
+			if(the_flags.save_game) SendSaveGame(the_flags.save_slot);
+
+			if(the_flags.exit_to_menu)
+			{
+				SendSetPaused(true);
+				ReturnToMenu();
+				return true;
+			}
+
+			//orchestrator: join a match by connecting to its server (the #204
+			//reconnect seam drops the loopback session and dials the new host:port),
+			//then land in the lobby. Done LAST and returns immediately, because it
+			//tears the menu stack down - nothing below may touch the_flags after.
+			if(the_flags.join_match && the_flags.join_port > 0)
+			{
+                string host = the_flags.join_host;
+                int port = the_flags.join_port, team = the_flags.join_team;
+                JoinHostedMatch(host, port, team, *i);
+			}
+
+			return true;
+		}
+
+	return !gui_menu_list.empty();
+}
+
+bool ZPlayer::GuiAbsorbLClick()
+{
+	int shift_x, shift_y;
+	int map_x, map_y;
+
+	//do we have a menu window?
+	if(active_menu)
+	{
+		zmap.GetViewShift(shift_x, shift_y);
+
+		map_x = mouse_x + shift_x;
+		map_y = mouse_y + shift_y;
+
+		if(active_menu->Click(map_x, map_y))
+			return true;
+	}
+
+	//what about factory list?
+	if(gui_factory_list && gui_factory_list->IsVisible())
+	{
+		zmap.GetViewShift(shift_x, shift_y);
+
+		map_x = mouse_x + shift_x;
+		map_y = mouse_y + shift_y;
+
+		if(gui_factory_list->Click(map_x, map_y))
+		{
+			if(gui_factory_list->GetGFlags().jump_to_building)
+			{
+				//run to it
+				int ox, oy;
+				ZObject *obj;
+
+				obj = GetObjectFromID(gui_factory_list->GetGFlags().bref_id, object_list);
+
+				if(obj)
+				{
+					obj->GetCenterCords(ox, oy);
+					FocusCameraTo(ox, oy);
+
+					//make a gui window for this building
+					ObjectMakeGuiWindow(obj);
+					//if(gui_window) DeleteCurrentGuiWindow();
+					//if(gui_window = obj->MakeGuiWindow())
+					//{
+					//	//give it the build list
+					//	gui_window->SetBuildList(&buildlist);
+
+					//	//have its buildings dev rallypoints cleared
+					//	if(gui_window->GetBuildingObj())
+					//		gui_window->GetBuildingObj()->GetWayPointDevList().clear();
+					//}
+				}
+			}
+
+			return true;
+		}
+	}
+
+	//do we have a gui window, and did it take the click?
+	if(gui_window)
+	{
+		zmap.GetViewShift(shift_x, shift_y);
+
+		map_x = mouse_x + shift_x;
+		map_y = mouse_y + shift_y;
+
+		gui_window->ScaleInput(map_x, map_y);   //#207: undo the overlay scale for hit-testing
+
+		if(gui_window->Click(map_x, map_y))
+			return true;
+		else
+			DeleteCurrentGuiWindow();
+	}
+	
+
+	//move forward?
+	if(CouldCollectSelectables()) return false;
+
+	//do we start another gui window?
+	if(hover_object && ObjectMakeGuiWindow(hover_object)) return true;
+
+	//if(hover_object && hover_object->GetOwner() != NULL_TEAM && hover_object->GetOwner() == our_team && (gui_window = hover_object->MakeGuiWindow()))
+	//{
+	//	////give it the build list
+	//	//gui_window->SetBuildList(&buildlist);
+
+	//	////have its buildings dev rallypoints cleared
+	//	//if(gui_window->GetBuildingObj())
+	//	//	gui_window->GetBuildingObj()->GetWayPointDevList().clear();
+
+	//	return true;
+	//}
+
+	return false;
+}
+
+bool ZPlayer::GuiAbsorbLUnClick()
+{
+	int shift_x, shift_y;
+	int map_x, map_y;
+
+	//do we have a menu window?
+	if(active_menu)
+	{
+		zmap.GetViewShift(shift_x, shift_y);
+
+		map_x = mouse_x + shift_x;
+		map_y = mouse_y + shift_y;
+
+		if(active_menu->UnClick(map_x, map_y))
+		{
+			gui_flags &glfags = active_menu->GetGFlags();
+
+			if(glfags.do_login)
+			{
+				login_name = active_menu->GetGFlags().login_name;
+				login_password = active_menu->GetGFlags().login_password;
+
+				SendLogin();
+			}
+
+			if(glfags.open_createuser)
+			{
+				active_menu = create_user_menu;
+			}
+
+			if(glfags.do_createuser)
+			{
+				SendCreateUser(
+					active_menu->GetGFlags().user_name,
+					active_menu->GetGFlags().login_name,
+					active_menu->GetGFlags().login_password,
+					active_menu->GetGFlags().email);
+			}
+
+			if(glfags.open_login)
+			{
+				active_menu = login_menu;
+			}
+
+			return true;
+		}
+	}
+
+	//what about factory list?
+	if(gui_factory_list && gui_factory_list->IsVisible())
+	{
+		zmap.GetViewShift(shift_x, shift_y);
+
+		map_x = mouse_x + shift_x;
+		map_y = mouse_y + shift_y;
+
+		if(gui_factory_list->UnClick(map_x, map_y))
+			return true;
+	}
+
+	//do we have a gui window, and did it take the click?
+	if(gui_window)
+	{
+		zmap.GetViewShift(shift_x, shift_y);
+
+		map_x = mouse_x + shift_x;
+		map_y = mouse_y + shift_y;
+
+		gui_window->ScaleInput(map_x, map_y);   //#207: undo the overlay scale for hit-testing
+
+		if(gui_window->UnClick(map_x, map_y))
+		{
+			if(gui_window->GetGFlags().send_new_production)
+			{
+				start_building_packet the_data;
+
+				the_data.ref_id = gui_window->GetGFlags().pref_id;
+				the_data.ot = gui_window->GetGFlags().pot;
+				the_data.oid = gui_window->GetGFlags().poid;
+
+				client_socket.SendMessage(START_BUILDING, (const char*)&the_data, sizeof(start_building_packet));
+			}
+
+			if(gui_window->GetGFlags().send_stop_production)
+			{
+				int the_data;
+
+				the_data = gui_window->GetGFlags().pref_id;
+
+				client_socket.SendMessage(STOP_BUILDING, (const char*)&the_data, sizeof(int));
+			}
+
+			if(gui_window->GetGFlags().place_cannon)
+			{
+				place_cannon_ref_id = gui_window->GetGFlags().cref_id;
+				place_cannon_oid = gui_window->GetGFlags().coid;
+				place_cannon_left = gui_window->GetGFlags().cleft;
+				place_cannon_right = gui_window->GetGFlags().cright;
+				place_cannon_top = gui_window->GetGFlags().ctop;
+				place_cannon_bottom = gui_window->GetGFlags().cbottom;
+
+				InitPlaceCannon();
+			}
+
+			if(gui_window->GetGFlags().send_new_queue_item)
+			{
+				add_building_queue_packet the_data;
+
+				the_data.ref_id = gui_window->GetGFlags().qref_id;
+				the_data.ot = gui_window->GetGFlags().qot;
+				the_data.oid = gui_window->GetGFlags().qoid;
+
+				client_socket.SendMessage(ADD_BUILDING_QUEUE, (const char*)&the_data, sizeof(add_building_queue_packet));
+			}
+
+			if(gui_window->GetGFlags().send_cancel_queue_item)
+			{
+				cancel_building_queue_packet the_data;
+
+				the_data.ref_id = gui_window->GetGFlags().qcref_id;
+				the_data.ot = gui_window->GetGFlags().qcot;
+				the_data.oid = gui_window->GetGFlags().qcoid;
+				the_data.list_i = gui_window->GetGFlags().qc_i;
+
+				client_socket.SendMessage(CANCEL_BUILDING_QUEUE, (const char*)&the_data, sizeof(cancel_building_queue_packet));
+			}
+
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void ZPlayer::InitPlaceCannon()
+{
+	place_cannon_ok_img = NULL;
+	place_cannon_nok_img = NULL;
+
+	//get images
+	switch(place_cannon_oid)
+	{
+	case GATLING:
+		place_cannon_ok_img = CGatling::GetPlaceImage(our_team);
+		place_cannon_nok_img = CGatling::GetNPlaceImage(our_team);
+		break;
+	case GUN:
+		place_cannon_ok_img = CGun::GetPlaceImage(our_team);
+		place_cannon_nok_img = CGun::GetNPlaceImage(our_team);
+		break;
+	case HOWITZER:
+		place_cannon_ok_img = CHowitzer::GetPlaceImage(our_team);
+		place_cannon_nok_img = CHowitzer::GetNPlaceImage(our_team);
+		break;
+	case MISSILE_CANNON:
+		place_cannon_ok_img = CMissileCannon::GetPlaceImage(our_team);
+		place_cannon_nok_img = CMissileCannon::GetNPlaceImage(our_team);
+		break;
+	default:
+		return;
+		break;
+	}
+
+	//make it real
+	place_cannon = true;
+
+	//set cords
+	SetPlaceCannonCords();
+}
+
+void ZPlayer::SetPlaceCannonCords()
+{
+	int map_x, map_y;
+	int shift_x, shift_y;
+
+	if(!place_cannon) return;
+
+	zmap.GetViewShift(shift_x, shift_y);
+
+	map_x = mouse_x + shift_x;
+	map_y = mouse_y + shift_y;
+
+	place_cannon_tx = map_x / 16;
+	place_cannon_ty = map_y / 16;
+
+	//ok or not ok?
+}
+
+void ZPlayer::RenderPlaceCannon()
+{
+	SDL_Rect from_rect, to_rect;
+	int map_x, map_y;
+	int shift_x, shift_y;
+
+	if(!place_cannon) return;
+
+	map_x = (place_cannon_tx * 16);
+	map_y = (place_cannon_ty * 16);
+
+	zmap.RenderZSurface(&place_cannon_ok_img, map_x, map_y);
+	//if(zmap.GetBlitInfo(place_cannon_ok_img, map_x, map_y, from_rect, to_rect))
+	//		SDL_BlitSurface( place_cannon_ok_img, &from_rect, screen, &to_rect);
+}
+
+bool ZPlayer::DoPlaceCannon()
+{
+	struct place_cannon_packet the_data;
+
+	if(!place_cannon) return false;
+
+	//#91: no placing cannons before the round starts
+	if(ztime.IsPaused()) { place_cannon = false; return false; }
+
+	place_cannon = false;
+
+	the_data.ref_id = place_cannon_ref_id;
+	the_data.oid = place_cannon_oid;
+	the_data.tx = place_cannon_tx;
+	the_data.ty = place_cannon_ty;
+
+	client_socket.SendMessage(PLACE_CANNON, (const char*)&the_data, sizeof(place_cannon_packet));
+
+	return true;
+}
+
+
+void ZPlayer::DeleteCurrentGuiWindow()
+{
+	if(gui_window)
+	{
+		//printf("deleted gui window\n");
+		delete gui_window;
+		gui_window = NULL;
+	}
+}
+
+void ZPlayer::ProcessUnicode(int key)
+{
+	//printf("ProcessUnicode:: unicode:%d\n", key);
+
+	if(show_match_summary || summary_pending) return;
+	//main menu took it?
+	if(MainMenuKeyPress(key)) return;
+    if(LobbyOpen()) return; // Ready-up owns startup; gameplay shortcuts stay inactive here.
+
+	//exit out if the menu took the key
+	if(active_menu && active_menu->KeyPress(key))
+	{
+		gui_flags &glfags = active_menu->GetGFlags();
+
+		if(glfags.do_login)
+		{
+			login_name = active_menu->GetGFlags().login_name;
+			login_password = active_menu->GetGFlags().login_password;
+
+			SendLogin();
+		}
+		//SendCreateUser
+
+		if(glfags.do_createuser)
+		{
+			SendCreateUser(
+				active_menu->GetGFlags().user_name,
+				active_menu->GetGFlags().login_name,
+				active_menu->GetGFlags().login_password,
+				active_menu->GetGFlags().email);
+		}
+
+		return;
+	}
+
+	//Alt+Enter: toggle borderless fullscreen (frameless - no mode switch)
+	if(key == 13 && AltDown())
+	{
+		ZVideo_SetFullscreen(!ZVideo_GetFullscreen());
+		is_windowed = !ZVideo_GetFullscreen();
+
+		//match the logical view to the new output's real aspect (no stripes)
+		AdaptViewAspect();
+
+		AddNewsEntry(is_windowed ? "windowed" : "fullscreen");
+		printf("fullscreen toggle: %s\n", is_windowed ? "windowed" : "fullscreen");
+		fflush(stdout);
+		return;
+	}
+
+	if(key == 13)
+	{
+		if(collect_chat_message)
+		{
+			//send it
+			client_socket.SendMessageAscii(SEND_CHAT, chat_message.c_str());
+
+			chat_message.clear();
+			collect_chat_message = false;
+		}
+		else
+		{
+			collect_chat_message = true;
+		}
+
+		zhud.ShowChatMessage(collect_chat_message);
+	}
+	else
+	{
+		if(collect_chat_message)
+		{
+			if(key == 8) //delete key
+			{
+				if(chat_message.length())
+					chat_message.erase(chat_message.length()-1,1);
+
+				//printf("current chat message:'%s'\n", chat_message.c_str());
+			}
+			else
+			{
+				//add it to the string
+				chat_message += key;
+				//printf("current chat message:'%s'\n", chat_message.c_str());
+			}
+
+			zhud.SetChatMessage(chat_message);
+		}
+		else if(key == '/')
+		{
+			//start chat message into a command
+			collect_chat_message = true;
+
+			chat_message = "/";
+			zhud.ShowChatMessage(collect_chat_message);
+			zhud.SetChatMessage(chat_message);
+		}
+		else if(ZPrefs_KeyIs(key,ZKEY_IDLE_FACTORY)){if(!CtrlDown()&&!AltDown()&&!gui_window&&!active_menu&&gui_menu_list.empty())SelectNextIdleFactory();}
+		else if(ZPrefs_KeyIs(key, ZKEY_IDLE_UNIT))
+        {
+            if(!CtrlDown() && !AltDown() && !gui_window && !active_menu && gui_menu_list.empty()) SelectNextIdleUnit();
+        }
+		else if(ZPrefs_KeyIs(key, ZKEY_PLAYER_LIST))
+		{
+			LoadMainMenu(GMM_PLAYER_LIST, true);
+			//DisplayPlayerList();
+		}
+		else if(ZPrefs_KeyIs(key, ZKEY_PAUSE))
+		{
+			//#79 follow-up: toggle pause mid-game (P is the player list). Lets you
+			//freeze, F12-dump, write up a bug, then Z to continue. Server-authoritative.
+			bool will_pause = !ztime.IsPaused();
+			SendSetPaused(will_pause);
+			AddNewsEntry(will_pause ? "PAUSED - press " + ZPrefs_KeyLabel(zod_keys[ZKEY_PAUSE]) + " to resume" : "resumed");
+		}
+		else if(ZPrefs_KeyIs(key, ZKEY_CHAT_HISTORY))
+		{
+			//toggle on/off
+			show_chat_history = !show_chat_history;
+		}
+		else if(ZPrefs_KeyIs(key, ZKEY_SMOOTHING))
+		{
+			//toggle the render-only movement smoothing (visual only)
+			zod_render_smoothing = !zod_render_smoothing;
+			ZPrefs_Save();
+			AddNewsEntry(zod_render_smoothing ? "render smoothing: ON" : "render smoothing: OFF");
+		}
+		else if(key == '\\')
+		{
+			//diagnostics dump - macOS-friendly alternative to F12 (which the OS
+			//grabs). Appends the selected unit's group state to zod_diag.log.
+			DumpDiagnostics();
+		}
+		else if(key == '|')
+		{
+			//screenshot - sister to '\\' (dump). Saves the current frame as a PNG
+			//in the game dir (next to zod_diag.log) so a bug report can pair a
+			//picture with the dump, no OS screenshot tool / key combos needed.
+			char path[1024];
+			//inside a (read-only) Zod.app, screenshots go to the Desktop
+			string shot_dir;
+			if(getenv("ZOD_BUNDLED") && getenv("HOME")) shot_dir = string(getenv("HOME")) + "/Desktop/";
+			int n;
+			for(n=1; n<1000; n++)
+			{
+				snprintf(path, sizeof(path), "%szod_screenshot_%03d.png", shot_dir.c_str(), n);
+				FILE *fp = fopen(path, "rb");
+				if(!fp) break;   //first free name
+				fclose(fp);
+			}
+			if(ZVideo_SaveScreenshot(path))
+			{
+				printf("screenshot saved: %s\n", path);
+				AddNewsEntry(string("screenshot saved: ") + path);
+			}
+			else
+				AddNewsEntry("screenshot failed (see console)");
+		}
+		//(zoom +/- now handled by keycode in ProcessSDL, so numpad works too)
+		else if(key == 'm' || key == 'M')
+		{
+			if(ZVideo_GetGrab())
+			{
+				ZVideo_SetGrab(false);
+				AddNewsEntry("mouse released");
+			}
+			else
+			{
+				ZVideo_SetGrab(true);
+				AddNewsEntry("mouse taken");
+			}
+		}
+		else if(!AltDown() && (key == 'v' || key == 'V'))
+		{
+			V_Button();
+		}
+		else if(AltDown() && (key == 'v' || key == 'V'))
+		{
+			SetNextSoundSetting();
+		}
+		else if(key == 22) //means ctrl + v ?
+		{
+			SelectAllOfType(VEHICLE_OBJECT);
+		}
+		else if(key == 18) //means ctrl + r ?
+		{
+			SelectAllOfType(ROBOT_OBJECT);
+		}
+		else if(key == 3) //means ctrl + c ?
+		{
+			SelectAllOfType(CANNON_OBJECT);
+		}
+		else if(key == 1) //means ctrl + a ?
+		{
+			SelectAllOfType();
+		}
+		else if(key == 'r' || key == 'R')
+		{
+			R_Button();
+		}
+		else if(key == 'g' || key == 'G')
+		{
+			G_Button();
+		}
+		else if(key == 'b' || key == 'B')
+		{
+			//DisplayFactoryProductionList();
+			if(gui_factory_list) gui_factory_list->ToggleShow();
+		}
+		else if(key == ' ')
+		{
+			DoSpaceBarEvent();
+		}
+	}
+
+}
+
+void ZPlayer::SendVoteYes()
+{
+	client_socket.SendMessage(VOTE_YES, NULL, 0);
+}
+
+void ZPlayer::SendVoteNo()
+{
+	client_socket.SendMessage(VOTE_NO, NULL, 0);
+}
+
+void ZPlayer::SendVotePass()
+{
+	client_socket.SendMessage(VOTE_PASS, NULL, 0);
+}
+
+void ZPlayer::SendLogin()
+{
+	//ask if we need to display the login menu
+	client_socket.SendMessage(REQUEST_LOGINOFF, NULL, 0);
+
+	//send a login if we have it
+	if(login_name.length() && login_password.length())
+	{
+		string send_str;
+
+		send_str = login_name + "," + login_password;
+
+		client_socket.SendMessageAscii(SEND_LOGIN, send_str.c_str());
+	}
+}
+
+void ZPlayer::SendCreateUser(string username, string lname, string lpass, string email)
+{
+	string send_str;
+
+	send_str = username + "," + lname + "," + lpass + "," + email;
+
+	client_socket.SendMessageAscii(CREATE_USER, send_str.c_str());
+}
+
+void ZPlayer::SendSetPaused(bool paused)
+{
+	update_game_paused_packet packet;
+
+	packet.game_paused = paused;
+
+	client_socket.SendMessage(SET_GAME_PAUSED, (const char*)&packet, sizeof(update_game_paused_packet));
+}
+
+void ZPlayer::InitMenus()
+{
+	active_menu = NULL;
+
+	login_menu = new GWLogin(&ztime);
+	create_user_menu = new GWCreateUser(&ztime);
+}
+
+//#79: tear down every open GMM menu (used when a map loads and we drop into the
+//game, so the menu-first / map-picker overlay doesn't linger over gameplay).
+void ZPlayer::CloseMainMenus()
+{
+	for(vector<ZGuiMainMenuBase*>::iterator i=gui_menu_list.begin(); i!=gui_menu_list.end(); ++i)
+		delete *i;
+	gui_menu_list.clear();
+}
+
+//#196: how much to scale menus + the resume bar. Comes from the zod_menu_scale
+//preference (Options -> Menu Size; default 2x on every platform), with a
+//ZOD_MENU_SCALE env override for testing (a multiplier like 1, 1.5, 2 - not a
+//toggle). ZGuiMainMenuBase::SetRenderScale auto-caps it per menu so nothing
+//grows past the screen.
+static double MenuRenderScale()
+{
+	const char *e = getenv("ZOD_MENU_SCALE");
+	if(e) return atof(e);
+	return zod_menu_scale;
+}
+
+//#207: the in-game building/factory overlays are far denser than the menus, so
+//the full menu scale (2x by default) is a touch much for them. Cap them at 1.5x
+//while the regular menus keep the full scale - giving "2x menus / 1.5x buildings"
+//at the default, and never larger than the menu scale if it's set lower.
+static double BuildingMenuRenderScale()
+{
+	double s = MenuRenderScale();
+	if(s > 1.5) s = 1.5;
+	return s;
+}
+
+void ZPlayer::LoadMainMenu(int menu_type, bool kill_if_open, gmm_warning_flag warning_flags)
+{
+	ZGuiMainMenuBase *new_menu = NULL;
+
+	//already loaded?
+	for(vector<ZGuiMainMenuBase*>::iterator i=gui_menu_list.begin(); i!=gui_menu_list.end(); ++i)
+		if((*i)->GetMenuType() == menu_type)
+		{
+			if(kill_if_open)
+			{
+				delete *i;
+				gui_menu_list.erase(i);
+			}
+			else
+			{
+				//move this to the front
+				if(gui_menu_list.begin() != i)
+				{
+					//this method would be a hell of a no no
+					//if we weren't immediately leaving the loop anyways
+					ZGuiMainMenuBase* temp = *i;
+					gui_menu_list.erase(i);
+					gui_menu_list.insert(gui_menu_list.begin(), temp);
+				}
+			}
+
+			return;
+		}
+
+	//load it
+	switch(menu_type)
+	{
+	case GMM_MAIN_MAIN: new_menu = new GMMMainMenu(!zmap.Loaded(),
+		zod_frontend && (remote_address == "127.0.0.1" || remote_address == "localhost"),
+        !hosted_setup_available && (remote_address == "127.0.0.1" || remote_address == "localhost"),frontend.EditorTesting()); break;	//#79: compact start menu when no game is loaded
+	case GMM_CHANGE_TEAMS: new_menu = new GMMChangeTeams(); break;
+	case GMM_MANAGE_BOTS: new_menu = new GMMManageBots(); break;
+	case GMM_PLAYER_LIST: new_menu = new GMMPlayerList(); break;
+	case GMM_SELECT_MAP: new_menu = new GMMSelectMap(); break;
+	case GMM_GENERATE_MAP: new_menu = new GMMGenerateMap(); break;
+	case GMM_MULTIPLAYER: new_menu = new GMMMultiplayer(); break;
+	case GMM_MULTIPLAYER_CREATE: new_menu = new GMMMultiplayerCreate(); break;
+	case GMM_LOBBY: new_menu = new GMMLobby(); break;
+	case GMM_SAVE_GAME: new_menu = new GMMSaveGame(); break;
+	case GMM_OPTIONS: new_menu = new GMMOptions(); break;
+	case GMM_WARNING: new_menu = new GMMWarning(warning_flags); break;
+	default: printf("ZPlayer::LoadMainMenu: bad menu_type:%d\n", menu_type); break;
+	}
+
+    AttachMainMenu(new_menu);
+}
+
+void ZPlayer::AttachMainMenu(ZGuiMainMenuBase *new_menu)
+{
+	if(new_menu)
+	{
+		new_menu->SetCenterCoords(init_w >> 1, init_h >> 1);
+		//The lobby sits over the live (paused) game; it gets re-centered on the map
+		//view rect each frame (see RecenterLobby) once the view dimensions exist.
+		new_menu->SetRenderScale(MenuRenderScale());   //#196: bigger menus (2x on Android), auto-fit
+		new_menu->SetPlayerInfoList(&player_info);
+		new_menu->SetLocalPId(&p_id);   //matchmaking lobby: identify "me" in the player list
+		new_menu->SetSelectableMapList(&selectable_map_list);
+		new_menu->SetCampaignUnlock(&campaign_max_unlocked);
+		new_menu->SetPlayerTeam((int*)&our_team);
+		new_menu->SetSoundSetting(&sound_setting);
+		new_menu->SetZTime(&ztime);
+
+		//gui_menu_list.push_back(new_menu);
+		gui_menu_list.insert(gui_menu_list.begin(), new_menu);
+	}
+}
+
+//Tear down the whole GMM menu stack at once (used when entering the lobby, so the
+//browser/create menus don't linger behind it).
+//matchmaking lobby: center the lobby on the map VIEW rect (the area excluding the
+//HUD), matching where the game/resume-bar centers. The full framebuffer that
+//other menus use includes the HUD, which pushed the lobby off to the right.
+void ZPlayer::RecenterLobby()
+{
+	int sx, sy, vw, vh;
+	zmap.GetViewShiftFull(sx, sy, vw, vh);
+	if(vw<=0 || vh<=0) { vw=init_w; vh=init_h; }
+
+	static int logged = 0;
+	if(!logged) { logged = 1; ZDiag("recenter: init=%dx%d view=%dx%d shift=(%d,%d)", init_w, init_h, vw, vh, sx, sy); }
+
+	for(vector<ZGuiMainMenuBase*>::iterator i=gui_menu_list.begin(); i!=gui_menu_list.end(); ++i)
+        if(auto *lobby=dynamic_cast<GMMLobby*>(*i)) {
+            lobby->SetCenterCoords(vw>>1,vh>>1);
+            vector<int> teams;
+            for(auto *object:object_list) {
+                unsigned char type,id; object->GetObjectID(type,id); int owner=object->GetOwner();
+                if(type==BUILDING_OBJECT && (id==FORT_FRONT || id==FORT_BACK) && owner>NULL_TEAM && owner<MAX_TEAM_TYPES
+                   && find(teams.begin(),teams.end(),owner)==teams.end()) teams.push_back(owner);
+            }
+            sort(teams.begin(),teams.end());
+            lobby->SetSession(remote_address+":"+to_string(client_socket.GetPort()),game_map_name,teams,zmap.Loaded());
+            lobby->SetCountdown(lobby_countdown); lobby->SetPauseConfirmed(lobby_pause_confirmed);
+        }
+}
+
+//matchmaking lobby: is the pre-match lobby currently one of the open GMM menus?
+bool ZPlayer::LobbyOpen()
+{
+	for(vector<ZGuiMainMenuBase*>::iterator i=gui_menu_list.begin(); i!=gui_menu_list.end(); ++i)
+		if((*i)->GetMenuType() == GMM_LOBBY) return true;
+	return false;
+}
+
+void ZPlayer::CloseAllMenus()
+{
+	for(vector<ZGuiMainMenuBase*>::iterator i=gui_menu_list.begin(); i!=gui_menu_list.end(); ++i)
+		delete *i;
+
+	gui_menu_list.clear();
+}
+
+void ZPlayer::RefindOurFortRefID()
+{
+	fort_ref_id = -1;
+
+	for(vector<ZObject*>::iterator i=object_list.begin(); i!=object_list.end(); i++)
+	{
+		if((*i)->GetOwner() != our_team) continue;
+
+		unsigned char ot, oid;
+
+		(*i)->GetObjectID(ot, oid);
+
+		if(ot == BUILDING_OBJECT && (oid == FORT_FRONT || oid == FORT_BACK))
+		{
+			fort_ref_id = (*i)->GetRefID();
+			break;
+		}
+	}
+}
+
+void ZPlayer::SetNextSoundSetting()
+{
+	SetSoundSetting(sound_setting+1);
+}
+
+//apply the current sound_setting to the audio mixer (no UI feedback). Split out
+//so it can run silently at startup as well as from SetSoundSetting.
+void ZPlayer::ApplyVolume()
+{
+    ZAudio_ApplyVolumes();
+}
+
+void ZPlayer::SetSoundSetting(int sound_setting_)
+{
+	sound_setting = sound_setting_;
+
+	if(sound_setting < 0) sound_setting = 0;
+	if(sound_setting >= MAX_SOUND_SETTINGS) sound_setting = 0;
+
+	ApplyVolume();
+
+	//#73: remember the choice across sessions
+	zod_volume_setting = sound_setting;
+    zod_effects_volume=sound_setting*25;ZAudio_ApplyVolumes();
+	ZPrefs_Save();
+
+	switch(sound_setting)
+	{
+	case SOUND_0:   AddNewsEntry("volume off"); break;
+	case SOUND_25:  AddNewsEntry("volume 25%"); break;
+	case SOUND_50:  AddNewsEntry("volume 50%"); break;
+	case SOUND_75:  AddNewsEntry("volume 75%"); break;
+	case SOUND_100: AddNewsEntry("volume full"); break;
+	}
+}
+
+void ZPlayer::AddSpaceBarEvent(SpaceBarEvent new_event)
+{
+	//delete duplicates
+	for(vector<SpaceBarEvent>::iterator i=space_event_list.begin(); i!=space_event_list.end();)
+	{
+		if(new_event == *i)
+			i = space_event_list.erase(i);
+		else
+			++i;
+	}
+
+	//printf("ZPlayer::AddSpaceBarEvent::ref_id:%d\n", new_event.ref_id);
+
+	space_event_list.insert(space_event_list.begin(), new_event);
+
+	if(space_event_list.size() >= MAX_STORED_SPACE_BAR_EVENTS)
+		space_event_list.resize(MAX_STORED_SPACE_BAR_EVENTS);
+}
+
+void ZPlayer::DoSpaceBarEvent()
+{
+	SpaceBarEvent process_event;
+
+	while(space_event_list.size())
+	{
+		int x, y;
+		ZObject *obj;
+
+		//get event
+		process_event = space_event_list[0];
+
+		//get object
+		obj = GetObjectFromID(process_event.ref_id, object_list);
+
+		//if not good any more, delete this event and try again
+		if(!obj || process_event.past_lifetime())
+		{
+			//if(!obj) printf("ZPlayer::DoSpaceBarEvent::!obj ref_id:%d\n", process_event.ref_id);
+			space_event_list.erase(space_event_list.begin());
+			continue;
+		}
+
+		//focus on its leader instead?
+		if(obj->GetGroupLeader()) obj = obj->GetGroupLeader();
+
+		//process event
+		{
+			obj->GetCenterCords(x, y);
+			FocusCameraTo(x, y);
+
+			if(process_event.select_obj && !select_info.ObjectIsSelected(obj)) SelectZObject(obj);
+
+			if(process_event.open_gui) ObjectMakeGuiWindow(obj);
+		}
+
+		//move event to end of list
+		space_event_list.erase(space_event_list.begin());
+		space_event_list.push_back(process_event);
+
+		//exit
+		break;
+	}
+}
+
+bool ZPlayer::ObjectMakeGuiWindow(ZObject *obj)
+{
+	if(!obj) return false;
+
+	//#91: no opening a building's production window before the round starts -
+	//otherwise you can queue/change build targets on the paused start screen.
+	if(ztime.IsPaused()) return false;
+
+	//only one can exist
+	DeleteCurrentGuiWindow();
+
+	//checks
+	if(obj->GetOwner() == NULL_TEAM) return false;
+	if(obj->GetOwner() != our_team) return false;
+
+	//make it
+	gui_window = obj->MakeGuiWindow();
+
+	//it get made?
+	if(!gui_window) return false;
+
+	//#207: scale the factory/build overlay too, but capped lower than the menus
+	//(1.5x vs 2x by default) - these panels are denser so the full menu scale is
+	//a bit much.
+	gui_window->SetRenderScale(BuildingMenuRenderScale());
+
+	//set its build list
+	gui_window->SetBuildList(&buildlist);
+
+	//clear rally points
+	//gui_window->GetBuildingObj()->GetWayPointDevList().clear();
+	obj->GetWayPointDevList().clear();
+
+	return true;
+}
+
+// ---------------------------------------------------------------------------
+// Z-style front-end glue (see zfrontend.h)
+
+void ZPlayer::OpenStartMenu()
+{
+	if(!zod_frontend)
+	{
+		LoadMainMenu(GMM_MAIN_MAIN);
+		return;
+	}
+
+	CloseAllMenus();
+	frontend.Show();
+	//(the menu tune starts when the menu actually appears - see RenderScreen -
+	//so the title music keeps playing under the intro splash)
+}
+
+bool ZPlayer::FrontEndWanted()
+{
+	if(!zod_frontend || !graphics_loaded) return false;
+	if(!frontend.Visible()) return false;
+	if(zmap.Loaded()) return false;
+
+	//a classic GMM window (skirmish generator, multiplayer browser, lobby,
+	//login...) is up - let the classic idle screen draw it
+	if(gui_menu_list.size() || active_menu) return false;
+
+	//let the intro splash finish first (unless Scenes are off)
+	if(zod_scenes && splash_screen.GetBaseSurface() && splash_fade >= 5) return false;
+
+	return true;
+}
+
+void ZPlayer::ProcessFrontEndActions()
+{
+    PendingJoin connected;
+    if(deployment_connect.Poll(connected)&&frontend.Loading()){
+        if(!connected.connection)frontend.DeploymentFailed("Could not reconnect: "+connected.error);
+        else {player_info.clear();p_id=-1;game_map_name.clear();connect_attempt_time=current_time();server_response_seen=false;server_silence_warned=false;
+            if(client_socket.Adopt(*connected.connection)){deployment_handshake=true;deployment_deadline=SDL_GetTicks()+5000;frontend.DeploymentStage("Waiting for the game server");}
+            else frontend.DeploymentFailed("Could not attach the game connection. Retry.");}
+    }
+    if(deployment_handshake){
+        if(!frontend.Loading())deployment_handshake=false;
+        else if(p_id>=0){deployment_handshake=false;zmap.ClearMap();frontend.RetryDeployment();}
+        else if(SDL_GetTicks()>=deployment_deadline){deployment_handshake=false;client_socket.ClearConnection();frontend.DeploymentFailed("The game server did not answer. Retry.");}
+        else return;
+    }
+	ZFrontEnd::Action a;
+
+	while(frontend.PopAction(a))
+	{
+        bool deploy=a.type==ZFrontEnd::FE_START_MAP||a.type==ZFrontEnd::FE_START_CAMPAIGN_MAP||a.type==ZFrontEnd::FE_START_MAP_FILE||a.type==ZFrontEnd::FE_LOAD_SAVE;
+        if(deploy&&!client_socket.GetHandler()){
+            if(!deployment_connect.Pending()){string host=remote_address;int port=client_socket.GetPort();if(port<1||port>65535)port=2137;frontend.DeploymentStage("Reconnecting to the game server");deployment_connect.Start([host,port](){PendingJoin result;result.host=host;result.port=port;result.connection=ZNetConnect(host,port,result.error);return result;});}continue;
+        }
+		switch(a.type)
+		{
+		case ZFrontEnd::FE_START_MAP:
+			{
+				int_packet the_data;
+				the_data.map_num = a.value;
+				if(!client_socket.SendMessage(SELECT_MAP, (char*)&the_data, sizeof(int_packet)))frontend.DeploymentFailed("No connection to the game server. Return to the menu and retry.");
+			}
+			break;
+		case ZFrontEnd::FE_LOAD_SAVE:
+			{
+				//the tally lives in the save's header; the world comes back
+				//from the server with the RESET_GAME it sends
+				ZSaveInfo info;
+				if(ZSave_ReadInfo(a.value, info))
+				{
+                    frontend.ResumeSavedCampaign(info.map_name,info.campaign_id,info.mission_index);
+                    if(!info.campaign_id.empty()&&info.campaign_id!="original"&&!frontend.CommunityBattle()){frontend.DeploymentFailed("Install the saved battle's campaign pack before loading it.");break;}
+					restore_pending = true;
+					restore_elapsed = info.elapsed;
+					restore_kills = info.kills;
+					restore_lost = info.lost;
+
+					int_packet the_data;
+					the_data.team = a.value;   //the slot
+					if(!client_socket.SendMessage(LOAD_GAME, (char*)&the_data, sizeof(int_packet))){restore_pending=false;frontend.DeploymentFailed("No connection to the game server. Retry when connected.");}
+				}else frontend.DeploymentFailed("The selected save is missing or damaged.");
+			}
+			break;
+		case ZFrontEnd::FE_START_CAMPAIGN_MAP:
+        case ZFrontEnd::FE_START_MAP_FILE:
+			if(a.text.size())
+				if(!client_socket.SendMessage(LOAD_MAP_FILE, a.text.c_str(), (int)a.text.size()+1))frontend.DeploymentFailed("No connection to the game server. Retry when connected.");
+			break;
+		case ZFrontEnd::FE_OPEN_SKIRMISH:
+			LoadMainMenu(GMM_GENERATE_MAP);
+			break;
+		case ZFrontEnd::FE_OPEN_MULTIPLAYER:
+			LoadMainMenu(GMM_MULTIPLAYER);
+			break;
+		case ZFrontEnd::FE_SET_VOLUME:
+			SetSoundSetting(a.value);
+			break;
+		case ZFrontEnd::FE_SET_MUSIC:
+			//music on/off or a different soundtrack (zod_music / zod_music_style)
+			SetMusicOff(!a.value);
+			ZMusicEngine::Stop();
+			if(a.value)
+			{
+				ZMusicEngine::ApplyStyle();
+				ZMusicEngine::PlayMenuMusic();
+			}
+			break;
+		case ZFrontEnd::FE_NAME_CHANGED:
+			if(zod_player_name.size()) SetPlayerName(zod_player_name);
+			break;
+		case ZFrontEnd::FE_QUIT:
+			ExitProgram();
+			break;
+		default:
+			break;
+		}
+	}
+}
+
+double ZPlayer::MatchElapsed()
+{
+	double t = ztime.ztime - match_start_ztime;
+	if(t < 0) t = 0;
+	return t + match_base_elapsed;
+}
+
+//"Save Game" in the in-game menu: the server writes the world, we add our tally
+void ZPlayer::SendSaveGame(int slot)
+{
+    if(frontend.EditorTesting())return;
+	bool quiet = slot == ZSAVE_AUTO_SLOT;
+
+	if(!zmap.Loaded())
+	{
+		if(!quiet) AddNewsEntry("there is no battle to save");
+		return;
+	}
+	if(show_match_summary || summary_pending)
+	{
+		if(!quiet) AddNewsEntry("this battle is already over");
+		return;
+	}
+
+	save_game_packet the_data;
+	the_data.kills = match_enemies_killed;
+	the_data.lost = match_units_lost;
+	the_data.elapsed = (int)MatchElapsed();
+	the_data.slot = slot;
+	client_socket.SendMessage(SAVE_GAME, (char*)&the_data, sizeof(save_game_packet));
+}
+
+//The autosave slot: written shortly after a battle starts and then every few
+//minutes of play, in local games only, and never while paused or on the
+//summary. It is what Load Game offers if the game quit or crashed mid-battle.
+void ZPlayer::CheckAutosave()
+{
+	if(!zmap.Loaded() || ztime.IsPaused()) return;
+	if(show_match_summary || summary_pending) return;
+	if(remote_address != "127.0.0.1" && remote_address != "localhost") return;
+	if(our_team <= NULL_TEAM || our_team >= MAX_TEAM_TYPES) return;
+
+	if(MatchElapsed() < next_autosave_elapsed) return;
+
+	next_autosave_elapsed = MatchElapsed() + ZSAVE_AUTOSAVE_INTERVAL;
+	SendSaveGame(ZSAVE_AUTO_SLOT);
+}
+
+//a won single-player match goes into the local high-score table
+void ZPlayer::RecordHighScore()
+{
+	if(frontend.EditorTesting()||!match_won || game_map_name.empty()) return;
+
+	ZHighScoreEntry e;
+	e.player = zod_player_name.size() ? zod_player_name : player_name;
+	e.map_file = game_map_name;
+	e.seconds = (int)match_duration;
+	e.kills = match_enemies_killed;
+	e.lost = match_units_lost;
+	e.difficulty = zod_bot_difficulty;
+	e.score = ZHighScore_Compute(match_duration, match_enemies_killed, match_units_lost, zod_bot_difficulty);
+
+	int rank = ZHighScore_Record(e);
+	if(rank > 0 && rank <= 10)
+	{
+		char buf[64];
+		snprintf(buf, sizeof(buf), "new high score: %d points (rank %d)", e.score, rank);
+		AddNewsEntry(buf);
+	}
+}
