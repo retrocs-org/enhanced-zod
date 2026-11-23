@@ -1,3 +1,4 @@
+#include "zperf.h"
 #include "zmpclient.h"
 #include "zhttp.h"
 #include "zlocalserver.h"
@@ -300,7 +301,9 @@ static bool local_create_match(const string &map, const vector<string> &bots, Ma
 	snprintf(portbuf, sizeof(portbuf), "%d", port);
 	LocalMatch lm;
     args.push_back("-D"); args.push_back(to_string(options.difficulty));
-	if(!ZLocalServer_Start(args, port, lm.process, g_last_error, {"ZOD_GAMESPEED=" + to_string(options.game_speed)})) return false;
+	vector<string> processSettings={"ZOD_GAMESPEED="+to_string(options.game_speed),string("ZOD_PERF=")+(ZPerf_Enabled()?"1":"0")};
+    if(const char *manifest=SDL_getenv("ZOD_EDITOR_TEST_MANIFEST"))processSettings.push_back(string("ZOD_EDITOR_TEST_MANIFEST=")+manifest);
+    if(!ZLocalServer_Start(args,port,lm.process,g_last_error,processSettings))return false;
 	lm.info.id = string("local-") + portbuf;
 	lm.info.name = map;
 	lm.info.map = map;

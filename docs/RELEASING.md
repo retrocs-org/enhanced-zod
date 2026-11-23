@@ -226,3 +226,40 @@ directory and fresh profile, with developer library paths and `ZOD_*` overrides
 removed. It verifies the native loader, helper startup, required-content detection
 and privacy-safe diagnostics export. It does not require or package original
 media. A full original-disc import still needs a user's supported disc image.
+
+## Save recovery, editor controls and profiling
+
+Each saved-battle slot retains three previous valid generations (`.bak1` to
+`.bak3`). New v5 saves require a CRC integrity trailer; v3/v4 saves remain readable.
+The load browser offers **Recover backup** when the primary is unreadable and
+**Restore previous backup** when a backup exists. Recovery preserves the current
+file as `.damaged`. Deleting a save also removes its recovery generations.
+
+The editor palette includes every robot, vehicle and cannon type, with search,
+paging and placement previews. Object placement/movement can snap to 1, 2 or 4
+tiles. Undo/redo report the action restored; the selection tool shows stack counts.
+Undo/redo also have remappable keys in the scrolling bindings screen.
+
+Controller settings include cursor speed and a 5–40% stick dead zone. Left stick
+moves the pointer, triggers click, D-pad pans/navigates, and shoulders/Tab cycle
+buttons. In the editor A paints/selects, B backs out, X undoes and Y redoes.
+Cinematics accept controller input too. Text entry still uses the platform's
+keyboard input. Edge scrolling can be disabled or set to 25–200%; keyboard
+panning retains its own speed. Video settings expose 75–200% subtitles and an
+optional dark subtitle background in both menu systems.
+
+Enable **Profiling** in Game settings before reproducing a slow operation, then
+export diagnostics. Measurements cover frontend/battle frames, client updates,
+map reads, server object processing and A*. Reports contain sample counts, mean,
+maximum and approximate p95 upper-bucket times, plus peak resident memory where
+available. Profiling is off by default and measurements accumulate for the launch.
+Headless servers can opt in with `ZOD_PERF=1`. Local server snapshots are written
+under the profile's diagnostics folder; exports accept only known stage names
+and numeric timing values. No map names, private paths or raw logs are included.
+
+Routing regressions exercise opposing robot/vehicle queries through a bridge,
+closed/reopened crossings and factory exits, and healthy/damaged units moving
+at different speeds. Unreachable player orders produce rate-limited feedback
+only to their own team. Failed asynchronous player routes clear their rejected
+order so the unit becomes idle again. These deterministic checks complement physical controller,
+Retina display and crowded live-match testing before a public release.

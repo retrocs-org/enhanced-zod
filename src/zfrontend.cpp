@@ -1,3 +1,5 @@
+#include "zperf.h"
+#include "zgamepad.h"
 // Command console front end. Shared materials keep the launch and battle menus
 // visually consistent; imported disc artwork remains an optional backdrop.
 
@@ -519,7 +521,7 @@ void ZFrontEnd::ShowImport(bool required)
 void ZFrontEnd::Show()
 {
 	Init();
-    if(editor_testing&&workspace){workspace->ResumeAfterTest();editor_testing=false;visible=true;screen=SCR_EDITOR;ZVideo_SetFullscreen(true);return;}
+    if(editor_testing&&workspace){if(editor_continue_pending){editor_continue_pending=false;visible=true;screen=SCR_MAIN;return;}bool campaignTest=!workspace->TestCampaign().root.empty();workspace->ResumeAfterTest();if(campaignTest){selected_campaign=editor_previous_campaign;levels=editor_previous_levels;current_level=editor_previous_level;progress_current=editor_previous_current;progress_unlocked=editor_previous_unlocked;community_running=false;community_next=-1;}editor_testing=false;visible=true;screen=SCR_EDITOR;ZVideo_SetFullscreen(true);return;}
 	LoadProgress();
 	LoadSaveInfo();
 	ZHighScore_All(true);
@@ -634,16 +636,18 @@ void ZFrontEnd::PlayLevelResult(bool won)
 
 void ZFrontEnd::HandleEvent(const SDL_Event &ev)
 {
+    if(ev.type==SDL_EVENT_KEY_DOWN&&ev.key.key==SDLK_TAB&&!editing_name&&!editing_mapname){focus_button=(focus_button+1)%max(1,focus_count);focus_activate=false;if(screen!=SCR_EDITOR)return;}
+    if(ev.type==SDL_EVENT_KEY_DOWN&&(ev.key.key==SDLK_RETURN||ev.key.key==SDLK_KP_ENTER)&&focus_button>=0&&screen!=SCR_EDITOR&&!editing_name&&!editing_mapname&&!(screen==SCR_KEYS&&keys_waiting>=0)){focus_activate=true;return;}
     if(screen==SCR_EDITOR && workspace) {workspace->Event(ev);return;}
 	switch(ev.type)
 	{
 	case SDL_EVENT_MOUSE_MOTION:
-		mouse_x = ev.motion.x;
+		focus_button=-1;mouse_x = ev.motion.x;
 		mouse_y = ev.motion.y;
 		kb_item = -1;
 		break;
 	case SDL_EVENT_MOUSE_BUTTON_DOWN:
-		mouse_x = ev.button.x;
+		focus_button=-1;mouse_x = ev.button.x;
 		mouse_y = ev.button.y;
 		if(ev.button.button == SDL_BUTTON_LEFT)
 		{
@@ -655,7 +659,7 @@ void ZFrontEnd::HandleEvent(const SDL_Event &ev)
 			kb_back = true;
 		break;
 	case SDL_EVENT_MOUSE_BUTTON_UP:
-		mouse_x = ev.button.x;
+		focus_button=-1;mouse_x = ev.button.x;
 		mouse_y = ev.button.y;
 		if(ev.button.button == SDL_BUTTON_LEFT && mouse_down)
 		{
@@ -719,10 +723,10 @@ void ZFrontEnd::HandleEvent(const SDL_Event &ev)
 			switch(k)
 			{
 			case SDLK_TAB: if(screen==SCR_SETTINGS){settings_category=(settings_category+1)%6;settings_focus=0;}break;
-			case SDLK_UP:    kb_dy = -1; break;
-			case SDLK_DOWN:  kb_dy = 1; break;
-			case SDLK_LEFT:  kb_dx = -1; break;
-			case SDLK_RIGHT: kb_dx = 1; break;
+			case SDLK_UP: focus_button=-1;   kb_dy = -1; break;
+			case SDLK_DOWN: focus_button=-1; kb_dy = 1; break;
+			case SDLK_LEFT: focus_button=-1; kb_dx = -1; break;
+			case SDLK_RIGHT: focus_button=-1;kb_dx = 1; break;
 			case SDLK_DELETE: kb_delete = true; break;
 			case SDLK_RETURN:
 			case SDLK_KP_ENTER:
@@ -1158,7 +1162,8 @@ bool ZFrontEnd::Clicked(float x, float y, float w, float h)
 
 bool ZFrontEnd::Button(const string &label, float x, float y, float w, float h, bool enabled, bool primary)
 {
-	bool hot = enabled && Hover(x, y, w, h);
+	int index=enabled?focus_index++:-1;bool focused=index>=0&&focus_button==index;
+	bool hot = enabled && (focused||Hover(x, y, w, h));
 	bool down = hot && mouse_down;
 
     string key="button:"+to_string((int)w)+":"+to_string((int)h)+":"+to_string(hot)+to_string(down)+to_string(primary);
@@ -1179,7 +1184,7 @@ bool ZFrontEnd::Button(const string &label, float x, float y, float w, float h, 
 	SDL_Color tc = !enabled ? C_STEEL_DIM : (hot ? C_STEEL_HI : C_STEEL);
 	DrawLabel(font_ui, h * 0.56f, label, x + w * 0.5f, y + h * 0.5f - h * 0.36f + (down ? 1 : 0), tc, 1);
 
-	return enabled && Clicked(x, y, w, h);
+	if(enabled&&focused&&focus_activate){focus_activate=false;return true;}return enabled && Clicked(x, y, w, h);
 }
 
 void ZFrontEnd::Sound(ZAudio_Sound *s)
@@ -1262,7 +1267,7 @@ void ZFrontEnd::StartLevel(int index, bool via_briefing)
 
 	Sound(snd_start);
 	if(selected_campaign.id.empty())actions.push_back(Action(FE_START_MAP,index));
-    else {Action action(FE_START_CAMPAIGN_MAP,index);action.text=levels[index].file;actions.push_back(action);community_running=true;community_next=-1;progress_current=index;ZCampaign_Progress(selected_campaign.id,progress_current,progress_unlocked,true);}
+    else {Action action(FE_START_CAMPAIGN_MAP,index);action.text=levels[index].file;actions.push_back(action);community_running=true;community_next=-1;progress_current=index;if(!editor_testing)ZCampaign_Progress(selected_campaign.id,progress_current,progress_unlocked,true);}
 	screen = SCR_LOADING;
 	loading_since = SDL_GetTicks();deployment_stage="Connecting to the game server";
 }
@@ -1418,6 +1423,9 @@ void ZFrontEnd::AdjustSetting(int i, int dir, int absolute)
 
 void ZFrontEnd::Render()
 {
+    ZPerfScope profile("frontend_frame");
+    ZGamepad_SetEditor(screen==SCR_EDITOR);
+    if(focus_screen!=screen){focus_screen=screen;focus_button=-1;}focus_index=0;
 	asset_import.Poll();
 	if(!visible) return;
 	if(!EnsureGraphics()) return;
@@ -1464,11 +1472,14 @@ void ZFrontEnd::Render()
     case SCR_CAMPAIGNS: RenderCampaigns();break;
     case SCR_EDITOR: if(workspace && workspace->Render()) {
         string play=workspace->PlayPath();editor_testing=!play.empty();if(!editor_testing)workspace.reset();ZVideo_SetFullscreen(editor_fullscreen_previous);screen=SCR_MAIN;ScanCustomMaps(true);
+        if(editor_testing&&!workspace->TestCampaign().root.empty()){editor_previous_campaign=selected_campaign;editor_previous_levels=levels;editor_previous_level=current_level;editor_previous_current=progress_current;editor_previous_unlocked=progress_unlocked;selected_campaign=workspace->TestCampaign();levels.clear();for(const auto &mission:selected_campaign.missions){LevelInfo info;info.title=mission.title;info.base=mission.map;ZCampaign_SafeAsset(selected_campaign.root,mission.map,info.file);ZMap map;info.planet=DESERT;info.w=info.h=0;if(map.Read(info.file.c_str())){info.planet=map.GetMapBasics().terrain_type;info.w=map.GetMapBasics().width;info.h=map.GetMapBasics().height;}levels.push_back(info);}StartLevel(workspace->TestMission(),true);break;}
         if(!play.empty()) {Action action(FE_START_MAP_FILE);action.text=play;actions.push_back(action);screen=SCR_LOADING;loading_since=SDL_GetTicks();}
     } break;
 	default: break;
 	}
 
+    focus_count=focus_index;focus_activate=false;
+    if(ZGamepad_Active())DrawLabel(font_ui_medium,15,screen==SCR_EDITOR?"Controller: stick pointer / A paint / B back / X undo / Y redo / shoulders focus":"Controller: A confirm / B back / triggers click / shoulders focus",24,782,C_STEEL_DIM);
 	RenderStatus();
 
 	//one-shot inputs are consumed by now
@@ -1644,13 +1655,20 @@ void ZFrontEnd::RenderSettings(bool interactive)
     if(kb_dx){if(settings_category==1){int *v=settings_focus==0?&zod_effects_volume:&zod_music_volume;*v=max(0,min(100,*v+kb_dx*5));ZAudio_ApplyVolumes();ZPrefs_Save();}else if(!groups[settings_category].empty())AdjustSetting(groups[settings_category][min(settings_focus,(int)groups[settings_category].size()-1)],kb_dx);}
     if(Button("Reset category",252,618,220,40,interactive)){ZPrefs_ResetCategory(settings_category);ZVideo_SetFullscreen(zod_fullscreen);ZVideo_SetGamma(zod_gamma);ZVideo_SetPictureMode(zod_picture_mode);ZAudio_ApplyVolumes();actions.push_back(Action(FE_SET_MUSIC,zod_music?1:0));}
     DrawLabel(font_ui_medium,16,"Up/Down selects a setting; Left/Right adjusts it.",490,632,C_STEEL_DIM);
+    if(settings_category==3){
+        if(Button("Stick dead zone: "+to_string(zod_stick_deadzone)+"%",268,494,740,40,interactive)){zod_stick_deadzone=zod_stick_deadzone>=40?5:min(40,zod_stick_deadzone+5);ZPrefs_Save();}
+        if(Button("Edge scrolling: "+to_string(zod_edge_scroll_percent)+"%",268,544,740,40,interactive)){zod_edge_scroll_percent=(zod_edge_scroll_percent+25)%225;ZPrefs_Save();}
+        DrawLabel(font_ui_medium,17,"Controller: stick moves pointer, triggers click, shoulders focus buttons.",268,590,C_STEEL_DIM);
+    }
+    if(settings_category==2&&Button(ZPerf_Enabled()?"Profiling: On":"Profiling: Off",268,502,740,40,interactive))ZPerf_Enable(!ZPerf_Enabled());
+    if(settings_category==4){if(Button("Subtitle size: "+to_string(zod_subtitle_percent)+"%",268,494,354,36,interactive)){zod_subtitle_percent=zod_subtitle_percent>=200?75:min(200,zod_subtitle_percent+25);ZPrefs_Save();}if(Button(zod_subtitle_background?"Subtitle background: On":"Subtitle background: Off",650,494,358,36,interactive)){zod_subtitle_background=!zod_subtitle_background;ZPrefs_Save();}}
     if(settings_category==5){
         const string labels[]={"Text size: "+to_string(zod_text_percent)+"%","Battle cursor: "+to_string(zod_cursor_percent)+"%",string("Team symbols: ")+(zod_team_markers?"On":"Off"),string("Reduced motion: ")+(zod_reduced_motion?"On":"Off")};
         for(int i=0;i<4;++i)if(Button(labels[i],268,316+i*60,740,44,interactive,settings_focus==i)||((kb_activate||kb_dx)&&settings_focus==i)){kb_activate=false;settings_focus=i;if(i==0)zod_text_percent=100+(zod_text_percent-100+(kb_dx<0?20:10))%30;if(i==1)zod_cursor_percent=100+(zod_cursor_percent-100+(kb_dx<0?100:50))%150;if(i==2)zod_team_markers=!zod_team_markers;if(i==3)zod_reduced_motion=!zod_reduced_motion;ZPrefs_Save();}
         DrawLabel(font_ui_medium,17,"Team symbols supplement colour. Reduced motion keeps cinematics optional.",268,566,C_STEEL_DIM);
     }
     if(settings_category==4&&Button("Export diagnostics",650,554,358,40,interactive)){string path;bool exported=ZAsset_ExportDiagnostics(path,asset_import.phase);screen=SCR_IMPORT;import_return_screen=SCR_SETTINGS;asset_import.message=!exported?"Could not export diagnostics.":"Diagnostics saved in your profile diagnostics folder. No personal paths or raw logs included.";}
-    if(settings_category==4){DrawLabel(font_ui,23,"Video volume",268,398,C_STEEL);if(Button("-",650,390,40,40,interactive)){zod_video_volume=max(0,zod_video_volume-5);ZPrefs_Save();}DrawLabel(font_ui,22,to_string(zod_video_volume)+"%",848,398,C_STEEL_HI,1);if(Button("+",968,390,40,40,interactive)){zod_video_volume=min(100,zod_video_volume+5);ZPrefs_Save();}if(Button(zod_video_subtitles?"Subtitles: On":"Subtitles: Off",650,448,358,40,interactive)){zod_video_subtitles=!zod_video_subtitles;ZPrefs_Save();}DrawLabel(font_ui_medium,17,"During video: Space pauses, Esc skips, S toggles subtitles.",252,516,C_STEEL_DIM);}
+    if(settings_category==4){DrawLabel(font_ui,23,"Video volume",268,398,C_STEEL);if(Button("-",650,390,40,40,interactive)){zod_video_volume=max(0,zod_video_volume-5);ZPrefs_Save();}DrawLabel(font_ui,22,to_string(zod_video_volume)+"%",848,398,C_STEEL_HI,1);if(Button("+",968,390,40,40,interactive)){zod_video_volume=min(100,zod_video_volume+5);ZPrefs_Save();}if(Button(zod_video_subtitles?"Subtitles: On":"Subtitles: Off",650,448,358,40,interactive)){zod_video_subtitles=!zod_video_subtitles;ZPrefs_Save();}}
     if(settings_category==0){
         DrawLabel(font_ui_medium,16,"LIVE FILTER / MOVEMENT PREVIEW",548,558,C_STEEL_DIM);
         SDL_Surface *sample=SDL_CreateSurface(8,8,SDL_PIXELFORMAT_RGBA32);if(sample){for(int y=0;y<8;++y)for(int x=0;x<8;++x){SDL_Rect pixel{x,y,1,1};auto c=(x+y)%2?C_AMBER:C_STEEL_DIM;SDL_FillSurfaceRect(sample,&pixel,SDL_MapSurfaceRGBA(sample,c.r,c.g,c.b,255));}SDL_Texture *tex=SDL_CreateTextureFromSurface(renderer,sample);SDL_DestroySurface(sample);if(tex){SDL_SetTextureScaleMode(tex,zod_picture_mode==PICTURE_SMOOTH?SDL_SCALEMODE_LINEAR:SDL_SCALEMODE_NEAREST);SDL_FRect dst{904,558,48,48};SDL_RenderTexture(renderer,tex,nullptr,&dst);SDL_DestroyTexture(tex);}}
@@ -2115,9 +2133,9 @@ void ZFrontEnd::LoadSaveInfo()
 	for(int slot=ZSAVE_AUTO_SLOT; slot<=ZSAVE_USER_SLOTS; slot++)
 	{
 		ZSaveInfo info;
-		if(!ZSave_ReadInfo(slot, info)) continue;
+		bool recovery=!ZSave_ReadInfo(slot,info);if(recovery&&!ZSave_RecoveryInfo(slot,info))continue;
 
-		SaveSlot s;
+		SaveSlot s;s.recovery=recovery;
         s.map=info.map_name;s.campaign=info.campaign_id=="original"?"Original Campaign":info.campaign_id.empty()?"Standalone battle":info.campaign_id;
         if(info.campaign_id!="original")for(const auto &pack:ZCampaign_List())if(pack.id==info.campaign_id)s.campaign=pack.title;
         if(info.mission_index>=0)s.campaign+=" / Mission "+to_string(info.mission_index+1);
@@ -2125,6 +2143,7 @@ void ZFrontEnd::LoadSaveInfo()
 		if(slot == ZSAVE_AUTO_SLOT) s.label = "Autosave";
 		else { char buf[16]; snprintf(buf, sizeof(buf), "Slot %d", slot); s.label = buf; }
 
+		if(recovery)s.label+=" / Recover backup";
 		//campaign levels by their place in the campaign, anything else by name
 		for(size_t i=0;i<levels.size();i++)
 			if(levels[i].file == info.map_name)
@@ -2158,11 +2177,12 @@ void ZFrontEnd::RenderLoad(){
     string title=level?(campaign?levels[progress_current].title:"No mission selected"):saves[load_selected].title;while(title.size()>3&&TextWidth(font_ui,24,title)>480)title.pop_back();DrawLabel(font_ui,24,title,638,442,C_STEEL_HI);
     string context=level?"Current campaign / Start from the beginning":saves[load_selected].campaign;while(context.size()>3&&TextWidth(font_ui_medium,19,context)>480)context.pop_back();DrawLabel(font_ui_medium,19,context,638,486,C_AMBER);
     if(!level){string detail=saves[load_selected].detail;size_t split=detail.find("saved ");DrawLabel(font_ui_medium,18,detail.substr(0,split),638,522,C_STEEL);if(split!=string::npos)DrawLabel(font_ui_medium,18,detail.substr(split),638,552,C_STEEL_DIM);}
+    if(!level&&delete_pending<0){ZSaveInfo backup;if(ZSave_RecoveryInfo(saves[load_selected].slot,backup)&&Button("Restore previous backup",638,578,300,28)){if(ZSave_Recover(saves[load_selected].slot))LoadSaveInfo();else{status_message="Backup could not be restored; files kept.";status_until=SDL_GetTicks()+5000;}return;}}
     if(delete_pending>=0){DrawPanel(280,250,720,270);DrawLabel(font_ui,28,"DELETE SAVED BATTLE?",312,278,C_AMBER);DrawLabel(font_ui_medium,22,"This cannot be undone. Your campaign progress is kept.",312,338,C_STEEL);if(Button("Delete",312,426,300,48)||kb_activate)remove=delete_pending;if(Button("Keep save",648,426,300,48)||kb_back){delete_pending=-1;kb_back=false;}kb_activate=false;}
-    else {if(Button(level?"Restart mission":"Load battle",638,614,300,48,enabled,true)||(kb_activate&&enabled)){chosen=load_selected;kb_activate=false;}if(!level&&(Button("Delete save",954,614,166,48)||kb_delete))delete_pending=saves[load_selected].slot;}
+    else {if(Button(level?"Restart mission":saves[load_selected].recovery?"Recover backup":"Load battle",638,614,300,48,enabled,true)||(kb_activate&&enabled)){chosen=load_selected;kb_activate=false;}if(!level&&(Button("Delete save",954,614,166,48)||kb_delete))delete_pending=saves[load_selected].slot;}
     if(remove>=0){ZSave_Delete(remove);delete_pending=-1;LoadSaveInfo();load_selected=max(0,min(load_selected,(int)saves.size()));return;}
     if(Button("Back",152,658,170,44,delete_pending<0)||kb_back){kb_back=false;screen=SCR_MAIN;return;}
-    if(chosen<0)return;if(chosen==(int)saves.size())StartLevel(progress_current,true);else{actions.push_back(Action(FE_LOAD_SAVE,saves[chosen].slot));screen=SCR_LOADING;loading_since=SDL_GetTicks();deployment_stage="Connecting to the game server";}
+    if(chosen<0)return;if(chosen==(int)saves.size())StartLevel(progress_current,true);else{if(saves[chosen].recovery){if(!ZSave_Recover(saves[chosen].slot)){status_message="Backup recovery failed; your files were kept.";status_until=SDL_GetTicks()+5000;return;}LoadSaveInfo();return;}actions.push_back(Action(FE_LOAD_SAVE,saves[chosen].slot));screen=SCR_LOADING;loading_since=SDL_GetTicks();deployment_stage="Connecting to the game server";}
 }
 
 void ZFrontEnd::CaptureKey(int k)
@@ -2200,7 +2220,7 @@ void ZFrontEnd::RenderKeys()
 	DimScreen(170);
 
 	const float ROW_H = 46, ROW_GAP = 6;
-	const float PW = 700, PH = 100 + MAX_ZKEYS * (ROW_H + ROW_GAP) + 84;
+	const float PW = 700, PH = 100 + min(8,(int)MAX_ZKEYS) * (ROW_H + ROW_GAP) + 84;
 	const float PX = (CANVAS_W - PW) * 0.5f, PY = (CANVAS_H - PH) * 0.5f;
 	DrawPanel(PX, PY, PW, PH);
 	DrawLabel(font_ui, 28, "KEYS", PX + 36, PY + 26, C_AMBER);
@@ -2213,9 +2233,11 @@ void ZFrontEnd::RenderKeys()
 		if(kb_activate) { keys_waiting = keys_selected; kb_activate = false; }
 	}
 
-	for(int a=0; a<MAX_ZKEYS; a++)
-	{
-		float rx = PX + 36, ry = PY + 100 + a * (ROW_H + ROW_GAP), rw = PW - 72;
+	if(wheel)keys_scroll=max(0,min(keys_scroll-(int)wheel,max(0,MAX_ZKEYS-8)));
+    if(kb_dy){keys_scroll=min(keys_scroll,keys_selected);if(keys_selected>=keys_scroll+8)keys_scroll=keys_selected-7;}
+    for(int row=0;row<8&&row+keys_scroll<MAX_ZKEYS;++row)
+	{int a=row+keys_scroll;
+		float rx = PX + 36, ry = PY + 100 + row * (ROW_H + ROW_GAP), rw = PW - 72;
 		bool waiting = keys_waiting == a;
 		bool hot = keys_waiting < 0 && Hover(rx, ry, rw, ROW_H);
 		bool sel = a == keys_selected;
@@ -2233,6 +2255,7 @@ void ZFrontEnd::RenderKeys()
 	}
 
 	float by = PY + PH - 64;
+    DrawLabel(font_ui_medium,16,to_string(keys_scroll+1)+"-"+to_string(min(keys_scroll+8,(int)MAX_ZKEYS))+" / "+to_string(MAX_ZKEYS)+" actions / scroll for more",PX+36,by+14,C_STEEL_DIM);
 	if(Button("Reset", PX + PW - 36 - 160 - 16 - 160, by, 160, 46, keys_waiting < 0))
 	{
 		ZPrefs_ResetKeys();
@@ -2708,7 +2731,9 @@ void ZFrontEnd::RenderCampaigns(){
     if(Button("Intro video",744,624,170,36,!modal&&!intro.empty()))watch(intro);
     if(Button("Victory video",930,624,218,36,!modal&&!victory.empty()))watch(victory);
     if(!pack&&intro.empty()&&victory.empty())DrawLabel(font_ui_medium,16,"Import disc media for cinematics.",132,536,C_STEEL_DIM);
-    if(!pack&&campaigns.empty()&&selected)DrawMapPreview(original_levels[campaign_mission_choice].file,132,238,380,260);
+    if(selected&&(pack||campaigns.empty())){string preview=pack?pack->root+"/"+pack->missions[campaign_mission_choice].map:original_levels[campaign_mission_choice].file;DrawMapPreview(preview,pack?1068:132,pack?520:238,pack?80:380,pack?48:260);}
+    if(selected){string media="Media: ";if(pack){const auto &m=pack->missions[campaign_mission_choice];int missing=0;for(const auto &video:{m.video,m.victoryVideo})if(!video.empty()){string path;if(video.compare(0,9,"original:")==0){if(!ZMovie_HasClip(video.substr(9)))++missing;}else if(!ZCampaign_SafeAsset(pack->root,video,path))++missing;}media+=missing?to_string(missing)+" optional videos missing":"ready / briefing fallback supported";}else media+=intro.empty()?"import disc for optional cinematics":"cinematics installed";DrawLabel(font_ui_medium,15,media,548,562,C_STEEL_DIM);}
+    DrawLabel(font_ui_medium,15,"Estimated campaign length: "+to_string(count*10)+"-"+to_string(count*25)+" min",132,600,C_STEEL_DIM);
     if(pack){if(campaign_cover_path!=pack->root+"/"+pack->cover){SDL_DestroyTexture(campaign_cover);campaign_cover=nullptr;campaign_cover_path=pack->root+"/"+pack->cover;string path;if(!pack->cover.empty()&&ZCampaign_SafeAsset(pack->root,pack->cover,path)){SDL_Surface *image=IMG_Load(path.c_str());if(image){campaign_cover=SDL_CreateTextureFromSurface(renderer,image);SDL_DestroySurface(image);}}}if(campaign_cover){float w,h;SDL_GetTextureSize(campaign_cover,&w,&h);float scale=min(160.0f/w,58.0f/h);SDL_FRect dst{330,548,w*scale,h*scale};SDL_RenderTexture(renderer,campaign_cover,nullptr,&dst);}}
     if(pack){DrawLabel(font_ui_medium,17,(pack->author.empty()?"Community campaign":"By "+pack->author).substr(0,46),132,526,C_STEEL_DIM);float tx=132,width=180;std::istringstream text(pack->description);string word,line;int row=0;while(text>>word){if(!line.empty()&&TextWidth(font_ui_medium,16,line+" "+word)>width){DrawLabel(font_ui_medium,16,line,tx,545+row*16,C_STEEL_DIM);line.clear();if(++row>=1)break;}if(!line.empty())line+=' ';line+=word;}if(row<1&&!line.empty())DrawLabel(font_ui_medium,16,line,tx,545+row*16,C_STEEL_DIM);}
     if(!campaign_error.empty())DrawLabel(font_ui_medium,15,campaign_error.substr(0,110),132,712,C_RED);
@@ -2727,8 +2752,8 @@ void ZFrontEnd::RenderCampaigns(){
 }
 
 
-void ZFrontEnd::RecordCampaignResult(bool won,int seconds,int kills,int lost,int difficulty){if(won&&seconds>=0&&current_level>=0&&current_level<(int)levels.size())ZCampaign_RecordWin(selected_campaign.id.empty()?"original":selected_campaign.id,selected_campaign.id.empty()?levels[current_level].base:to_string(current_level)+":"+selected_campaign.missions[current_level].map,seconds,kills,lost,difficulty);if(won&&current_level>=0&&current_level<(int)levels.size())ZCampaign_MarkCompleted(selected_campaign.id.empty()?"original":selected_campaign.id,selected_campaign.id.empty()?levels[current_level].base:to_string(current_level)+":"+selected_campaign.missions[current_level].map);if(!community_running||current_level<0)return;community_next=won?(current_level+1<(int)levels.size()?current_level+1:-2):current_level;progress_current=community_next==-2?(int)levels.size()-1:community_next;progress_unlocked=max(progress_unlocked,progress_current);ZCampaign_Progress(selected_campaign.id,progress_current,progress_unlocked,true);}
-void ZFrontEnd::ContinueCommunity(){int next=community_next;community_running=false;community_next=-1;if(next>=0)StartLevel(next,true);else{ScanCampaigns();screen=SCR_CAMPAIGNS;}}
+void ZFrontEnd::RecordCampaignResult(bool won,int seconds,int kills,int lost,int difficulty){if(editor_testing){community_next=won?(current_level+1<(int)levels.size()?current_level+1:-2):current_level;return;}if(won&&seconds>=0&&current_level>=0&&current_level<(int)levels.size())ZCampaign_RecordWin(selected_campaign.id.empty()?"original":selected_campaign.id,selected_campaign.id.empty()?levels[current_level].base:to_string(current_level)+":"+selected_campaign.missions[current_level].map,seconds,kills,lost,difficulty);if(won&&current_level>=0&&current_level<(int)levels.size())ZCampaign_MarkCompleted(selected_campaign.id.empty()?"original":selected_campaign.id,selected_campaign.id.empty()?levels[current_level].base:to_string(current_level)+":"+selected_campaign.missions[current_level].map);if(!community_running||current_level<0)return;community_next=won?(current_level+1<(int)levels.size()?current_level+1:-2):current_level;progress_current=community_next==-2?(int)levels.size()-1:community_next;progress_unlocked=max(progress_unlocked,progress_current);ZCampaign_Progress(selected_campaign.id,progress_current,progress_unlocked,true);}
+void ZFrontEnd::ContinueCommunity(){if(workspace&&screen==SCR_EDITOR)return;int next=community_next;community_running=false;community_next=-1;if(next>=0)StartLevel(next,true);else{ScanCampaigns();screen=SCR_CAMPAIGNS;}}
 void ZFrontEnd::RenderCommunityBriefing(){
     if(briefing_level<0||briefing_level>=(int)selected_campaign.missions.size()){screen=SCR_MAIN;return;}
     const auto &mission=selected_campaign.missions[briefing_level];DimScreen(190);DrawPanel(140,100,1000,610);
@@ -2739,7 +2764,7 @@ void ZFrontEnd::RenderCommunityBriefing(){
     while(std::getline(input,line)){std::istringstream words(line);string row;while(words>>word){if(!row.empty()&&TextWidth(font_ui,23,row+" "+word)>624){lines.push_back(row);row.clear();}if(!row.empty())row+=' ';row+=word;}lines.push_back(row);}
     if(wheel)briefing_scroll-=wheel>0?1:-1;briefing_scroll=max(0,min(briefing_scroll,max(0,(int)lines.size()-11)));
     for(int i=0;i<11&&i+briefing_scroll<(int)lines.size();++i)DrawLabel(font_ui,23,lines[i+briefing_scroll],472,236+i*30,C_STEEL);
-    if(Button("Back",176,636,160,44)||kb_back){screen=SCR_CAMPAIGNS;kb_back=false;}
+    if(Button(editor_testing?"Return to editor":"Back",176,636,190,44)||kb_back){kb_back=false;if(editor_testing){editor_continue_pending=false;Show();return;}screen=SCR_CAMPAIGNS;}
     if(Button("Start mission",868,636,236,44,true,true)||kb_activate){kb_activate=false;StartLevel(briefing_level,false);}
 }
 

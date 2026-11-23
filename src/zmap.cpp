@@ -1,3 +1,4 @@
+#include "zperf.h"
 #include <stdio.h>
 #include <limits.h>
 #include <cmath>      // lround, for render-smoothing draw offset
@@ -939,6 +940,7 @@ int ZMap::Read(char* data, int size, bool scrap_data)
 
 int ZMap::Read(const char* filename)
 {
+    ZPerfScope profile("map_load");
 	FILE *fp;
 	int ret;
 	unsigned int i;

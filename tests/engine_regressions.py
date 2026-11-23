@@ -163,6 +163,24 @@ class EngineRegressions(unittest.TestCase):
             result=subprocess.check_output([DRIVER,'reconnect-failure',str(unavailable.getsockname()[1])],cwd=WORKSPACE,env=self.environment(directory),text=True,timeout=20)
             self.assertIn('reconnect-failure-ok',result)
 
+    def test_campaign_playtest_progression_editor_controller_accessibility_and_profiling(self):
+        with tempfile.TemporaryDirectory(prefix='zodee-features-') as directory:
+            result=subprocess.run([DRIVER,'next-features',directory],cwd=WORKSPACE,env=self.environment(directory),text=True,capture_output=True,timeout=30)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertIn('next-features-ok',result.stdout)
+
+    def test_mixed_speed_units_move_and_unreachable_orders_report_to_the_owner(self):
+        with tempfile.TemporaryDirectory(prefix='zodee-movement-') as directory:
+            result=subprocess.run([DRIVER,'movement',MAP],cwd=WORKSPACE,env=self.environment(directory),text=True,capture_output=True,timeout=20)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertIn('movement-ok',result.stdout)
+
+    def test_rotating_save_backups_restore_a_real_world_without_losing_damaged_file(self):
+        with tempfile.TemporaryDirectory(prefix='zodee-recovery-') as directory:
+            result=subprocess.run([DRIVER,'recovery',MAP],cwd=WORKSPACE,env=self.environment(directory),text=True,capture_output=True,timeout=20)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertIn('recovery-ok',result.stdout)
+
     def test_display_matrix_resize_text_scale_fullscreen_and_input(self):
         with tempfile.TemporaryDirectory(prefix='zodee-display-') as directory:
             result=subprocess.check_output([DRIVER,'display-matrix',directory],cwd=WORKSPACE,env=self.environment(directory),text=True,timeout=60)
@@ -201,7 +219,7 @@ class EngineRegressions(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='zod-ee-polish-') as directory:
             result=subprocess.check_output([DRIVER,'polish',directory],cwd=WORKSPACE,env=self.environment(directory),text=True,timeout=20)
             self.assertIn('polish-ok',result)
-            for name in ['save-browser','editor-help','accessibility','campaign-polish']:
+            for name in ['save-browser','editor-help','accessibility','campaign-polish','settings-2','settings-3','settings-4','editor-bindings','object-palette']:
                 self.assertEqual((pathlib.Path(directory)/(name+'.png')).read_bytes()[:8],b'\x89PNG\r\n\x1a\n')
 
     def test_scaled_battle_menu_resume(self):

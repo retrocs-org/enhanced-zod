@@ -72,6 +72,7 @@ public:
     void RecordCampaignResult(bool won,int seconds=-1,int kills=0,int lost=0,int difficulty=1);
     bool CommunityBattle() const {return community_running;}
     bool EditorTesting() const {return editor_testing;}
+    void PrepareEditorReturn(bool advance){editor_continue_pending=editor_testing&&workspace&&!workspace->TestCampaign().root.empty()&&advance&&community_next>=0;}
     void ContinueCommunity();
     void ResumeSavedCampaign(const std::string &map,const std::string &id="",int mission=-1);
 
@@ -130,7 +131,8 @@ private:
 
 	ZAssetImport asset_import;
 	bool import_only = false;
-	void RenderImport();
+	int focus_button=-1,focus_count=0,focus_index=0;bool focus_activate=false;Screen focus_screen=SCR_MAIN;
+    void RenderImport();
 
 	// ---- state ----
 	bool visible;
@@ -159,7 +161,9 @@ private:
 	int settings_scroll;
     int settings_category=0;
     int audio_drag=-1;
-    bool editor_fullscreen_previous=false,editor_testing=false;
+    bool editor_fullscreen_previous=false,editor_testing=false,editor_continue_pending=false;
+    ZCampaign editor_previous_campaign;
+    std::vector<LevelInfo> editor_previous_levels;int editor_previous_level=-1,editor_previous_current=-1,editor_previous_unlocked=-1;
     ZCampaign selected_campaign;
     std::vector<ZCampaign> campaigns;
     std::vector<LevelInfo> original_levels;
@@ -195,7 +199,7 @@ private:
 	// saved battles: the autosave and the player's slots
 	struct SaveSlot
 	{
-		int slot;
+		int slot;bool recovery=false;
         std::string map,campaign;
 		std::string label;     //"Autosave" / "Slot 2"
 		std::string title;     //"Desert - Level 04 Desert Islands"
@@ -207,7 +211,8 @@ private:
 	int delete_pending;            //save slot waiting for "delete?" confirmation, -1 = none
 
 	// key bindings screen
-	int keys_selected;             //row highlighted with the keyboard
+	int keys_scroll=0;
+    int keys_selected;             //row highlighted with the keyboard
 	int keys_waiting;              //action waiting for its new key, -1 = none
 
 	// custom maps

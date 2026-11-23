@@ -92,7 +92,7 @@ static bool get_route_tiles(ZPath_Finding_Engine &pf, int stx, int sty, int etx,
 			for(size_t k = 0; k < pf.GetList()[0]->pf_point_list.size(); k++)
 			{
 				ZPath_Finding_AStar::pf_point &p = pf.GetList()[0]->pf_point_list[k];
-				out.push_back(ZPath_Finding_AStar::pf_point(p.x / 16, p.y / 16));
+				out.push_back(ZPath_Finding_AStar::pf_point((p.x-(is_robot?0:8)) / 16, (p.y-(is_robot?0:8)) / 16));
 			}
 			got = true;
 		}
@@ -305,6 +305,16 @@ static void test_destroyable_barrier()
 	CHECK(!pf.HasDestroyableBarrier(0, 0), "open tile is not a barrier");
 }
 
+static void test_bridge_traffic_and_factory_exit(){
+ printf("bridge traffic and factory exits:\n");ZPath_Finding_Engine pf;build_map(pf,32,32);
+ for(int x=14;x<=17;++x)for(int y=0;y<32;++y)if(y<20||y>23)pf.SetImpassable(x,y,true);finalize_map(pf);
+ for(int i=0;i<20;++i){bool robot=i%2==0;int from=i%4<2?4:26,to=from==4?26:4;vector<ZPath_Finding_AStar::pf_point> route;CHECK(get_route_tiles(pf,from,6+i%6,to,7+i%6,robot,route),"opposing bridge traffic receives a route");const char *why="ok";CHECK(route_is_valid(pf,route,to,7+i%6,robot,why),"mixed footprints follow continuous passable bridge routes");}
+ for(int y=20;y<=23;++y)pf.SetImpassable(15,y,true);finalize_map(pf);CHECK(!pf.InSameRegion(px(4),px(8),px(26),px(8),false),"closed bridge is unreachable for vehicles");
+ for(int y=20;y<=23;++y)pf.SetImpassable(15,y,false);finalize_map(pf);CHECK(pf.InSameRegion(px(4),px(8),px(26),px(8),false),"reopened bridge becomes reachable");
+ ZPath_Finding_Engine factory;build_map(factory,16,16);for(int x=5;x<=10;++x)for(int y=5;y<=10;++y)if(x==5||x==10||y==5||y==10)factory.SetImpassable(x,y,true);finalize_map(factory);
+ CHECK(!factory.InSameRegion(px(7),px(7),px(2),px(2),true),"blocked factory exit is detected");factory.SetImpassable(7,10,false);factory.SetImpassable(8,10,false);finalize_map(factory);CHECK(factory.InSameRegion(px(7),px(7),px(2),px(2),true),"robots can leave reopened factory exit");
+}
+
 int main()
 {
 	test_passability();
@@ -314,6 +324,7 @@ int main()
 	test_path_continuity();
 	test_path_validity_stress();
 	test_destroyable_barrier();
+    test_bridge_traffic_and_factory_exit();
 
 	printf("\n%d checks, %d failed\n", g_checks, g_fails);
 	return g_fails ? 1 : 0;

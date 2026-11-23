@@ -18,7 +18,7 @@ using namespace std;
 
 namespace
 {
-	const float STICK_DEADZONE = 0.22f;
+	bool g_editor=false;
 	const float CURSOR_SPEEDS[MAX_STICK_SPEEDS] = { 0.55f, 0.85f, 1.25f };   // screens per second at full deflection (Settings -> Stick)
 	const float SCROLL_SPEED = 24.0f;      // mouse-wheel units per second at full deflection
 	const float TRIGGER_ON = 0.55f;
@@ -26,6 +26,7 @@ namespace
 	map<SDL_JoystickID, SDL_Gamepad*> g_pads;
 	bool g_active = false;
 
+	Sint16 g_raw_axis[4]={0,0,0,0};
 	float g_axis[4] = { 0, 0, 0, 0 };      // left x/y, right x/y (-1..1)
 	bool g_trigger_l = false, g_trigger_r = false;
 	float g_scroll_x = 0, g_scroll_y = 0;  // fractional wheel units not yet sent
@@ -43,8 +44,9 @@ namespace
 	{
 		float f = v < 0 ? v / 32768.0f : v / 32767.0f;
 		float a = fabsf(f);
-		if(a < STICK_DEADZONE) return 0;
-		a = (a - STICK_DEADZONE) / (1.0f - STICK_DEADZONE);
+		float deadzone=zod_stick_deadzone/100.0f;
+		if(a < deadzone) return 0;
+		a = (a - deadzone) / (1.0f - deadzone);
 		a = a * a;                          // fine control near the centre
 		return f < 0 ? -a : a;
 	}
@@ -137,19 +139,21 @@ namespace
 		case SDL_GAMEPAD_BUTTON_DPAD_LEFT:  action = ACT_KEY; key = SDLK_LEFT; break;
 		case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: action = ACT_KEY; key = SDLK_RIGHT; break;
 		case SDL_GAMEPAD_BUTTON_SOUTH:      // A
-			if(in_frontend) { action = ACT_KEY; key = SDLK_RETURN; }
+			if(in_frontend&&!g_editor) { action = ACT_KEY; key = SDLK_RETURN; }
 			else action = ACT_LCLICK;
 			break;
 		case SDL_GAMEPAD_BUTTON_EAST:       // B
 			if(in_frontend) { action = ACT_KEY; key = SDLK_ESCAPE; }
 			else action = ACT_RCLICK;
 			break;
+		case SDL_GAMEPAD_BUTTON_WEST: action=ACT_KEY;key=g_editor?(SDL_Keycode)zod_keys[ZKEY_EDITOR_UNDO]:SDLK_TAB;break;
+        case SDL_GAMEPAD_BUTTON_NORTH: action=ACT_KEY;key=g_editor?(SDL_Keycode)zod_keys[ZKEY_EDITOR_REDO]:SDLK_SPACE;break;
 		case SDL_GAMEPAD_BUTTON_START:      action = ACT_KEY; key = SDLK_ESCAPE; break;
 		case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER:
-			if(!in_frontend) { action = ACT_KEY; key = SDLK_MINUS; }
+			action = ACT_KEY; key = in_frontend?SDLK_TAB:SDLK_MINUS;
 			break;
 		case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER:
-			if(!in_frontend) { action = ACT_KEY; key = SDLK_EQUALS; }
+			action = ACT_KEY; key = in_frontend?SDLK_TAB:SDLK_EQUALS;
 			break;
 		default: break;
 		}
@@ -175,10 +179,10 @@ namespace
 		g_active = true;
 		switch(which)
 		{
-		case SDL_GAMEPAD_AXIS_LEFTX:  g_axis[AX_LX] = stick_value(raw); break;
-		case SDL_GAMEPAD_AXIS_LEFTY:  g_axis[AX_LY] = stick_value(raw); break;
-		case SDL_GAMEPAD_AXIS_RIGHTX: g_axis[AX_RX] = stick_value(raw); break;
-		case SDL_GAMEPAD_AXIS_RIGHTY: g_axis[AX_RY] = stick_value(raw); break;
+		case SDL_GAMEPAD_AXIS_LEFTX:  g_raw_axis[AX_LX]=raw;g_axis[AX_LX] = stick_value(raw); break;
+		case SDL_GAMEPAD_AXIS_LEFTY:  g_raw_axis[AX_LY]=raw;g_axis[AX_LY] = stick_value(raw); break;
+		case SDL_GAMEPAD_AXIS_RIGHTX: g_raw_axis[AX_RX]=raw;g_axis[AX_RX] = stick_value(raw); break;
+		case SDL_GAMEPAD_AXIS_RIGHTY: g_raw_axis[AX_RY]=raw;g_axis[AX_RY] = stick_value(raw); break;
 		case SDL_GAMEPAD_AXIS_RIGHT_TRIGGER: trigger(g_trigger_r, raw / 32767.0f, SDL_BUTTON_LEFT); break;
 		case SDL_GAMEPAD_AXIS_LEFT_TRIGGER:  trigger(g_trigger_l, raw / 32767.0f, SDL_BUTTON_RIGHT); break;
 		default: break;
@@ -202,7 +206,7 @@ namespace
 		SDL_CloseGamepad(i->second);
 		g_pads.erase(i);
 		// nothing may stay held or pushed when the pad goes away
-		for(int a=0;a<4;a++) g_axis[a] = 0;
+		for(int a=0;a<4;a++){g_axis[a]=0;g_raw_axis[a]=0;}
 		for(map<int, int>::iterator h = g_held.begin(); h != g_held.end(); ++h) do_action(h->second, g_held_key[h->first], false);
 		g_held.clear();
 		g_held_key.clear();
@@ -308,6 +312,8 @@ void ZGamepad_Shutdown()
 }
 
 bool ZGamepad_Active() { return g_active; }
+void ZGamepad_SetEditor(bool value){g_editor=value;}
+float ZGamepad_FilterAxis(Sint16 value){return stick_value(value); }
 
 bool ZGamepad_HandleEvent(const SDL_Event &event, bool in_frontend)
 {
@@ -327,6 +333,7 @@ bool ZGamepad_HandleEvent(const SDL_Event &event, bool in_frontend)
 void ZGamepad_Update(bool in_frontend)
 {
 	g_mode_frontend = in_frontend;
+    for(int axis=0;axis<4;++axis)g_axis[axis]=stick_value(g_raw_axis[axis]);
 	poll_fifo(in_frontend);
 
 	Uint64 now = SDL_GetTicks();

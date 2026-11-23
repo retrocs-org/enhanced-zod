@@ -1,3 +1,4 @@
+#include "zperf.h"
 #include "zpath_finding_astar.h"
 #include "zsdl.h"
 #include "common.h"
@@ -275,6 +276,7 @@ namespace ZPath_Finding_AStar
 
 	void Do_Astar(ZPath_Finding_Response *response)
 	{
+        ZPerfScope profile("pathfinding");
 		int total_ticks;
 		double start_time, end_time;
 		//vector<pf_point> open_list;

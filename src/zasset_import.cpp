@@ -1,3 +1,4 @@
+#include "zperf.h"
 #include "zasset_import.h"
 #include "zsdl.h"
 #include "zmap.h"
@@ -77,6 +78,7 @@ bool ZAsset_ExportDiagnostics(std::string &path,const std::string &phase) {
     out<<"Recent import error: "<<(phase=="error"?"import_failed":"none reported")<<"\n";
     for(const auto &check:ZAsset_CheckContent())out<<check.category<<": "<<check.present<<"/"<<check.total<<" required samples present\n";
     {std::lock_guard<std::mutex> lock(diagnosticMutex);for(const auto &entry:diagnosticEvents){const char *code=entry.second==ZDiagnosticEvent::ImportFailed?"import_failed":entry.second==ZDiagnosticEvent::DeploymentFailed?"deployment_failed":"video_failed";out<<"Event at "<<entry.first<<" ms: "<<code<<"\n";}}
+    out<<ZPerf_Report()<<ZPerf_ServerReport(ZAsset_Profile()+"diagnostics/server-performance.txt");
     out<<"Report excludes personal paths, credentials and raw logs.\n";out.close();
     if(!out||!SDL_RenamePath((path+".tmp").c_str(),path.c_str())){SDL_RemovePath((path+".tmp").c_str());return false;}return true;
 }

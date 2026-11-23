@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <fstream>
+#include <cstdio>
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -13,6 +15,18 @@
 #endif
 
 using namespace std;
+namespace {
+unsigned save_crc(const vector<unsigned char> &data){unsigned crc=~0u;for(auto byte:data){crc^=byte;for(int bit=0;bit<8;++bit)crc=(crc>>1)^(0xedb88320u&-(int)(crc&1));}return ~crc;}
+bool copy_atomic(const string &from,const string &to){ifstream in(from,ios::binary);if(!in)return false;ofstream out(to+".copy",ios::binary|ios::trunc);out<<in.rdbuf();out.close();if(!out||in.bad()){remove((to+".copy").c_str());return false;}
+#ifdef _WIN32
+bool ok=MoveFileExA((to+".copy").c_str(),to.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)!=0;
+#else
+bool ok=rename((to+".copy").c_str(),to.c_str())==0;
+#endif
+if(!ok)remove((to+".copy").c_str());return ok;}
+bool valid_save(const string &path,ZSaveInfo &info){ZSaveReader reader;return reader.ReadFile(path)&&ZSave_ReadInfo(reader,info)&&reader.Remaining()>0;}
+}
+
 
 string ZSave_Path(int slot)
 {
@@ -64,7 +78,8 @@ bool ZSaveWriter::WriteFile(const string &path)
 	if(!fp) return false;
 
 	bool good = buf.empty() || fwrite(&buf[0], 1, buf.size(), fp) == buf.size();
-	if(fflush(fp) != 0) good = false;
+	if(good&&buf.size()>=12&&memcmp(buf.data()+4,ZSAVE_MAGIC,8)==0){unsigned crc=save_crc(buf);unsigned char tail[12]={'Z','O','D','C','R','C','1','!',0,0,0,0};for(int i=0;i<4;++i)tail[8+i]=(crc>>(i*8))&255;good=fwrite(tail,1,12,fp)==12;}
+    if(fflush(fp) != 0) good = false;
 #ifndef _WIN32
 	if(good && fsync(fileno(fp)) != 0) good = false;
 #endif
@@ -72,6 +87,13 @@ bool ZSaveWriter::WriteFile(const string &path)
 
 	if(!good) { remove(tmp.c_str()); return false; }
 
+    // Keep three previous valid generations for autosaves and manual slots.
+    // Generic atomic writers (e.g. the outbox) never receive save backups.
+    bool slotPath=false;for(int slot=0;slot<=ZSAVE_USER_SLOTS;++slot)slotPath|=path==ZSave_Path(slot);
+    ZSaveInfo previous;if(slotPath&&valid_save(path,previous)){
+        for(int generation=3;generation>1;--generation){ifstream exists(path+".bak"+to_string(generation-1),ios::binary);if(exists&&!copy_atomic(path+".bak"+to_string(generation-1),path+".bak"+to_string(generation))){remove(tmp.c_str());return false;}}
+        if(!copy_atomic(path,path+".bak1")){remove(tmp.c_str());return false;}
+    }
 #ifdef _WIN32
 	bool replaced = MoveFileExA(tmp.c_str(), path.c_str(),
 		MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) != 0;
@@ -90,11 +112,15 @@ bool ZSaveReader::ReadFile(const string &path)
 
 	FILE *fp = fopen(path.c_str(), "rb");
 	if(!fp) { ok = false; return false; }
+    if(fseek(fp,0,SEEK_END)!=0||ftell(fp)<0||ftell(fp)>64*1024*1024){fclose(fp);ok=false;return false;}rewind(fp);
 
 	unsigned char chunk[65536];
 	size_t got;
 	while((got = fread(chunk, 1, sizeof(chunk), fp)) > 0) buf.insert(buf.end(), chunk, chunk + got);
-	fclose(fp);
+    bool readError=ferror(fp)!=0;fclose(fp);if(readError){ok=false;return false;}
+    bool checksumRequired=buf.size()>=12&&memcmp(buf.data()+4,ZSAVE_MAGIC,8)==0;
+    if(checksumRequired&&(buf.size()<24||memcmp(buf.data()+buf.size()-12,"ZODCRC1!",8)!=0)){ok=false;return false;}
+    if(buf.size()>=12&&memcmp(buf.data()+buf.size()-12,"ZODCRC1!",8)==0){unsigned stored=0;for(int i=0;i<4;++i)stored|=(unsigned)buf[buf.size()-4+i]<<(i*8);buf.resize(buf.size()-12);if(save_crc(buf)!=stored){ok=false;return false;}}
 
 	return true;
 }
@@ -151,7 +177,7 @@ void ZSave_WriteInfo(ZSaveWriter &w, const ZSaveInfo &info)
 bool ZSave_ReadInfo(ZSaveReader &r, ZSaveInfo &info)
 {
 	vector<char> magic = r.Blob();
-	if(!r.Ok()||magic.size()!=8)return false;bool modern=memcmp(magic.data(),ZSAVE_MAGIC,8)==0;if(!modern&&memcmp(magic.data(),"ZODSAVE3",8)!=0)return false;
+	if(!r.Ok()||magic.size()!=8)return false;bool modern=memcmp(magic.data(),ZSAVE_MAGIC,8)==0||memcmp(magic.data(),"ZODSAVE4",8)==0;if(!modern&&memcmp(magic.data(),"ZODSAVE3",8)!=0)return false;
 
 	info.map_name = r.Str();
 	info.map_title = r.Str();
@@ -177,7 +203,11 @@ bool ZSave_ReadInfo(int slot, ZSaveInfo &info)
 bool ZSave_Delete(int slot)
 {
 	string path = ZSave_Path(slot);
-	if(remove(path.c_str()) == 0) return true;
+	for(int generation=1;generation<=3;++generation)remove((path+".bak"+to_string(generation)).c_str());
+    if(remove(path.c_str()) == 0) return true;
 	ZSaveInfo still_there;
 	return !ZSave_ReadInfo(slot, still_there);   //already gone counts as deleted
 }
+
+bool ZSave_RecoveryInfo(int slot,ZSaveInfo &info){for(int generation=1;generation<=3;++generation)if(valid_save(ZSave_Path(slot)+".bak"+to_string(generation),info))return true;return false;}
+bool ZSave_Recover(int slot){const auto path=ZSave_Path(slot);ZSaveInfo info;for(int generation=1;generation<=3;++generation){auto backup=path+".bak"+to_string(generation);if(!valid_save(backup,info))continue;ifstream current(path,ios::binary);if(current&&!copy_atomic(path,path+".damaged"))return false;return copy_atomic(backup,path);}return false;}

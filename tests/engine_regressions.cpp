@@ -1,4 +1,6 @@
 #include "zserver.h"
+#include "zgamepad.h"
+#include "zperf.h"
 #include "zmovie.h"
 #include "zcontent.h"
 #include "zasset_import.h"
@@ -43,6 +45,8 @@ static std::vector<char> bytes(const std::string &path) {
 
 extern bool zod_render_smoothing;
 
+static void verify_editor_server(const std::string &map,const std::string &id);
+
 // Synthetic menu artwork keeps rendering/input tests independent of game media.
 struct ZFrontEndRegression {
     static ZMapWorkspace *prepare_playtest(ZFrontEnd &frontend){
@@ -85,11 +89,14 @@ struct ZFrontEndRegression {
         auto renderMenu=[&](ZGuiMainMenuBase &menu,const string &name){auto *renderer=ZVideo_GetRenderer();SDL_FillSurfaceRect(screen,nullptr,0xff0e171e);ZMenuTheme::beginText(renderer);menu.DoRender(dummy,screen);ZMenuTheme::endText();SDL_Texture *frame=SDL_CreateTextureFromSurface(renderer,screen);REQUIRE(frame);SDL_RenderTexture(renderer,frame,nullptr,nullptr);ZMenuTheme::presentText(renderer,1280,800);SDL_Surface *image=SDL_RenderReadPixels(renderer,nullptr);REQUIRE(image&&IMG_SavePNG(image,(root+"/"+name+".png").c_str()));SDL_DestroySurface(image);SDL_DestroyTexture(frame);};
         zod_text_percent=120;GMMSaveGame saveMenu;saveMenu.SetCenterCoords(640,400);saveMenu.SetRenderScale(2);renderMenu(saveMenu,"save-menu");saveMenu.KeyPress(SDLK_DOWN);saveMenu.KeyPress(SDLK_RETURN);REQUIRE(saveMenu.KillMe()&&saveMenu.GetGMMFlags().save_slot==2);
         GMMOptions gameOptions;gameOptions.SetCenterCoords(640,400);for(int i=0;i<4;++i)gameOptions.KeyPress(']');gameOptions.Process();gameOptions.SetRenderScale(2);renderMenu(gameOptions,"game-accessibility");
-        for(auto size:{std::pair<int,int>{640,480},{800,600},{1280,800}}){ZSDL_Surface::SetScreenDimensions(size.first,size.second);for(double scale:{1.0,1.5,2.0,3.0}){GMMOptions audit;for(int category=0;category<5;++category){audit.SetRenderScale(scale);int w,h;audit.GetDimensions(w,h);REQUIRE(w*audit.GetRenderScale()<=size.first&&h*audit.GetRenderScale()<=size.second);audit.KeyPress(']');}}}
+        for(auto size:{std::pair<int,int>{640,480},{800,600},{1280,800}}){ZSDL_Surface::SetScreenDimensions(size.first,size.second);for(double scale:{1.0,1.5,2.0,3.0}){GMMOptions audit;for(int category=0;category<6;++category){audit.SetRenderScale(scale);int w,h;audit.GetDimensions(w,h);REQUIRE(w*audit.GetRenderScale()<=size.first&&h*audit.GetRenderScale()<=size.second);audit.KeyPress(']');}}}
         ZSDL_Surface::SetScreenDimensions(1280,800);ZSDL_Surface::SetMainSoftwareSurface(nullptr);SDL_DestroySurface(screen);zod_text_percent=100;
         frontend.LoadSaveInfo();REQUIRE(frontend.saves.size()==6&&frontend.saves[0].campaign.find("Original Campaign / Mission 1")!=string::npos);frontend.screen=ZFrontEnd::SCR_LOAD;frontend.load_selected=0;capture("save-browser");REQUIRE(frontend.map_preview_texture);
         frontend.screen=ZFrontEnd::SCR_KEYS;frontend.settings_category=3;frontend.settings_focus=2;frontend.kb_back=true;frontend.Render();REQUIRE(frontend.screen==ZFrontEnd::SCR_SETTINGS&&frontend.settings_category==3&&frontend.settings_focus==2);
-        frontend.settings_category=5;zod_text_percent=120;capture("accessibility");frontend.screen=ZFrontEnd::SCR_CAMPAIGNS;frontend.ScanCampaigns();capture("campaign-polish");ZPrefs_ResetCategory(5);frontend.FreeGraphics();SDL_Quit();std::cout<<"polish-ok";
+        frontend.settings_category=5;zod_text_percent=120;capture("accessibility");frontend.screen=ZFrontEnd::SCR_CAMPAIGNS;frontend.ScanCampaigns();capture("campaign-polish");
+        frontend.screen=ZFrontEnd::SCR_SETTINGS;for(int category:{2,3,4}){frontend.settings_category=category;capture("settings-"+to_string(category));}
+        frontend.screen=ZFrontEnd::SCR_KEYS;frontend.keys_scroll=MAX_ZKEYS-8;capture("editor-bindings");
+        REQUIRE(frontend.LaunchEditor({"maps/p02_bb_orig01.map"}));frontend.workspace->tool=1;frontend.workspace->objectScroll=6;frontend.workspace->objectKind=8;capture("object-palette");ZPrefs_ResetCategory(5);frontend.FreeGraphics();SDL_Quit();std::cout<<"polish-ok";
     }
     static void movie(const string &path){
         REQUIRE(SDL_Init(SDL_INIT_VIDEO));REQUIRE(ZVideo_SetMode(640,480,false));auto cues=ZMovie_LoadSubtitles(path.substr(0,path.find_last_of('.'))+".srt");REQUIRE(cues.size()==1&&cues[0].text=="Test subtitle");
@@ -131,6 +138,29 @@ struct ZFrontEndRegression {
         ZVideo_SetFullscreen(true);SDL_SyncWindow(ZVideo_GetWindow());frontend.Render();REQUIRE(ZVideo_GetFullscreen());
         ZVideo_SetFullscreen(false);SDL_SyncWindow(ZVideo_GetWindow());frontend.Render();REQUIRE(!ZVideo_GetFullscreen());
         frontend.FreeGraphics();SDL_Quit();std::cout<<"display-matrix-ok";
+    }
+    static void next_features(const string &root){
+        REQUIRE(SDL_Init(SDL_INIT_VIDEO));REQUIRE(ZVideo_SetMode(1280,800,false));ZFrontEnd frontend;frontend.Show();REQUIRE(frontend.EnsureGraphics());
+        frontend.custom_dir=root+"/maps";SDL_CreateDirectory(frontend.custom_dir.c_str());REQUIRE(frontend.LaunchEditor({"maps/p02_bb_orig01.map"}));auto *workspace=frontend.workspace.get();auto &editor=*workspace;
+        string error;ZCampaign author;REQUIRE(ZCampaign_Create("Studio integration",author,error));
+        for(auto name:{"one.map","two.map"})REQUIRE(SDL_CopyFile("maps/p02_bb_orig01.map",(author.root+"/"+name).c_str()));
+        ZCampaignMission first;first.title="First test";first.map="one.map";first.briefing="Test survival";first.objectives={{"survive","Hold",0,1}};auto second=first;second.map="two.map";second.title="Second test";author.missions={first,second};REQUIRE(ZCampaign_Write(author,error));
+        auto source=bytes(author.root+"/one.map");editor.authorCampaign=author;editor.campaignMission=0;editor.Remember();editor.map.GetTile(0).tile=23;size_t history=editor.undo.size();
+        REQUIRE(editor.StageCampaignTest());string staged=editor.TestCampaign().root,id=editor.TestCampaign().id;ZMap snapshot;REQUIRE(snapshot.Read(editor.PlayPath().c_str()));REQUIRE(snapshot.GetTile(0).tile==23);REQUIRE(bytes(author.root+"/one.map")==source);
+        REQUIRE(ZCampaign_List().size()==1);zod_scenes=false;frontend.Render();ZFrontEnd::Action action;REQUIRE(frontend.PopAction(action)&&action.type==ZFrontEnd::FE_START_CAMPAIGN_MAP);REQUIRE(action.value==0&&frontend.EditorTesting());
+        verify_editor_server(action.text,id);
+        frontend.RecordCampaignResult(true,50,3,0,1);frontend.PrepareEditorReturn(true);frontend.Hide();frontend.Show();frontend.ContinueCommunity();REQUIRE(frontend.PopAction(action)&&action.value==1&&frontend.EditorTesting());
+        frontend.RecordCampaignResult(false,20,0,1,1);frontend.PrepareEditorReturn(true);frontend.Hide();frontend.Show();frontend.ContinueCommunity();REQUIRE(frontend.PopAction(action)&&action.value==1);
+        frontend.RecordCampaignResult(true,35,3,0,1);frontend.PrepareEditorReturn(true);frontend.Hide();frontend.Show();frontend.ContinueCommunity();REQUIRE(frontend.screen==ZFrontEnd::SCR_EDITOR&&frontend.workspace.get()==workspace&&!frontend.EditorTesting());REQUIRE(editor.dirty&&editor.undo.size()==history);SDL_PathInfo info;REQUIRE(!SDL_GetPathInfo(staged.c_str(),&info));REQUIRE(!SDL_getenv("ZOD_EDITOR_TEST_MANIFEST"));REQUIRE(ZCampaign_Records(author.id).empty()&&ZCampaign_Records(id).empty());REQUIRE(bytes(author.root+"/one.map")==source);
+        // Added unit palette entries and snap placement survive undo/redo.
+        editor.tool=1;editor.objectKind=6;editor.snap=4;editor.zoom=1;editor.cameraX=editor.cameraY=0;editor.mx=306+23*16;editor.my=162+21*16;editor.campaignPanel=false;editor.painting=false;auto count=editor.map.GetObjectList().size();editor.Paint();REQUIRE(editor.map.GetObjectList().size()==count+1);auto placed=editor.map.GetObjectList().back();REQUIRE(placed.x==20&&placed.y==20&&placed.object_id==PSYCHO);editor.Undo(false);REQUIRE(editor.map.GetObjectList().size()==count);editor.Undo(true);REQUIRE(editor.map.GetObjectList().size()==count+1&&editor.message.find("Redid")!=string::npos);
+        // Shared accessibility/control preferences and live dead-zone filtering.
+        zod_stick_deadzone=35;zod_edge_scroll_percent=0;zod_subtitle_percent=150;zod_subtitle_background=false;zod_keys[ZKEY_EDITOR_UNDO]='k';ZPrefs_Save();zod_stick_deadzone=5;zod_edge_scroll_percent=100;zod_subtitle_percent=100;zod_subtitle_background=true;ZPrefs_Load();REQUIRE(zod_stick_deadzone==35&&zod_edge_scroll_percent==0&&zod_subtitle_percent==150&&!zod_subtitle_background&&zod_keys[ZKEY_EDITOR_UNDO]=='k');REQUIRE(ZGamepad_FilterAxis(8192)==0);zod_stick_deadzone=5;REQUIRE(ZGamepad_FilterAxis(8192)>0&&ZGamepad_FilterAxis(32767)>.99f);
+        SDL_Event pad{};pad.type=SDL_EVENT_GAMEPAD_BUTTON_DOWN;pad.gbutton.button=SDL_GAMEPAD_BUTTON_SOUTH;ZGamepad_SetEditor(true);ZGamepad_HandleEvent(pad,true);SDL_Event event{};bool pressed=false;while(SDL_PollEvent(&event))pressed|=event.type==SDL_EVENT_MOUSE_BUTTON_DOWN&&event.button.button==SDL_BUTTON_LEFT;REQUIRE(pressed);pad.type=SDL_EVENT_GAMEPAD_BUTTON_UP;ZGamepad_SetEditor(false);ZGamepad_HandleEvent(pad,false);bool released=false;while(SDL_PollEvent(&event))released|=event.type==SDL_EVENT_MOUSE_BUTTON_UP&&event.button.button==SDL_BUTTON_LEFT;REQUIRE(released);
+        frontend.screen=ZFrontEnd::SCR_SETTINGS;frontend.settings_category=0;frontend.Render();event={};event.type=SDL_EVENT_KEY_DOWN;event.key.key=SDLK_TAB;frontend.HandleEvent(event);frontend.HandleEvent(event);event.key.key=SDLK_RETURN;frontend.HandleEvent(event);frontend.Render();REQUIRE(frontend.settings_category==1);
+        ZPerf_Enable(true);{ZPerfScope measured("integration_test");SDL_Delay(2);}REQUIRE(snapshot.Read("maps/p02_bb_orig01.map"));ZPerf_Enable(false);ZPerf_Record("disabled",1000);auto report=ZPerf_Report();{std::ofstream forged(root+"/server-performance.txt");forged<<"pathfinding,2,1.5,2.0,2.1\nprivate-user-token=secret\n";}REQUIRE(ZPerf_ServerReport(root+"/server-performance.txt").find("secret")==string::npos);REQUIRE(report.find("integration_test")!=string::npos&&report.find("map_load")!=string::npos&&report.find("disabled,")==string::npos);
+        string file;REQUIRE(ZAsset_ExportDiagnostics(file,"idle"));auto diagnostic=bytes(file);REQUIRE(!diagnostic.empty());
+        frontend.FreeGraphics();SDL_Quit();std::cout<<"next-features-ok";
     }
     static void polish_preview(const string &mode,const string &image){
         REQUIRE(SDL_Init(SDL_INIT_VIDEO));REQUIRE(ZVideo_SetMode(1280,800,false));ZFrontEnd frontend;frontend.Show();REQUIRE(frontend.EnsureGraphics());
@@ -313,6 +343,17 @@ struct ZFrontEndRegression {
 // A narrowly scoped friend fixture exercises production world serialization.
 class ZServerRegression {
 public:
+    static void verify_editor(const string &map,const string &id){auto server=std::make_unique<ZServer>();ZMap::ServerInit();server->LoadNextMap(map);REQUIRE(server->SaveGame(0,0,0,0,0));ZSaveInfo info;REQUIRE(ZSave_ReadInfo(0,info));REQUIRE(info.campaign_id==id&&info.mission_index==0);REQUIRE(server->mission_runtime.objectives.size()==1);server->CheckCampaignObjectives(0);server->CheckCampaignObjectives(1);REQUIRE(server->mission_runtime.outcome==1);server->mission_runtime={};server->mission_runtime.objectives={{"defend","Protect fort",0,5}};for(auto *object:server->object_list){unsigned char type,kind;object->GetObjectID(type,kind);if(type==BUILDING_OBJECT&&(kind==FORT_FRONT||kind==FORT_BACK)&&object->GetOwner()==RED_TEAM)object->SetOwner(BLUE_TEAM);}server->CheckCampaignObjectives(0);REQUIRE(server->mission_runtime.outcome==-1);}
+    static void movement(const string &map){
+        auto server=std::make_unique<ZServer>();ZMap::ServerInit();server->LoadNextMap(map);ZObject *robot=nullptr,*vehicle=nullptr;for(auto *object:server->object_list){unsigned char type,kind;object->GetObjectID(type,kind);if(object->GetOwner()!=RED_TEAM)continue;if(type==ROBOT_OBJECT&&!robot)robot=object;if(type==VEHICLE_OBJECT&&!vehicle)vehicle=object;}REQUIRE(robot&&vehicle);
+        robot->SetCords(400,400);vehicle->SetCords(400,448);vehicle->SetHealth(vehicle->GetHealth()/3,server->zmap);robot->GetWayPointList().clear();vehicle->GetWayPointList().clear();waypoint move;move.mode=MOVE_WP;move.x=700;move.y=400;move.player_given=true;robot->GetWayPointList().push_back(move);move.y=448;vehicle->GetWayPointList().push_back(move);
+        for(int i=0;i<30;++i){server->ztime.ztime=i*.1;robot->ProcessServer(server->zmap,server->ols);vehicle->ProcessServer(server->zmap,server->ols);server->ProcessPathFindingResults();SDL_Delay(1);}int rx,ry,vx,vy;robot->GetCords(rx,ry);vehicle->GetCords(vx,vy);REQUIRE(rx>400&&vx>400&&rx!=vx);
+        auto &pf=server->zmap.GetPathFinder();robot->GetWayPointList().clear();move.x=720;move.y=500;robot->GetWayPointList().push_back(move);server->ztime.ztime+=.1;robot->ProcessServer(server->zmap,server->ols);bool failedResponse=false;
+        for(int tries=0;tries<2000&&!failedResponse;++tries){pf.Lock_List();for(auto *response:pf.GetList())if(response->obj_ref_id==robot->GetRefID()){response->pf_point_list.clear();response->path_cost=-1;failedResponse=true;}pf.Unlock_List();if(!failedResponse)SDL_Delay(1);}
+        REQUIRE(failedResponse);server->ProcessPathFindingResults();REQUIRE(robot->GetWayPointList().empty()&&robot->GetSFlags().order_unreachable);
+        for(int y=0;y<server->zmap.GetMapBasics().height;++y)pf.SetImpassable(32,y,true);pf.SetTileWideWeights();pf.RebuildRegions();robot->GetWayPointList().clear();move.x=55*16;move.y=60*16;robot->GetWayPointList().push_back(move);server->ztime.ztime+=.2;robot->ProcessServer(server->zmap,server->ols);REQUIRE(robot->GetSFlags().order_unreachable);server->NotifyUnreachable(robot);REQUIRE(server->route_notice_at[RED_TEAM]>0&&server->route_notice_at[BLUE_TEAM]==0);std::cout<<"movement-ok";
+    }
+
     static void campaign_menu_resume(){
         auto server=std::make_unique<ZServer>();server->map_list={"maps/p02_bb_orig01.map","maps/p02_bb_orig02.map","maps/p02_bb_orig03.map"};server->selectable_map_list=server->map_list;server->load_maps_randomly=false;server->menu_first=true;
         string progress=server->CampaignProgressPath();{std::ofstream output(progress);output<<"0\n2\n";}auto before=bytes(progress);
@@ -352,6 +393,13 @@ public:
         server->cloud_required=true; server->cloud_roster[account]={RED_TEAM,grant};
         server->cloud_kills[RED_TEAM]=4; server->cloud_lost[RED_TEAM]=2; server->cloud_captures[RED_TEAM]=3;
         server->ztime.ztime=80; server->ReportCloudMatch();
+    }
+    static void recovery(const string &map){
+        auto server=std::make_unique<ZServer>();ZMap::ServerInit();server->LoadNextMap(map);server->PauseGame();REQUIRE(server->game_on);
+        for(int kills=1;kills<=4;++kills)REQUIRE(server->SaveGame(0,kills,0,10,0));
+        for(int generation=1;generation<=3;++generation){ZSaveReader reader;ZSaveInfo info;REQUIRE(reader.ReadFile(ZSave_Path(0)+".bak"+to_string(generation))&&ZSave_ReadInfo(reader,info));REQUIRE(info.kills==4-generation);}
+        auto intact=bytes(ZSave_Path(0));REQUIRE(intact.size()>256);auto legacy4=intact;legacy4[11]='4';legacy4.resize(legacy4.size()-12);{std::ofstream old(ZSave_Path(0)+".legacy4",std::ios::binary);old.write(legacy4.data(),legacy4.size());}ZSaveReader oldReader;ZSaveInfo oldInfo;REQUIRE(oldReader.ReadFile(ZSave_Path(0)+".legacy4")&&ZSave_ReadInfo(oldReader,oldInfo)&&oldInfo.kills==4);intact[intact.size()/2]^=1;{std::ofstream damaged(ZSave_Path(0),std::ios::binary);damaged.write(intact.data(),intact.size());}ZSaveInfo corruptInfo;REQUIRE(!ZSave_ReadInfo(0,corruptInfo));
+        {std::ofstream damaged(ZSave_Path(0));damaged<<"broken";}ZSaveInfo info;REQUIRE(!ZSave_ReadInfo(0,info));REQUIRE(ZSave_RecoveryInfo(0,info)&&info.kills==3);REQUIRE(ZSave_Recover(0));REQUIRE(ZSave_ReadInfo(0,info)&&info.kills==3);auto preserved=bytes(ZSave_Path(0)+".damaged");REQUIRE(string(preserved.begin(),preserved.end())=="broken");server->ResetGame();REQUIRE(server->LoadSavedGame(0,0));REQUIRE(server->game_on&&!server->object_list.empty());REQUIRE(ZSave_Delete(0));REQUIRE(!ZSave_RecoveryInfo(0,info));std::cout<<"recovery-ok";
     }
     static void roundtrip(const std::string &map) {
         auto server = std::make_unique<ZServer>();
@@ -1099,6 +1147,8 @@ static void dial_server(const string &host,int port) {
     REQUIRE(received); client.ClearConnection(); REQUIRE(!client.GetHandler());
 }
 
+static void verify_editor_server(const string &map,const string &id){ZServerRegression::verify_editor(map,id);}
+
 int main(int argc, char **argv) {
 #ifdef _WIN32
     WSADATA wsa; WSAStartup(MAKEWORD(2, 2), &wsa);
@@ -1140,6 +1190,7 @@ int main(int argc, char **argv) {
             std::cout<<"palette-compatible";
         }
         else if(std::string(argv[1]) == "import-levels"){REQUIRE(argc==3);string message;REQUIRE(ZAsset_ImportLevels(argv[2],message));REQUIRE(!ZAsset_OverlayPath("maps/p02_bb_orig01.map").empty());std::cout<<"levels-imported";}
+        else if(std::string(argv[1]) == "next-features"){REQUIRE(argc==3);ZFrontEndRegression::next_features(argv[2]);}
         else if(std::string(argv[1]) == "display-matrix"){REQUIRE(argc==3);ZFrontEndRegression::display_matrix(argv[2]);}
         else if(std::string(argv[1]) == "content-health"){REQUIRE(argc==3);REQUIRE(SDL_Init(0));ZAsset_RecordDiagnostic(ZDiagnosticEvent::DeploymentFailed);std::string report;REQUIRE(ZAsset_ExportDiagnostics(report,argv[2]));std::cout<<report;SDL_Quit();}
         else if(std::string(argv[1]) == "asset-ready") { std::cout<<(ZAsset_RuntimeReady()?"ready":"missing"); }
@@ -1197,6 +1248,8 @@ int main(int argc, char **argv) {
         else if(std::string(argv[1]) == "random-prepare" || std::string(argv[1]) == "random-restore") { REQUIRE(argc==3); ZSkirmishRegression::random_setup(argv[2],string(argv[1])=="random-restore"); }
         else if(std::string(argv[1]) == "skirmish") { REQUIRE(argc == 3); ZSkirmishRegression::run(argv[2]); }
         else if(std::string(argv[1]) == "local-host") { REQUIRE(argc == 3); local_match(argv[2]); }
+        else if(std::string(argv[1]) == "movement"){REQUIRE(argc==3);ZServerRegression::movement(argv[2]);}
+        else if(std::string(argv[1]) == "recovery"){REQUIRE(argc==3);ZServerRegression::recovery(argv[2]);}
         else if(std::string(argv[1]) == "save") { REQUIRE(argc == 3); ZServerRegression::roundtrip(argv[2]); }
         else if(std::string(argv[1]) == "packets") packets();
         else if(std::string(argv[1]) == "protocol") {

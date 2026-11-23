@@ -1,3 +1,4 @@
+#include "zperf.h"
 #include "zcampaign.h"
 #include <tuple>
 #include <map>
@@ -1777,6 +1778,7 @@ void ZServer::ProcessMissileDamage(damage_missile &the_missile)
 		}
 }
 
+void ZServer::NotifyUnreachable(ZObject *obj){if(!obj)return;int team=obj->GetOwner();Uint64 now=SDL_GetTicks();if(team<=NULL_TEAM||team>=MAX_TEAM_TYPES)return;if(route_notice_at[team]&&now-route_notice_at[team]<2500)return;route_notice_at[team]=now?now:1;for(size_t player=0;player<player_info.size();++player)if(player_info[player].team==team&&player_info[player].mode==PLAYER_MODE)SendNews(player,"Unit cannot reach that destination. Check terrain, bridges or another route.",255,190,80);}
 void ZServer::ProcessPathFindingResults()
 {
 	zmap.GetPathFinder().Lock_List();
@@ -1787,7 +1789,7 @@ void ZServer::ProcessPathFindingResults()
 		ZObject *obj;
 
 		obj = GetObjectFromID((*pf)->obj_ref_id, object_list);
-		if(obj) obj->PostPathFindingResult(*pf);
+		if(obj)obj->PostPathFindingResult(*pf);
 	}
 
 	zmap.GetPathFinder().Clear_Response_List();
@@ -1797,6 +1799,8 @@ void ZServer::ProcessPathFindingResults()
 
 void ZServer::ProcessObjects()
 {
+    ZPerfScope profile("server_objects");
+    static Uint64 perfSnapshotAt=0;if(ZPerf_Enabled()&&SDL_GetTicks()>=perfSnapshotAt){perfSnapshotAt=SDL_GetTicks()+1000;auto folder=ZAsset_Profile()+"diagnostics";SDL_CreateDirectory(folder.c_str());ZPerf_Snapshot(folder+"/server-performance.txt");}
 	char *data;
 	int size;
 	double &the_time = ztime.ztime;
@@ -1840,7 +1844,8 @@ void ZServer::ProcessObjects()
 
 		//this case can cut us early
 		//because it will delete this object entirely
-		if((*obj)->GetSFlags().entered_target_ref_id != -1)
+		if((*obj)->GetSFlags().order_unreachable)NotifyUnreachable(*obj);
+        if((*obj)->GetSFlags().entered_target_ref_id != -1)
 		{
 			tobj = GetObjectFromID((*obj)->GetSFlags().entered_target_ref_id, object_list);
 			RobotEnterObject((*obj), tobj);
@@ -4873,6 +4878,8 @@ void ZServer::ChangeGameSpeed(float new_speed)
 
 void ZServer::ConfigureCampaignMission(){
  mission_runtime={};mission_campaign_id.clear();mission_campaign_index=-1;if(allow_remote_clients)return;
+ if(const char *manifest=SDL_getenv("ZOD_EDITOR_TEST_MANIFEST")){ZCampaign test;string error;if(ZCampaign_Load(manifest,test,error)&&test.id.compare(0,12,"editor-test-")==0){for(size_t i=0;i<test.missions.size();++i){string file;if(ZCampaign_SafeAsset(test.root,test.missions[i].map,file)&&file==map_name){mission_campaign_id=test.id;mission_campaign_index=i;mission_runtime.objectives=test.missions[i].objectives;return;}}}}
+
  for(size_t i=0;i<map_list.size();++i)if(map_list[i]==map_name){mission_campaign_id="original";mission_campaign_index=i;return;}
  for(const auto &campaign:ZCampaign_List()){vector<int> matches;for(size_t i=0;i<campaign.missions.size();++i){std::string path;if(ZCampaign_SafeAsset(campaign.root,campaign.missions[i].map,path)&&path==map_name)matches.push_back(i);}if(matches.empty())continue;int current=0,unlocked=0;ZCampaign_Progress(campaign.id,current,unlocked);int index=std::find(matches.begin(),matches.end(),current)!=matches.end()?current:matches[0];mission_campaign_id=campaign.id;mission_campaign_index=index;mission_runtime.objectives=campaign.missions[index].objectives;return;}
 }

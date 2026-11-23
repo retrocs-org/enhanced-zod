@@ -23,5 +23,17 @@ Zod Engine by Michael Bok / Nighsoft.
 - Headless hosting and the independent PHP/MariaDB website and service.
 
 The macOS package is locally signed; public notarization requires the release
-operator's Apple signing credentials. Windows/Linux packages are built and
-checked in their native CI jobs; local macOS testing does not certify them.
+operator's Apple signing credentials. Windows/Linux packages must be built and
+checked locally on their native platforms; local macOS testing does not certify them.
+
+Recent local-workflow improvements:
+- Isolated campaign playtest runs with briefings, objectives, retry/advance and editor return.
+- Expanded searchable unit palette, snapping, previews and undo/redo history feedback.
+- Three save-backup generations, v5 integrity checks and explicit recovery actions.
+- Owner-only unreachable-order notices and bridge/factory/mixed-speed regressions.
+- Mission thumbnails, optional-media requirements and campaign length estimates.
+- Controller focus navigation, configurable dead zones and cinematic controls.
+- Shared subtitle size/background and edge-scroll settings; remappable editor actions.
+- Opt-in timing and memory profiling in privacy-safe diagnostic exports.
+
+Hosted CI remains removed; validation is performed with local build/test tools.

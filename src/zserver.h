@@ -63,7 +63,9 @@ class ZServer : public ZCore
 		void KillAllBots();
 		void ProcessObjects();
 		void ProcessPathFindingResults();
-		void SendNews(int player, const char* message, char r=0, char g=0, char b=0);
+		void NotifyUnreachable(ZObject *object);
+        Uint64 route_notice_at[MAX_TEAM_TYPES]{};
+        void SendNews(int player, const char* message, char r=0, char g=0, char b=0);
 		void BroadCastNews(const char* message, char r=0, char g=0, char b=0);
 		void RelayObjectWayPoints(ZObject *obj);
 		void RelayObjectRoute(ZObject *obj);

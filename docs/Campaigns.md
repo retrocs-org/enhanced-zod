@@ -190,9 +190,9 @@ above the battlefield. Capture/defend targets get an amber marker when visible.
 The timer stops while paused. Original missions continue to use standard victory
 rules without adding scripted objectives.
 
-New battle saves use `ZODSAVE4`, including campaign ID and mission index so a
+New battle saves use checksum-protected `ZODSAVE5`, including campaign ID and mission index so a
 campaign can reuse the same map in several missions without ambiguous resumes.
-Existing `ZODSAVE3` battles remain readable; their context is inferred from the
+Existing `ZODSAVE3` and `ZODSAVE4` battles remain readable; their context is inferred from the
 installed campaign and progress. Install the matching pack before resuming its
 battle. Single-player campaigns wait for Continue, including while cinematics
 play; finishing the original final mission returns to the menu instead of
@@ -274,3 +274,23 @@ should use briefing fallback instead. Existing installed packs retain that
 fallback at runtime. Duplicate maps, absent briefing text, default victory
 conditions and message-only objective sequences produce review warnings.
 Export errors open the editor's validation panel for correction.
+
+### Campaign Studio playtests
+
+**Test run** snapshots the selected mission from the current editor map and copies
+the remaining missions into a temporary private campaign. It uses real briefings,
+cinematics, scripted objectives, victory and defeat handling. Continue advances
+to the next mission after a win or retries after a defeat. After the final mission,
+or when returning to the menu, the editor restores its unsaved map and history.
+Back from the test briefing also returns to the editor.
+
+Test campaigns stay out of the campaign list. Their results do not update campaign
+records or progress. Original levels and authoring source maps are unchanged.
+Missing maps or referenced custom videos block testing with validation feedback.
+The studio explains that the currently edited map temporarily replaces the
+selected mission; use **Load mission map** before testing a different saved map.
+
+Campaign selection shows a thumbnail of the selected accessible mission, cover
+art when supplied, optional-video availability, and a rough planning estimate of
+10–25 minutes per mission. Completed missions and the next mission remain the
+only missions exposed by the normal progression browser.

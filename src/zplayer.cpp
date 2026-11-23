@@ -7,6 +7,7 @@ static double MenuRenderScale();
 #include "gmm_save_game.h"
 #include "mac_dock_icon.h"
 #include "zprefs.h"
+#include "zperf.h"
 #include "zpath_debug.h"
 #include "zgamepad.h"
 #include <math.h>
@@ -293,7 +294,7 @@ void ZPlayer::SendContinueAfterEnd()
 //menu-driven session). Tear the game down like ProcessResetGame but, instead of
 //asking for a new map, open the main menu and idle - the player picks/generates
 //the next one. With no map loaded the render falls back to the menu background.
-void ZPlayer::CompleteMenuReturn(){bool next=frontend.CommunityBattle()&&summary_continue_sent;ReturnToMenu();if(next)frontend.ContinueCommunity();}
+void ZPlayer::CompleteMenuReturn(){bool next=frontend.CommunityBattle()&&summary_continue_sent;frontend.PrepareEditorReturn(next);ReturnToMenu();if(next)frontend.ContinueCommunity();}
 
 void ZPlayer::ReturnToMenu()
 {
@@ -1656,6 +1657,7 @@ void ZPlayer::ProcessSocketEvents()
 
 void ZPlayer::ProcessGame()
 {
+    ZPerfScope profile("client_update");
     if(PollHostedJoin()) return;
 	double &the_time = ztime.ztime;
 
@@ -1963,6 +1965,7 @@ void ZPlayer::MissileObjectParticles(int x_, int y_, int radius, int particles)
 
 void ZPlayer::RenderScreen()
 {
+    ZPerfScope profile("battle_frame");
 	double &the_time = ztime.ztime;
 
 	//the original game's intro videos, once per launch, as soon as the splash is gone
@@ -2670,22 +2673,22 @@ void ZPlayer::StartMouseScrolling(int new_mouse_x, int new_mouse_y)
 // mouse to an edge scrolls the map again.
 bool ZPlayer::DoMouseScrollRight()
 {
-	return window_has_focus && !mbutton.down && !rbutton.dragged && (mouse_x > init_w - 10);
+	return zod_edge_scroll_percent>0 && window_has_focus && !mbutton.down && !rbutton.dragged && (mouse_x > init_w - 10);
 }
 
 bool ZPlayer::DoMouseScrollLeft()
 {
-	return window_has_focus && !mbutton.down && !rbutton.dragged && (mouse_x < 10);
+	return zod_edge_scroll_percent>0 && window_has_focus && !mbutton.down && !rbutton.dragged && (mouse_x < 10);
 }
 
 bool ZPlayer::DoMouseScrollUp()
 {
-	return window_has_focus && !mbutton.down && !rbutton.dragged && (mouse_y < 10);
+	return zod_edge_scroll_percent>0 && window_has_focus && !mbutton.down && !rbutton.dragged && (mouse_y < 10);
 }
 
 bool ZPlayer::DoMouseScrollDown()
 {
-	return window_has_focus && !mbutton.down && !rbutton.dragged && (mouse_y > init_h - 10);
+	return zod_edge_scroll_percent>0 && window_has_focus && !mbutton.down && !rbutton.dragged && (mouse_y > init_h - 10);
 }
 
 bool ZPlayer::DoKeyScrollRight()
@@ -2712,6 +2715,7 @@ void ZPlayer::ProcessScroll()
 {
 	double the_time = current_time();
 	const double shift_speed = 400;
+    const double edge_speed=shift_speed*zod_edge_scroll_percent/100.0;
 	double time_diff;
 	double the_shift;
 
@@ -2727,7 +2731,7 @@ void ZPlayer::ProcessScroll()
 	{
 		time_diff = the_time - last_vert_scroll_time;
 
-		the_shift = time_diff * shift_speed;
+		the_shift = time_diff * (DoKeyScrollUp()?shift_speed:edge_speed);
 		the_shift += vert_scroll_over;
 
 		if(the_shift >= 1)
@@ -2741,7 +2745,7 @@ void ZPlayer::ProcessScroll()
 	{
 		time_diff = the_time - last_vert_scroll_time;
 
-		the_shift = time_diff * shift_speed;
+		the_shift = time_diff * (DoKeyScrollDown()?shift_speed:edge_speed);
 		the_shift += vert_scroll_over;
 
 		if(the_shift >= 1)
@@ -2756,7 +2760,7 @@ void ZPlayer::ProcessScroll()
 	{
 		time_diff = the_time - last_horz_scroll_time;
 
-		the_shift = time_diff * shift_speed;
+		the_shift = time_diff * (DoKeyScrollRight()?shift_speed:edge_speed);
 		the_shift += horz_scroll_over;
 
 
@@ -2772,7 +2776,7 @@ void ZPlayer::ProcessScroll()
 	{
 		time_diff = the_time - last_horz_scroll_time;
 
-		the_shift = time_diff * shift_speed;
+		the_shift = time_diff * (DoKeyScrollLeft()?shift_speed:edge_speed);
 		the_shift += horz_scroll_over;
 
 		if(the_shift >= 1)

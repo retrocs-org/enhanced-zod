@@ -1,4 +1,5 @@
 #include "zmovie.h"
+#include "zgamepad.h"
 #include "zvideo.h"
 #include "zmenu_theme.h"
 #include "zprefs.h"
@@ -26,6 +27,7 @@ bool exact(SDL_IOStream *input,unsigned char *data,size_t size,atomic<bool>&stop
 void shutdown(SDL_Process *p){if(p)SDL_KillProcess(p,true);}
 }
 int ZMovie_PlayPortable(const string &path){
+ ZGamepad_SetEditor(false);
  auto *renderer=ZVideo_GetRenderer();auto *window=ZVideo_GetWindow();ifstream check(path);if(!renderer||!window||!check)return ZMOVIE_MISSING;
  string ffmpeg;const char *base=SDL_GetBasePath();if(base)ffmpeg=string(base)+"ffmpeg";
 #ifdef _WIN32
@@ -42,9 +44,10 @@ int ZMovie_PlayPortable(const string &path){
  ZVideoWindowScope windowPresentation(renderer);
  SDL_Texture *texture=SDL_CreateTexture(renderer,SDL_PIXELFORMAT_RGBA32,SDL_TEXTUREACCESS_STREAMING,width,height);SDL_Texture *subtitle=nullptr,*controls=nullptr;string lastSubtitle,lastControls;size_t dot=path.find_last_of('.');auto cues=ZMovie_LoadSubtitles(path.substr(0,dot)+".srt");
  Uint64 launched=SDL_GetTicks(),started=0,pauseAt=0,pausedMs=0,lastFrame=launched;int rendered=-1,result=texture?ZMOVIE_FINISHED:ZMOVIE_MISSING;bool paused=false,playing=false,volumeDrag=false;
- auto label=[&](SDL_Texture *&tex,string &old,const string &text,int size){string key=to_string(size)+":"+text;if(key==old)return;SDL_DestroyTexture(tex);tex=nullptr;old=key;if(!text.empty()){SDL_Surface *surface=ZMenuTheme::text(text.c_str(),size);if(surface){tex=SDL_CreateTextureFromSurface(renderer,surface);SDL_DestroySurface(surface);}}};
+ auto label=[&](SDL_Texture *&tex,string &old,const string &text,int size){int wrapWidth=0,outputHeight=0;if(&tex==&subtitle)SDL_GetRenderOutputSize(renderer,&wrapWidth,&outputHeight);string key=to_string(size)+":"+to_string(wrapWidth)+":"+text;if(key==old)return;SDL_DestroyTexture(tex);tex=nullptr;old=key;if(!text.empty()){SDL_Surface *surface=nullptr;if(wrapWidth>0){if(auto *font=TTF_OpenFont(ZSDL_DataPath("assets/frontend/fonts/Rajdhani-SemiBold.ttf").c_str(),size*zod_text_percent/100.0f)){surface=TTF_RenderText_Blended_Wrapped(font,text.c_str(),0,SDL_Color{218,226,232,255},max(80,wrapWidth-80));TTF_CloseFont(font);}}else surface=ZMenuTheme::text(text.c_str(),size);if(surface){tex=SDL_CreateTextureFromSurface(renderer,surface);SDL_DestroySurface(surface);}}};
  while(texture&&!stop){
-  SDL_Event event;while(SDL_PollEvent(&event)){
+  ZGamepad_Update(true);SDL_Event event;while(SDL_PollEvent(&event)){
+   if(ZGamepad_HandleEvent(event,true))continue;
    if(event.type==SDL_EVENT_QUIT){result=ZMOVIE_SKIPPED;stop=true;SDL_PushEvent(&event);break;}
    if(event.type==SDL_EVENT_KEY_DOWN){if(event.key.key==SDLK_ESCAPE||event.key.key==SDLK_RETURN){result=ZMOVIE_SKIPPED;stop=true;}if(event.key.key==SDLK_SPACE){paused=!paused;if(paused)pauseAt=SDL_GetTicks();else {pausedMs+=SDL_GetTicks()-pauseAt;lastFrame=SDL_GetTicks();}if(sound){if(paused)SDL_PauseAudioStreamDevice(sound);else SDL_ResumeAudioStreamDevice(sound);}}if(event.key.key==SDLK_S)zod_video_subtitles=!zod_video_subtitles;if(event.key.key==SDLK_UP||event.key.key==SDLK_DOWN)zod_video_volume=max(0,min(100,zod_video_volume+(event.key.key==SDLK_UP?5:-5)));}
    if(event.type==SDL_EVENT_MOUSE_BUTTON_DOWN){int ww=1,wh=1,ow=1,oh=1;SDL_GetWindowSize(window,&ww,&wh);SDL_GetRenderOutputSize(renderer,&ow,&oh);float px=event.button.x*ow/max(1,ww),py=event.button.y*oh/max(1,wh);if(py>oh-46&&px>ow-270){volumeDrag=true;zod_video_volume=max(0,min(100,(int)((px-(ow-260))*100/240)));}else {result=ZMOVIE_SKIPPED;stop=true;}}
@@ -57,8 +60,8 @@ int ZMovie_PlayPortable(const string &path){
   if(!paused&&(!playing||desired>rendered)){unique_lock<mutex> held(lock);while(!frames.empty()&&(!playing||rendered<desired)){auto frame=std::move(frames.front());frames.pop_front();held.unlock();SDL_UpdateTexture(texture,nullptr,frame.data(),width*4);lastFrame=SDL_GetTicks();++rendered;if(!playing){started=SDL_GetTicks();pausedMs=0;playing=true;if(sound)SDL_ResumeAudioStreamDevice(sound);}held.lock();changed.notify_all();}if(finished&&frames.empty()&&(!playing||rendered<desired)){if(!playing)result=ZMOVIE_MISSING;break;}}
   int outw=640,outh=480;SDL_GetRenderOutputSize(renderer,&outw,&outh);outw=max(1,outw);outh=max(80,outh);SDL_SetRenderDrawColor(renderer,0,0,0,255);SDL_RenderClear(renderer);float scale=min(outw/(float)width,(outh-72)/(float)height);SDL_FRect dst{(outw-width*scale)/2,(outh-72-height*scale)/2,width*scale,height*scale};if(playing)SDL_RenderTexture(renderer,texture,nullptr,&dst);
   string text;if(zod_video_subtitles)for(auto &cue:cues){if(cue.begin>time)break;if(time<cue.end)text=cue.text;}
-  label(subtitle,lastSubtitle,text,max(18,outh/32));if(subtitle){float w,h;SDL_GetTextureSize(subtitle,&w,&h);float fit=min(1.0f,(outw-60)/w);SDL_FRect box{(outw-w*fit)/2-10,outh-145.0f,w*fit+20,h*fit+16};SDL_SetRenderDrawColor(renderer,0,0,0,230);SDL_RenderFillRect(renderer,&box);SDL_FRect line{box.x+10,box.y+8,w*fit,h*fit};SDL_RenderTexture(renderer,subtitle,nullptr,&line);}
-  string help=string(paused?"Paused / ":"")+"Space: pause  Esc: skip  S: subtitles "+(zod_video_subtitles?"on":"off")+"  Volume "+to_string(zod_video_volume)+"% (Up/Down)";label(controls,lastControls,help,max(14,outh/48));if(controls){float w,h;SDL_GetTextureSize(controls,&w,&h);float fit=min(1.0f,max(1.0f,outw-40.0f)/w);SDL_FRect line{20.0f,outh-58.0f,w*fit,h*fit};SDL_RenderTexture(renderer,controls,nullptr,&line);}SDL_FRect track{(float)outw-260,(float)outh-24,240.0f,6};SDL_SetRenderDrawColor(renderer,60,70,80,255);SDL_RenderFillRect(renderer,&track);track.w*=zod_video_volume/100.0f;SDL_SetRenderDrawColor(renderer,244,164,65,255);SDL_RenderFillRect(renderer,&track);SDL_RenderPresent(renderer);SDL_Delay(4);
+  label(subtitle,lastSubtitle,text,max(18,outh/32)*zod_subtitle_percent/100);if(subtitle){float w,h;SDL_GetTextureSize(subtitle,&w,&h);float fit=min(1.0f,min((outw-60)/w,outh*.4f/h));SDL_FRect box{(outw-w*fit)/2-10,max(0.0f,outh-88.0f-h*fit-16),w*fit+20,h*fit+16};SDL_SetRenderDrawColor(renderer,0,0,0,230);if(zod_subtitle_background)SDL_RenderFillRect(renderer,&box);SDL_FRect line{box.x+10,box.y+8,w*fit,h*fit};SDL_RenderTexture(renderer,subtitle,nullptr,&line);}
+  string help=string(paused?"Paused / ":"")+(ZGamepad_Active()?"Y: pause  A/B: skip  D-pad: volume  Subtitles ":"Space: pause  Esc: skip  S: subtitles ")+(zod_video_subtitles?"on":"off")+"  Volume "+to_string(zod_video_volume)+"% (Up/Down)";label(controls,lastControls,help,max(14,outh/48));if(controls){float w,h;SDL_GetTextureSize(controls,&w,&h);float fit=min(1.0f,max(1.0f,outw-40.0f)/w);SDL_FRect line{20.0f,outh-58.0f,w*fit,h*fit};SDL_RenderTexture(renderer,controls,nullptr,&line);}SDL_FRect track{(float)outw-260,(float)outh-24,240.0f,6};SDL_SetRenderDrawColor(renderer,60,70,80,255);SDL_RenderFillRect(renderer,&track);track.w*=zod_video_volume/100.0f;SDL_SetRenderDrawColor(renderer,244,164,65,255);SDL_RenderFillRect(renderer,&track);SDL_RenderPresent(renderer);SDL_Delay(4);
  }
  stop=true;changed.notify_all();shutdown(video);shutdown(audio);videoWorker.join();if(audioWorker.joinable())audioWorker.join();SDL_DestroyAudioStream(sound);if(ownAudio)SDL_QuitSubSystem(SDL_INIT_AUDIO);if(video){SDL_WaitProcess(video,true,nullptr);SDL_DestroyProcess(video);}if(audio){SDL_WaitProcess(audio,true,nullptr);SDL_DestroyProcess(audio);}SDL_DestroyTexture(texture);SDL_DestroyTexture(subtitle);SDL_DestroyTexture(controls);ZPrefs_Save();SDL_FlushEvents(SDL_EVENT_KEY_DOWN,SDL_EVENT_KEY_UP);SDL_FlushEvents(SDL_EVENT_MOUSE_MOTION,SDL_EVENT_MOUSE_WHEEL);return result;
 }

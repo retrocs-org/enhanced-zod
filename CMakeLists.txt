@@ -75,7 +75,7 @@ target_link_libraries(zod PRIVATE zod_engine)
 
 # Functional tests (pathfinding etc.) - links only the pathfinding sources +
 # SDL, with stubbed debug-log symbols. Run with ctest or ./build/zod_tests.
-add_executable(zod_tests src/zod_tests.cpp src/zpath_finding.cpp src/zpath_finding_astar.cpp)
+add_executable(zod_tests src/zperf.cpp src/zod_tests.cpp src/zpath_finding.cpp src/zpath_finding_astar.cpp)
 target_link_libraries(zod_tests PRIVATE PkgConfig::SDL2 m)
 enable_testing()
 add_test(NAME zod_tests COMMAND zod_tests)

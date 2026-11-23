@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-#define ZSAVE_MAGIC "ZODSAVE4"
+#define ZSAVE_MAGIC "ZODSAVE5"
 
 // Slot 0 is the autosave (written by the game itself at the start of a battle
 // and every few minutes); slots 1..ZSAVE_USER_SLOTS are the player's own.
@@ -43,6 +43,8 @@ std::string ZSave_Path(int slot);
 
 // Read just the header of a slot. False when it holds no (valid) save.
 bool ZSave_ReadInfo(int slot, ZSaveInfo &info);
+bool ZSave_RecoveryInfo(int slot,ZSaveInfo &info);
+bool ZSave_Recover(int slot);
 bool ZSave_Delete(int slot);   //remove a saved battle; true if the file is gone
 
 // ---- tiny binary reader / writer used by the server -------------------------

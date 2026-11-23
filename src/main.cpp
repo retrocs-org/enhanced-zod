@@ -47,6 +47,7 @@ TCHAR *optarg;
 #include "zbot.h"
 #include "zserver.h"
 #include "zasset_import.h"
+#include "zperf.h"
 #include "ztray.h"
 
 // Compile-time install data dir (package builds set e.g.
@@ -206,6 +207,7 @@ int main(int argc, char **argv)
 
 	//always-on diagnostic log (zod_diag.log) for bug reports
 	ZDiag_Init(ZOD_VERSION);
+    ZPerf_Enable(SDL_getenv("ZOD_PERF")&&string(SDL_getenv("ZOD_PERF"))=="1");
 
 	//player preferences (mouse mode, smoothing) + env overrides
 	ZPrefs_Load();

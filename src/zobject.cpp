@@ -3356,6 +3356,7 @@ void ZObject::ProcessMoveWP(vector<waypoint>::iterator &wp, double time_dif, boo
 						ZDiag("move dropped: %s ordered to t(%d,%d) but can't path there (unreachable - e.g. across water with no crossing in range)",
 							ZPathLog_UnitDesc(this).c_str(), cur_wp_info.x / 16, cur_wp_info.y / 16);
 
+					if(wp->player_given)sflags.order_unreachable=true;
 					StopMove();
 					KillWP(wp);
 					return;
@@ -5864,6 +5865,7 @@ void ZObject::PostPathFindingResult(ZPath_Finding_Response* response)
 		//printf("got a good response - thread_id:%d\n", response->thread_id);
 		cur_wp_info.got_pf_response = true;
 		cur_wp_info.pf_point_list = response->pf_point_list;
+        if(response->path_cost<0&&response->pf_point_list.empty()&&!waypoint_list.empty()&&waypoint_list.front().player_given)sflags.order_unreachable=true;
 		cur_wp_info.path_finding_id = 0;
 		sflags.updated_route = true;
 
@@ -5910,6 +5912,11 @@ void ZObject::PostPathFindingResult(ZPath_Finding_Response* response)
 					ZPathLog_WPModeName(w.mode), w.x / 16, w.y / 16);
 		}
 
+        if(response->path_cost<0&&response->pf_point_list.empty()&&!waypoint_list.empty()&&waypoint_list.front().player_given){
+            // A failed asynchronous route is a rejected order, not a permanent
+            // move with zero velocity. Return the unit to idle selection.
+            StopMove();auto rejected=waypoint_list.begin();KillWP(rejected);sflags.updated_route=true;return;
+        }
 		if(cur_wp_info.pf_point_list.size())
 		{
 			//cur_wp_info.x = cur_wp_info.pf_point_list.begin()->x;

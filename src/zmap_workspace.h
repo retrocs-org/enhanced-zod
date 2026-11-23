@@ -17,13 +17,17 @@ public:
     void SetFiles(std::vector<std::pair<std::string,std::string>> entries) { files=std::move(entries); }
     void Event(const SDL_Event &event);
     std::string PlayPath() const {return playPath;}
-    void ResumeAfterTest(){if(!playPath.empty())SDL_RemovePath(playPath.c_str());playPath.clear();closed=false;down=painting=clicked=false;message="Returned from playtest. Unsaved edits and history preserved.";}
+    const ZCampaign &TestCampaign() const{return testCampaign;}
+    int TestMission() const{return campaignMission;}
+    bool StageCampaignTest();
+    void FinishCampaignTest();
+    void ResumeAfterTest(){FinishCampaignTest();if(!playPath.empty())SDL_RemovePath(playPath.c_str());playPath.clear();closed=false;down=painting=clicked=false;message="Returned from playtest. Unsaved edits and history preserved.";}
     void Browse() {browser=true;}
     void Welcome() {dirty=false;SDL_PathInfo info;recoveryPrompt=SDL_GetPathInfo((ZAsset_Profile()+"editor-recovery.map").c_str(),&info);message="File > New / Open / Recover autosave. Ctrl+C/V copies selected objects; Delete removes.";}
     bool Render(); // true when the workspace closes
 private:
     friend struct ZFrontEndRegression;
-    struct Snapshot { std::vector<map_tile> tiles;std::vector<map_object> objects;std::vector<map_zone> zones; };
+    struct Snapshot {std::string action; std::vector<map_tile> tiles;std::vector<map_object> objects;std::vector<map_zone> zones; };
     SDL_Renderer *renderer;ZMap map;
     SDL_Texture *palette=nullptr,*terrainTexture=nullptr;
     std::map<std::string,SDL_Texture*> labels,sprites;
@@ -33,6 +37,8 @@ private:
     std::set<int> selectedObjects;std::vector<map_object> copiedObjects;std::vector<map_tile> copiedTiles;int copiedWidth=0,copiedHeight=0,areaX=-1,areaY=-1,areaW=0,areaH=0,anchorX=-1,anchorY=-1,terrainMode=0;
     void CopySelection();void PasteSelection(int x,int y);void ApplyTerrain(int x,int y);void ChangeProperties(int kind,int delta);
     int selectedObject=-1;map_object clipboard{};bool hasClipboard=false,validationPanel=false,importPanel=false;
+    int focusButton=-1,focusCount=0,focusIndex=0;bool focusActivate=false;
+    int objectScroll=0,snap=1;std::string lastObjectSearch,placementIcon;
     std::string search,importArchive;ZCampaign importSummary;std::vector<ZContentIssue> issues;int issueScroll=0;Uint64 autosaveAt=0;
     void Validate();void Autosave();void Recover();
     int tool=0,tile=0,page=0,team=1,objectKind=0,brush=1,selectedFile=0,scroll=0;
@@ -42,7 +48,7 @@ private:
     void ClearRecovery();
     int fileForm=0,modalLayer=0,editField=-1,newTerrain=0,newSize=1,campaignMission=0,missionScroll=0;
     std::string formName="Untitled",campaignTitle="My campaign";
-    ZCampaign authorCampaign;
+    ZCampaign authorCampaign,testCampaign;
     bool timelinePanel=false,metadataPanel=false;int timelineIndex=-1,timelineScroll=0;ZMissionObjective objectiveDraft;std::string objectiveTarget="0",objectiveSeconds="30";
     void RenderTimeline();
     void RenderFileTools();void RenderCampaignStudio();void Field(std::string &value,int id,float x,float y,float w,int height=38);

@@ -25,6 +25,8 @@ int zod_text_percent=100,zod_cursor_percent=100;
 bool zod_team_markers=false,zod_reduced_motion=false;
 int zod_picture_mode = PICTURE_SMOOTH;
 int zod_stick_speed = STICK_NORMAL;
+int zod_stick_deadzone=22,zod_edge_scroll_percent=100,zod_subtitle_percent=100;
+bool zod_subtitle_background=true;
 
 static const struct { const char *pref; const char *name; int def; } g_key_table[MAX_ZKEYS] =
 {
@@ -38,8 +40,10 @@ static const struct { const char *pref; const char *name; int def; } g_key_table
 	{ "key_smoothing",    "Smoothing",      'y' },
     { "key_idle_unit",    "Next idle unit", 'i' },
     { "key_idle_factory", "Next idle factory", 'o' },
+    { "key_editor_undo", "Editor undo", 'u' },
+    { "key_editor_redo", "Editor redo", 'r' },
 };
-int zod_keys[MAX_ZKEYS] = { 'w', 's', 'a', 'd', 'z', 'p', 'h', 'y', 'i', 'o' };
+int zod_keys[MAX_ZKEYS] = { 'w', 's', 'a', 'd', 'z', 'p', 'h', 'y', 'i', 'o', 'u', 'r' };
 
 const char *ZPrefs_KeyActionName(int a) { return (a >= 0 && a < MAX_ZKEYS) ? g_key_table[a].name : ""; }
 int ZPrefs_KeyDefault(int a) { return (a >= 0 && a < MAX_ZKEYS) ? g_key_table[a].def : 0; }
@@ -113,7 +117,11 @@ void ZPrefs_Load()
 			const char *key = line;
 			bool value = (eq[1] == '1');
 
-			if(!strcmp(key,"text_percent"))zod_text_percent=std::max(100,std::min(120,atoi(eq+1)));
+			if(!strcmp(key,"stick_deadzone"))zod_stick_deadzone=std::max(5,std::min(40,atoi(eq+1)));
+            else if(!strcmp(key,"edge_scroll_percent"))zod_edge_scroll_percent=std::max(0,std::min(200,atoi(eq+1)));
+            else if(!strcmp(key,"subtitle_percent"))zod_subtitle_percent=std::max(75,std::min(200,atoi(eq+1)));
+            else if(!strcmp(key,"subtitle_background"))zod_subtitle_background=atoi(eq+1)!=0;
+            else if(!strcmp(key,"text_percent"))zod_text_percent=std::max(100,std::min(120,atoi(eq+1)));
             else if(!strcmp(key,"cursor_percent"))zod_cursor_percent=std::max(100,std::min(200,atoi(eq+1)));
             else if(!strcmp(key,"team_markers"))zod_team_markers=value;
             else if(!strcmp(key,"reduced_motion"))zod_reduced_motion=value;
@@ -211,6 +219,7 @@ void ZPrefs_Save()
 
 	if(!fp) return;
 
+	fprintf(fp,"stick_deadzone=%d\nedge_scroll_percent=%d\nsubtitle_percent=%d\nsubtitle_background=%d\n",zod_stick_deadzone,zod_edge_scroll_percent,zod_subtitle_percent,zod_subtitle_background);
 	fprintf(fp,"text_percent=%d\ncursor_percent=%d\nteam_markers=%d\nreduced_motion=%d\n",zod_text_percent,zod_cursor_percent,zod_team_markers,zod_reduced_motion);
 	fprintf(fp, "classic_mouse=%d\n", zod_classic_mouse ? 1 : 0);
 	fprintf(fp, "render_smoothing=%d\n", zod_render_smoothing ? 1 : 0);
@@ -239,9 +248,9 @@ void ZPrefs_ResetCategory(int category){
  case 0:zod_fullscreen=false;zod_gamma=0;zod_picture_mode=PICTURE_SMOOTH;zod_render_smoothing=true;zod_menu_scale=2;break;
  case 1:zod_effects_volume=zod_music_volume=100;zod_volume_setting=4;zod_music=true;zod_music_style=MUSIC_STYLE_MIDI;break;
  case 2:zod_game_speed=1;zod_scenes=true;zod_bot_difficulty=BOT_DIFF_NORMAL;zod_max_units_per_team=DEFAULT_MAX_UNITS_PER_TEAM;break;
- case 3:zod_classic_mouse=true;zod_stick_speed=STICK_NORMAL;ZPrefs_ResetKeys();break;
+ case 3:zod_stick_deadzone=22;zod_edge_scroll_percent=100;zod_classic_mouse=true;zod_stick_speed=STICK_NORMAL;ZPrefs_ResetKeys();break;
  case 5:zod_text_percent=zod_cursor_percent=100;zod_team_markers=zod_reduced_motion=false;break;
- case 4:zod_scenes=true;zod_video_volume=100;zod_video_subtitles=true;break;
+ case 4:zod_subtitle_percent=100;zod_subtitle_background=true;zod_scenes=true;zod_video_volume=100;zod_video_subtitles=true;break;
  }
  ZPrefs_Save();
 }

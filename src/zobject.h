@@ -229,6 +229,7 @@ public:
 	bool updated_location;
 	bool updated_velocity;
 	bool updated_waypoints;
+	bool order_unreachable;
 	bool updated_route; //the A* route changed; relay it for path-line rendering
 	bool updated_attack_object;
 	bool updated_attack_object_health;
@@ -267,7 +268,7 @@ public:
 		updated_location = false;
 		updated_velocity = false;
 		updated_waypoints = false;
-		updated_route = false;
+		updated_route = false;order_unreachable=false;
 		updated_attack_object = false;
 		updated_attack_object_health = false;
 		updated_attack_object_driver_health = false;

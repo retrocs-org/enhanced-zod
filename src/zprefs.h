@@ -58,13 +58,15 @@ extern int zod_picture_mode;
 //controller: how fast the left stick moves the cursor
 enum stick_speed { STICK_SLOW, STICK_NORMAL, STICK_FAST, MAX_STICK_SPEEDS };
 extern int zod_stick_speed;
+extern int zod_stick_deadzone,zod_edge_scroll_percent,zod_subtitle_percent;
+extern bool zod_subtitle_background;
 
 //rebindable keys (printable ASCII; stored as the lowercase character)
 enum zod_key_action
 {
 	ZKEY_PAN_UP, ZKEY_PAN_DOWN, ZKEY_PAN_LEFT, ZKEY_PAN_RIGHT,
 	ZKEY_PAUSE, ZKEY_PLAYER_LIST, ZKEY_CHAT_HISTORY, ZKEY_SMOOTHING,
-	ZKEY_IDLE_UNIT,ZKEY_IDLE_FACTORY,
+	ZKEY_IDLE_UNIT,ZKEY_IDLE_FACTORY,ZKEY_EDITOR_UNDO,ZKEY_EDITOR_REDO,
 	MAX_ZKEYS
 };
 extern int zod_keys[MAX_ZKEYS];
