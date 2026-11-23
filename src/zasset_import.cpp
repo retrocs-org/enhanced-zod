@@ -30,7 +30,7 @@ std::string ZAsset_Profile() {
 std::string ZAsset_OverlayPath(const std::string &relative) {
     if(relative.find("..")!=std::string::npos)return "";
     if(relative.compare(0,7,"assets/")==0||relative.compare(0,5,"maps/")==0){std::string local=ZAsset_Profile()+"content/"+relative;if(file_exists(local))return local;}
-    static std::string root=[]() {
+    std::string root=[]() {
         const std::string profile=ZAsset_Profile(); if(profile.empty()) return std::string();
         std::ifstream marker(profile+"import-active.txt"); std::string id; std::getline(marker,id);
         if(id.empty() || id.size()>96 || !std::all_of(id.begin(),id.end(),[](unsigned char c){return std::isalnum(c)||c=='-'||c=='_';})) return std::string();
@@ -41,10 +41,44 @@ std::string ZAsset_OverlayPath(const std::string &relative) {
     const std::string path=root+relative.substr(7);
     return file_exists(path)?path:"";
 }
-bool ZAsset_RuntimeReady() {
-    for(const char *name : {"maps/p02_bb_orig01.map", "assets/planets/desert.bmp", "assets/buildings/level_1.bmp", "assets/other/main_menu_gui/list/list_button_down_normal.png", "assets/other/map_items/map_object0.png", "assets/other/production_gui/base_image.png", "assets/other/menus/create_button.png", "assets/units/robots/stand_red_r000.png", "assets/sounds/AD1.MID", "assets/teams/blue_palette.bmp", "assets/summary_won.png", "assets/frontend/disc/main_menu.png"})
-        if(!file_exists(ZSDL_DataPath(name))) return false;
-    return true;
+std::vector<ZAssetCheck> ZAsset_CheckContent() {
+    const std::vector<std::pair<std::string,std::vector<std::string>>> groups={
+        {"Original levels",{"maps/p02_bb_orig01.map"}},
+        {"Terrain",{"assets/planets/desert.bmp","assets/planets/desert.tileinfo"}},
+        {"Buildings and units",{"assets/buildings/level_1.bmp","assets/units/robots/stand_red_r000.png","assets/teams/blue_palette.bmp"}},
+        {"Interface",{"assets/other/main_menu_gui/list/list_button_down_normal.png","assets/other/map_items/map_object0.png","assets/other/production_gui/base_image.png","assets/other/menus/create_button.png","assets/summary_won.png","assets/frontend/disc/main_menu.png"}},
+        {"Music",{"assets/sounds/AD1.MID"}},
+        {"Sound effects",{"assets/sounds/MACHGUN2.wav","assets/sounds/RICOCH1.wav"}}
+    };
+    std::vector<ZAssetCheck> result;
+    for(const auto &group:groups){ZAssetCheck check;check.category=group.first;check.total=group.second.size();for(const auto &file:group.second){SDL_PathInfo info;if(SDL_GetPathInfo(ZSDL_DataPath(file).c_str(),&info)&&info.type==SDL_PATHTYPE_FILE&&info.size>0)++check.present;}result.push_back(check);}
+    return result;
+}
+bool ZAsset_RuntimeReady() {for(const auto &check:ZAsset_CheckContent())if(check.present!=check.total)return false;return true;}
+namespace {std::mutex diagnosticMutex;std::vector<std::pair<Uint64,ZDiagnosticEvent>> diagnosticEvents;}
+void ZAsset_RecordDiagnostic(ZDiagnosticEvent event){std::lock_guard<std::mutex> lock(diagnosticMutex);if(!diagnosticEvents.empty()&&diagnosticEvents.back().second==event)return;if(diagnosticEvents.size()==16)diagnosticEvents.erase(diagnosticEvents.begin());diagnosticEvents.push_back({SDL_GetTicks(),event});}
+bool ZAsset_ExportDiagnostics(std::string &path,const std::string &phase) {
+    const std::string folder=ZAsset_Profile()+"diagnostics";
+    if(!SDL_CreateDirectory(folder.c_str()))return false;
+    path=folder+"/report-"+std::to_string(SDL_GetTicksNS())+".txt";
+    std::ofstream out(path+".tmp");
+#ifndef ZOD_VERSION
+#define ZOD_VERSION "development"
+#endif
+    out<<"zod-ee diagnostics v1\nEngine: "<<ZOD_VERSION<<"\nSDL: "<<SDL_GetVersion()<<"\nPlatform: "<<SDL_GetPlatform()<<"\n";
+    auto *renderer=ZVideo_GetRenderer();const char *name=renderer?SDL_GetRendererName(renderer):nullptr;
+    out<<"Renderer: "<<(name?name:"not initialized")<<"\n";
+    int w=0,h=0;if(renderer)SDL_GetRenderOutputSize(renderer,&w,&h);out<<"Output pixels: "<<w<<" x "<<h<<"\n";
+    if(auto *window=ZVideo_GetWindow()){SDL_GetWindowSize(window,&w,&h);out<<"Window points: "<<w<<" x "<<h<<"\nDisplay scale: "<<SDL_GetWindowDisplayScale(window)<<"\nFullscreen: "<<((SDL_GetWindowFlags(window)&SDL_WINDOW_FULLSCREEN)?"yes":"no")<<"\n";}
+    // Only fixed status codes enter the report. Never copy raw logs, paths,
+    // process arguments, SDL errors, preferences, account data or environment.
+    const std::vector<std::string> phases={"idle","selecting","running","ready","error","cancelled","complete"};
+    out<<"Import status: "<<(std::find(phases.begin(),phases.end(),phase)!=phases.end()?phase:"unknown")<<"\n";
+    out<<"Recent import error: "<<(phase=="error"?"import_failed":"none reported")<<"\n";
+    for(const auto &check:ZAsset_CheckContent())out<<check.category<<": "<<check.present<<"/"<<check.total<<" required samples present\n";
+    {std::lock_guard<std::mutex> lock(diagnosticMutex);for(const auto &entry:diagnosticEvents){const char *code=entry.second==ZDiagnosticEvent::ImportFailed?"import_failed":entry.second==ZDiagnosticEvent::DeploymentFailed?"deployment_failed":"video_failed";out<<"Event at "<<entry.first<<" ms: "<<code<<"\n";}}
+    out<<"Report excludes personal paths, credentials and raw logs.\n";out.close();
+    if(!out||!SDL_RenamePath((path+".tmp").c_str(),path.c_str())){SDL_RemovePath((path+".tmp").c_str());return false;}return true;
 }
 ZAssetImport::ZAssetImport():phase("idle"),message("Select your original Z DOS disc: ISO or BIN/CUE.") {}
 ZAssetImport::~ZAssetImport() {
@@ -112,7 +146,7 @@ void ZAssetImport::Poll() {
             }
         }
     }
-    if(!process)return;
+    if(!process){if(phase=="error")ZAsset_RecordDiagnostic(ZDiagnosticEvent::ImportFailed);return;}
     auto read_state=[&]() {
     std::ifstream state(state_file);std::string next,amount,detail;
     if(std::getline(state,next)&&std::getline(state,amount)&&std::getline(state,detail)) {
@@ -123,7 +157,7 @@ void ZAssetImport::Poll() {
     };read_state();
     int exit_code=0;
     if(SDL_WaitProcess(process,false,&exit_code)) {
-        read_state();SDL_DestroyProcess(process);process=nullptr;
+        read_state();SDL_DestroyProcess(process);process=nullptr;if(exit_code!=0||phase=="error")ZAsset_RecordDiagnostic(ZDiagnosticEvent::ImportFailed);
         if(cancel_requested){phase="cancelled";message="Import cancelled. Your active media has not changed.";return;}
         if(exit_code==0 && !inspecting && phase=="complete") {
             const std::string marker=ZAsset_Profile()+"import-active.txt", temp=job+"/active.tmp";

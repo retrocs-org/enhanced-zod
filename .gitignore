@@ -107,3 +107,7 @@ assets/videos/*
 /zod-ee.exe
 /web-service/php/public/assets/battlefield.png
 /.my.cnf
+
+# Python test/tool bytecode
+__pycache__/
+*.pyc

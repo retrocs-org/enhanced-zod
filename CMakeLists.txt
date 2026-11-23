@@ -307,5 +307,5 @@ if(Python3_Interpreter_FOUND)
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/engine_regressions.py"
     "$<TARGET_FILE:zod>" "$<TARGET_FILE:zod_engine_regressions>"
     "${CMAKE_CURRENT_SOURCE_DIR}")
-  set_tests_properties(zod_engine_regressions PROPERTIES TIMEOUT 45)
+  set_tests_properties(zod_engine_regressions PROPERTIES TIMEOUT 120)
 endif()

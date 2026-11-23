@@ -4,7 +4,7 @@
 #include "zcampaign.h"
 struct ZContentIssue {bool error;std::string text;int x=-1,y=-1;};
 std::vector<ZContentIssue> ZContent_ValidateMap(ZMap &map);
-std::vector<ZContentIssue> ZContent_ValidateCampaign(const ZCampaign &campaign);
+std::vector<ZContentIssue> ZContent_ValidateCampaign(const ZCampaign &campaign,bool distribution=false);
 bool ZContent_HasErrors(const std::vector<ZContentIssue> &issues);
 bool ZCampaign_Export(const ZCampaign &campaign,std::string &output,std::string &error);
 bool ZCampaign_InspectPack(const std::string &archive,ZCampaign &summary,std::string &error);

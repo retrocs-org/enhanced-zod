@@ -4,9 +4,15 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <vector>
 
 // The profile is shared by source builds and installed applications.
 std::string ZAsset_Profile();
+enum class ZDiagnosticEvent { ImportFailed, DeploymentFailed, VideoFailed };
+void ZAsset_RecordDiagnostic(ZDiagnosticEvent event);
+struct ZAssetCheck { std::string category; int present=0,total=0; };
+std::vector<ZAssetCheck> ZAsset_CheckContent();
+bool ZAsset_ExportDiagnostics(std::string &path,const std::string &phase);
 bool ZAsset_RuntimeReady();
 std::string ZAsset_TerrainDirectory(int terrain);
 bool ZAsset_ImportLevels(const std::string &folder,std::string &message);

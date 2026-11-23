@@ -134,7 +134,7 @@ class EngineRegressions(unittest.TestCase):
             archive=pathlib.Path(directory)/'campaign.zip'
             with zipfile.ZipFile(archive,'w',compression=zipfile.ZIP_DEFLATED) as pack:
                 pack.writestr('example/campaign.ini','format=1\nid=example\ntitle=Example\n[mission]\nmap=one.map\n')
-                pack.write(pathlib.Path(ROOT)/'maps/p02_bb_orig01.map','example/one.map')
+                pack.write(pathlib.Path(WORKSPACE)/'maps/p02_bb_orig01.map','example/one.map')
             result=subprocess.run([DRIVER,'inspect-pack',str(archive)],cwd=WORKSPACE,env=self.environment(directory),text=True,capture_output=True)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
             self.assertIn('pack-ok',result.stdout)
@@ -162,6 +162,40 @@ class EngineRegressions(unittest.TestCase):
             unavailable.bind(('127.0.0.1', 0))
             result=subprocess.check_output([DRIVER,'reconnect-failure',str(unavailable.getsockname()[1])],cwd=WORKSPACE,env=self.environment(directory),text=True,timeout=20)
             self.assertIn('reconnect-failure-ok',result)
+
+    def test_display_matrix_resize_text_scale_fullscreen_and_input(self):
+        with tempfile.TemporaryDirectory(prefix='zodee-display-') as directory:
+            result=subprocess.check_output([DRIVER,'display-matrix',directory],cwd=WORKSPACE,env=self.environment(directory),text=True,timeout=60)
+            self.assertIn('display-matrix-ok',result)
+            self.assertEqual(len(list(pathlib.Path(directory).glob('display-*.png'))),32)
+
+    def test_diagnostics_excludes_raw_errors_secrets_and_personal_paths(self):
+        with tempfile.TemporaryDirectory(prefix='zodee-private-user-') as directory:
+            env=self.environment(directory);env['DB_PASSWORD']='sensitive-test-value'
+            report=subprocess.check_output([DRIVER,'content-health','/private/user/secrets?token=secret'],cwd=WORKSPACE,env=env,text=True).strip()
+            text=pathlib.Path(report).read_text()
+            self.assertIn('Import status: unknown',text)
+            self.assertIn('Original levels:',text)
+            self.assertIn('deployment_failed',text)
+            for private in [directory,'sensitive-test-value','token=secret','/private/user']:
+                self.assertNotIn(private,text)
+
+    def test_fresh_profile_imported_authored_level_can_start_save_and_reload(self):
+        # No source-tree game maps, artwork, or user's profile are available.
+        with tempfile.TemporaryDirectory(prefix='zodee-fresh-') as directory:
+            root=pathlib.Path(directory);install=root/'installation';install.mkdir();profile=root/'profile'
+            env=self.environment(directory);env['ZOD_PROFILE_DIR']=str(profile)
+            self.assertEqual(subprocess.check_output([DRIVER,'asset-ready'],cwd=install,env=env,text=True).strip(),'missing')
+            subprocess.run([DRIVER,'asset-bootstrap'],cwd=install,env=env,check=True,capture_output=True,timeout=15)
+            source=root/'owned-levels';source.mkdir();import source_fixtures;source_fixtures.write_map(source/'p02_bb_orig01.map')
+            subprocess.run([GAME,'--import-levels',str(source)],cwd=install,env=env,check=True,capture_output=True,timeout=15)
+            imported=profile/'content/maps/p02_bb_orig01.map';self.assertEqual(imported.read_bytes(),(source/'p02_bb_orig01.map').read_bytes())
+            result=subprocess.run([DRIVER,'save','maps/p02_bb_orig01.map'],cwd=install,env=env,text=True,capture_output=True,timeout=20)
+            self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+            self.assertFalse((install/'maps').exists())
+            # Repeat import preserves the previously imported level.
+            before=imported.read_bytes();subprocess.run([GAME,'--import-levels',str(source)],cwd=install,env=env,check=True,capture_output=True,timeout=15)
+            self.assertEqual(imported.read_bytes(),before)
 
     def test_recovery_accessibility_save_previews_and_settings_back(self):
         with tempfile.TemporaryDirectory(prefix='zod-ee-polish-') as directory:
@@ -328,7 +362,7 @@ class EngineRegressions(unittest.TestCase):
             bar=assets/'other/main_menu_gui/list/list_button_down_normal.png';bar.parent.mkdir(parents=True,exist_ok=True);bar.write_bytes(b'fixture')
             panel=assets/'other/map_items/map_object0.png';panel.parent.mkdir(parents=True,exist_ok=True);panel.write_bytes(b'fixture')
             self.assertEqual(subprocess.check_output([DRIVER,'asset-ready'],cwd=WORKSPACE,env=env,text=True),'missing')
-            for name in ('teams/blue_palette.bmp','summary_won.png','frontend/disc/main_menu.png'):
+            for name in ('teams/blue_palette.bmp','summary_won.png','frontend/disc/main_menu.png','sounds/MACHGUN2.wav','sounds/RICOCH1.wav'):
                 path=assets/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(b'fixture')
             self.assertEqual(subprocess.check_output([DRIVER,'asset-ready'],cwd=WORKSPACE,env=env,text=True),'ready')
 

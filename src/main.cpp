@@ -142,6 +142,8 @@ static void chdir_to_data_dir()
 #endif
 int main(int argc, char **argv)
 {
+    if(argc==2&&string(argv[1])=="--check-content"){SDL_Init(0);chdir_to_data_dir();bool ready=ZAsset_RuntimeReady();for(const auto &check:ZAsset_CheckContent())printf("%s: %d/%d\n",check.category.c_str(),check.present,check.total);SDL_Quit();return ready?0:2;}
+    if(argc==2&&string(argv[1])=="--diagnostics"){SDL_Init(0);chdir_to_data_dir();string path;bool ok=ZAsset_ExportDiagnostics(path,"idle");if(ok)printf("%s\n",path.c_str());SDL_Quit();return ok?0:1;}
     if(argc==3&&string(argv[1])=="--import-levels"){SDL_Init(0);string message;bool ok=ZAsset_ImportLevels(argv[2],message);printf("%s\n",message.c_str());SDL_Quit();return ok?0:1;}
     if(argc==2&&(string(argv[1])=="--version"||string(argv[1])=="-v")){printf("zod-ee %s — Zod Engine Enhanced\nBased on Zod Engine by Michael Bok / Nighsoft.\n",ZOD_VERSION);return 0;}
 #ifdef __ANDROID__

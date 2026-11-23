@@ -28,7 +28,7 @@ private:
     GMMWButton category_button[5],picture_button,stick_button,fullscreen_button,gamma_button;
     GMMWButton text_size_button,cursor_size_button,team_marker_button,motion_button;
     int category=0,focus=0,preview_y=0;
-    GMMWButton defaults_button;GMMWLabel help_label;
+    GMMWButton diagnostics_button;GMMWButton defaults_button;GMMWLabel help_label;
     std::vector<ZGMMWidget*> CategoryWidgets();
     void Reflow();
     GMMWTextEntry name_entry;	//#246: editable player name (persisted)

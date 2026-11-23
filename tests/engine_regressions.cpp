@@ -109,6 +109,29 @@ struct ZFrontEndRegression {
         }
         SDL_Quit();std::cout<<"movie-ok";
     }
+    static void display_matrix(const string &root){
+        REQUIRE(SDL_Init(SDL_INIT_VIDEO));REQUIRE(ZVideo_SetMode(1280,800,false));ZFrontEnd frontend;frontend.Show();
+        int index=0;
+        for(auto size:{std::pair<int,int>{878,540},{1280,800},{1920,1200},{800,1000}}){
+            REQUIRE(SDL_SetWindowSize(ZVideo_GetWindow(),size.first,size.second));SDL_SyncWindow(ZVideo_GetWindow());
+            for(int text:{100,120})for(int page:{0,1,2,3}){
+                zod_text_percent=text;
+                frontend.screen=page==0?ZFrontEnd::SCR_MAIN:page==1?ZFrontEnd::SCR_SETTINGS:page==2?ZFrontEnd::SCR_IMPORT:ZFrontEnd::SCR_CAMPAIGNS;
+                frontend.settings_category=page==1?4:0;frontend.Render();
+                REQUIRE(SDL_GetRenderTarget(ZVideo_GetRenderer())==nullptr);
+                int w,h;SDL_RendererLogicalPresentation mode;REQUIRE(SDL_GetRenderLogicalPresentation(ZVideo_GetRenderer(),&w,&h,&mode));REQUIRE(w==1280&&h==800&&mode==SDL_LOGICAL_PRESENTATION_LETTERBOX);
+                REQUIRE(!SDL_RenderViewportSet(ZVideo_GetRenderer())&&!SDL_RenderClipEnabled(ZVideo_GetRenderer()));
+                SDL_Surface *image=SDL_RenderReadPixels(ZVideo_GetRenderer(),nullptr);REQUIRE(image&&image->w>0&&image->h>0);
+                // Check the menu's centre survives physical-window presentation.
+                Uint8 red,green,blue,alpha;REQUIRE(SDL_ReadSurfacePixel(image,image->w/2,image->h/2,&red,&green,&blue,&alpha));REQUIRE(red+green+blue>15);
+                REQUIRE(IMG_SavePNG(image,(root+"/display-"+to_string(index++)+".png").c_str()));SDL_DestroySurface(image);
+                SDL_Event event{};event.type=SDL_EVENT_MOUSE_MOTION;event.motion.windowID=SDL_GetWindowID(ZVideo_GetWindow());int pointsW,pointsH;SDL_GetWindowSize(ZVideo_GetWindow(),&pointsW,&pointsH);event.motion.x=pointsW*.5f;event.motion.y=pointsH*.5f;ZVideo_ConvertEventCoords(&event);REQUIRE(std::abs(event.motion.x-640)<2&&std::abs(event.motion.y-400)<2);
+            }
+        }
+        ZVideo_SetFullscreen(true);SDL_SyncWindow(ZVideo_GetWindow());frontend.Render();REQUIRE(ZVideo_GetFullscreen());
+        ZVideo_SetFullscreen(false);SDL_SyncWindow(ZVideo_GetWindow());frontend.Render();REQUIRE(!ZVideo_GetFullscreen());
+        frontend.FreeGraphics();SDL_Quit();std::cout<<"display-matrix-ok";
+    }
     static void polish_preview(const string &mode,const string &image){
         REQUIRE(SDL_Init(SDL_INIT_VIDEO));REQUIRE(ZVideo_SetMode(1280,800,false));ZFrontEnd frontend;frontend.Show();REQUIRE(frontend.EnsureGraphics());
         if(mode=="campaigns-preview"||mode=="records-preview"||mode=="gallery-preview"){frontend.ScanCampaigns();frontend.screen=ZFrontEnd::SCR_CAMPAIGNS;if(mode=="records-preview"){frontend.campaign_previous_choice=frontend.campaign_choice;frontend.campaign_mission_choice=0;ZCampaign_RecordWin("original",frontend.original_levels[0].base,91,12,0,2);frontend.campaign_records=true;}if(mode=="gallery-preview")frontend.campaign_gallery=true;}
@@ -120,7 +143,13 @@ struct ZFrontEndRegression {
         REQUIRE(SDL_Init(SDL_INIT_VIDEO));ZCampaign campaign;string error;REQUIRE(ZCampaign_Create("Pack test",campaign,error));
         REQUIRE(SDL_CopyFile("maps/p02_bb_orig01.map",(campaign.root+"/one.map").c_str()));
         ZCampaignMission mission;mission.map="one.map";mission.title="Mission one";mission.objectives={{"message","Begin now",0,0},{"survive","Hold position",0,5}};campaign.missions={mission};campaign.description="A campaign description";campaign.difficulty="Hard";
-        REQUIRE(ZCampaign_Write(campaign,error));auto issues=ZContent_ValidateCampaign(campaign);REQUIRE(!ZContent_HasErrors(issues));
+        REQUIRE(ZCampaign_Write(campaign,error));
+        campaign.missions[0].video="missing.mp4";REQUIRE(ZCampaign_Write(campaign,error));
+        REQUIRE(!ZContent_HasErrors(ZContent_ValidateCampaign(campaign)));
+        REQUIRE(ZContent_HasErrors(ZContent_ValidateCampaign(campaign,true)));
+        string rejected;REQUIRE(!ZCampaign_Export(campaign,rejected,error));REQUIRE(rejected.empty());
+        campaign.missions[0].video.clear();campaign.missions[0].objectives.push_back({"capture","Invalid territory",999,0});REQUIRE(ZCampaign_Write(campaign,error));REQUIRE(ZContent_HasErrors(ZContent_ValidateCampaign(campaign,true)));
+        campaign.missions[0].objectives.pop_back();REQUIRE(ZCampaign_Write(campaign,error));auto issues=ZContent_ValidateCampaign(campaign);REQUIRE(!ZContent_HasErrors(issues));
         string archive;REQUIRE(ZCampaign_Export(campaign,archive,error));ZCampaign summary;REQUIRE(ZCampaign_InspectPack(archive,summary,error));REQUIRE(summary.description==campaign.description&&summary.missions[0].objectives.size()==2);
         REQUIRE(!ZCampaign_ImportPack(archive,error));REQUIRE(error.find("already installed")!=string::npos);
         REQUIRE(SDL_RenamePath(campaign.root.c_str(),(root+"/author-backup").c_str()));REQUIRE(ZCampaign_ImportPack(archive,error));auto installed=ZCampaign_List();REQUIRE(installed.size()==1);string marker;REQUIRE(!ZCampaign_SafeAsset(installed[0].root,".zod-authoring",marker));
@@ -1111,6 +1140,8 @@ int main(int argc, char **argv) {
             std::cout<<"palette-compatible";
         }
         else if(std::string(argv[1]) == "import-levels"){REQUIRE(argc==3);string message;REQUIRE(ZAsset_ImportLevels(argv[2],message));REQUIRE(!ZAsset_OverlayPath("maps/p02_bb_orig01.map").empty());std::cout<<"levels-imported";}
+        else if(std::string(argv[1]) == "display-matrix"){REQUIRE(argc==3);ZFrontEndRegression::display_matrix(argv[2]);}
+        else if(std::string(argv[1]) == "content-health"){REQUIRE(argc==3);REQUIRE(SDL_Init(0));ZAsset_RecordDiagnostic(ZDiagnosticEvent::DeploymentFailed);std::string report;REQUIRE(ZAsset_ExportDiagnostics(report,argv[2]));std::cout<<report;SDL_Quit();}
         else if(std::string(argv[1]) == "asset-ready") { std::cout<<(ZAsset_RuntimeReady()?"ready":"missing"); }
         else if(std::string(argv[1]) == "records-preview"||std::string(argv[1]) == "gallery-preview"||std::string(argv[1]) == "campaigns-preview"||std::string(argv[1]) == "settings-preview"||std::string(argv[1]) == "timeline-preview"){REQUIRE(argc==3);ZFrontEndRegression::polish_preview(argv[1],argv[2]);}
         else if(std::string(argv[1]) == "reconnect-failure"){REQUIRE(argc==3);ZPlayerUIRegression::reconnect_failure(std::stoi(argv[2]));}

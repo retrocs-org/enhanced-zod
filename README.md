@@ -97,8 +97,7 @@ Set `WINDOWS_TOOLS_DIR` if the shared tools live elsewhere, or
 `README.md` documents SDK setup and use with other CMake projects.
 
 For a native Windows build, open an MSYS2 MINGW64 shell and install the MinGW
-C++ compiler, CMake, Ninja, pkgconf, Python and SDL3/image/mixer/ttf packages listed
-in `.github/workflows/build.yml`, then run:
+C++ compiler, CMake, Ninja, pkgconf, Python and SDL3/image/mixer/ttf packages shown below, then run:
 
 ```sh
 cmake -S . -B build -G Ninja -DZOD_FETCH_SOUNDFONT=OFF
@@ -111,7 +110,7 @@ ctest --test-dir build --output-on-failure
 Dependencies: a C++ compiler, CMake, pkg-config, and **SDL3** with the image,
 mixer, and ttf extensions. Note that the audio uses SDL3_mixer's new track-based
 `MIX_` API, which needs **SDL3_mixer ≥ 3.2.4**. CMake checks that minimum;
-use matching SDL3 development packages or the build recipe in CI.
+use matching SDL3 development packages.
 
 **macOS (Homebrew):**
 ```sh
@@ -127,8 +126,7 @@ pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja \
 
 **Linux:** install the SDL3, SDL3_image, SDL3_mixer and SDL3_ttf development
 packages supplied by your distribution. If its mixer package is older than the
-required API, build the supported SDL3_mixer version from source. The
-[CI workflow](.github/workflows/build.yml) records the tested dependency setup.
+required API, build the supported SDL3_mixer version from source. Builds and tests currently run locally; runner automation will be added later.
 
 Then:
 ```sh
@@ -599,4 +597,7 @@ The repositories contain code, conversion recipes and authored resources, not
 original game media or converted levels. See [Content policy](docs/Content-Policy.md).
 Import owned disc media and use **Import levels** for converted levels from an
 existing Zod installation. UI fonts are downloaded build dependencies.
-Inherited upstream history must not be pushed; use the clean source-only export.
+Develop in this clean repository (normal checkout directory: `zodee`).
+The old `zod-engine-enhanced` checkout is retained only for local reference;
+its inherited media history must never be pushed. Do not recreate the published
+history with a new export.

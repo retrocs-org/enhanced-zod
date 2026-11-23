@@ -31,14 +31,22 @@ vector<ZContentIssue> ZContent_ValidateMap(ZMap &map){
  }
  return out;
 }
-vector<ZContentIssue> ZContent_ValidateCampaign(const ZCampaign &campaign){
+vector<ZContentIssue> ZContent_ValidateCampaign(const ZCampaign &campaign,bool distribution){
  vector<ZContentIssue> out;ZCampaign parsed;string error;
  if(!ZCampaign_Load(campaign.root+"/campaign.ini",parsed,error)){out.push_back({true,error});return out;}
+ set<string> usedMaps;
  for(size_t i=0;i<parsed.missions.size();++i){auto &m=parsed.missions[i];string path;ZMap map;
+  const string prefix="Mission "+to_string(i+1)+": ";
+  if(!usedMaps.insert(m.map).second)out.push_back({false,prefix+"reuses a previous mission map; check mission order"});
+  if(m.briefing.empty())out.push_back({false,prefix+"no briefing text; add instructions before distributing"});
+  if(m.objectives.empty())out.push_back({false,prefix+"uses the default opposing-forts victory condition"});
+  bool waiting=false;
+  for(const auto &objective:m.objectives){ZMissionObjective checked;if(!ZMission_Parse(ZMission_Encode(objective),checked))out.push_back({true,prefix+"invalid objective"});if(objective.kind=="survive"&&objective.seconds>0)waiting=true;}
+  if(!m.objectives.empty()&&!waiting&&std::all_of(m.objectives.begin(),m.objectives.end(),[](const ZMissionObjective &o){return o.kind=="message";}))out.push_back({false,prefix+"only message objectives; mission will finish after its messages"});
   if(!ZCampaign_SafeAsset(parsed.root,m.map,path)||!map.Read(path.c_str()))out.push_back({true,"Mission "+to_string(i+1)+": invalid map"});
   else {for(const auto &o:m.objectives){if(o.kind=="capture"&&o.target>=(int)map.GetZoneList().size())out.push_back({true,"Mission "+to_string(i+1)+": capture target territory does not exist"});if(o.kind=="defend"&&(o.target>=(int)map.GetObjectList().size()||map.GetObjectList()[o.target].object_type!=BUILDING_OBJECT||map.GetObjectList()[o.target].owner!=RED_TEAM))out.push_back({true,"Mission "+to_string(i+1)+": defend target must be a red building"});}
   for(auto issue:ZContent_ValidateMap(map)){issue.text="Mission "+to_string(i+1)+": "+issue.text;out.push_back(issue);}}
-  for(auto video:{m.video,m.victoryVideo})if(!video.empty()&&video.compare(0,9,"original:")!=0&&!ZCampaign_SafeAsset(parsed.root,video,path))out.push_back({false,"Mission "+to_string(i+1)+": missing video "+video+" (briefing fallback)"});
+  for(auto video:{m.video,m.victoryVideo})if(!video.empty()&&video.compare(0,9,"original:")!=0&&!ZCampaign_SafeAsset(parsed.root,video,path))out.push_back({distribution,"Mission "+to_string(i+1)+": missing video "+video+(distribution?"; remove the reference or add the file before export":" (briefing fallback)")});
  }
  return out;
 }
@@ -81,7 +89,7 @@ bool ZCampaign_Uninstall(const string &id,string &error){
  for(auto &campaign:ZCampaign_List())if(campaign.id==id){string marker;if(ZCampaign_SafeAsset(campaign.root,".zod-authoring",marker)){error="Authoring projects cannot be uninstalled here";return false;}string destination=ZCampaign_Root()+"/.uninstalled-"+id+"-"+to_string(SDL_GetTicksNS());if(!SDL_RenamePath(campaign.root.c_str(),destination.c_str())){error="Could not remove campaign";return false;}return true;}error="Campaign is not installed";return false;
 }
 bool ZCampaign_Export(const ZCampaign &campaign,string &output,string &error){
- try{auto issues=ZContent_ValidateCampaign(campaign);for(auto &i:issues)if(i.error)throw i.text;set<string> names{"campaign.ini"};if(!campaign.cover.empty())names.insert(campaign.cover);for(auto &m:campaign.missions){names.insert(m.map);for(auto v:{m.video,m.victoryVideo}){string p;if(!v.empty()&&v.compare(0,9,"original:")!=0&&ZCampaign_SafeAsset(campaign.root,v,p))names.insert(v);size_t dot=v.find_last_of('.');string subtitle=v.substr(0,dot)+".srt";if(ZCampaign_SafeAsset(campaign.root,subtitle,p))names.insert(subtitle);}}
+ try{auto issues=ZContent_ValidateCampaign(campaign,true);for(auto &i:issues)if(i.error)throw i.text;set<string> names{"campaign.ini"};if(!campaign.cover.empty())names.insert(campaign.cover);for(auto &m:campaign.missions){names.insert(m.map);for(auto v:{m.video,m.victoryVideo}){string p;if(!v.empty()&&v.compare(0,9,"original:")!=0&&ZCampaign_SafeAsset(campaign.root,v,p))names.insert(v);size_t dot=v.find_last_of('.');string subtitle=v.substr(0,dot)+".srt";if(ZCampaign_SafeAsset(campaign.root,subtitle,p))names.insert(subtitle);}}
  vector<unsigned char> bytes,central;unsigned count=0;for(auto &name:names){string path;if(!ZCampaign_SafeAsset(campaign.root,name,path)||!safe(name))throw string("Unsafe export path");auto data=read(path);if(bytes.size()+data.size()>512*1024*1024)throw string("Campaign pack exceeds 512 MB");string full=campaign.id+"/"+name;unsigned crc=crc32(0,data.data(),data.size()),offset=bytes.size();put(bytes,0x04034b50,4);put(bytes,20,2);put(bytes,0x800,2);put(bytes,0,2);put(bytes,0,2);put(bytes,33,2);put(bytes,crc,4);put(bytes,data.size(),4);put(bytes,data.size(),4);put(bytes,full.size(),2);put(bytes,0,2);bytes.insert(bytes.end(),full.begin(),full.end());bytes.insert(bytes.end(),data.begin(),data.end());put(central,0x02014b50,4);put(central,20,2);put(central,20,2);put(central,0x800,2);put(central,0,2);put(central,0,2);put(central,33,2);put(central,crc,4);put(central,data.size(),4);put(central,data.size(),4);put(central,full.size(),2);for(int i=0;i<4;++i)put(central,0,2);put(central,0,4);put(central,offset,4);central.insert(central.end(),full.begin(),full.end());++count;}
  unsigned offset=bytes.size();bytes.insert(bytes.end(),central.begin(),central.end());put(bytes,0x06054b50,4);put(bytes,0,2);put(bytes,0,2);put(bytes,count,2);put(bytes,count,2);put(bytes,central.size(),4);put(bytes,offset,4);put(bytes,0,2);string folder=ZAsset_Profile()+"campaign-exports";SDL_CreateDirectory(folder.c_str());output=folder+"/"+campaign.id+"-"+to_string(SDL_GetTicksNS())+".zip";ofstream f(output+".tmp",ios::binary);f.write((char*)bytes.data(),bytes.size());f.close();if(!f||!SDL_RenamePath((output+".tmp").c_str(),output.c_str()))throw string("Could not write campaign pack");return true;
  }catch(const string &e){error=e;return false;}

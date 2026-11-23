@@ -264,3 +264,13 @@ The battle readout includes idle factory counts. O (rebindable in Controls) cycl
 idle/paused factories; I still cycles idle mobile units. Rejected orders,
 production failures, manufactured units and objective completion receive visible
 feedback. The unit-limit indicator explains when production cannot continue.
+
+### Distribution validation
+
+Campaign Studio's **Validate** and **Export pack** check missions in their
+listed order. Invalid maps, missing objective targets and missing referenced
+custom videos block export. Remove an optional video's reference if the pack
+should use briefing fallback instead. Existing installed packs retain that
+fallback at runtime. Duplicate maps, absent briefing text, default victory
+conditions and message-only objective sequences produce review warnings.
+Export errors open the editor's validation panel for correction.

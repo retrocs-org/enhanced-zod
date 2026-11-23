@@ -1,13 +1,14 @@
 #include "zmovie.h"
 #include "zsdl.h"
 #include "zaudio.h"
+#include "zasset_import.h"
 
 #include <SDL3/SDL.h>
 #include <cstdio>
 
 using namespace std;
 
-int ZMovie_Play(const string &path) {return ZMovie_PlayPortable(path); }
+int ZMovie_Play(const string &path) {int result=ZMovie_PlayPortable(path);if(result==ZMOVIE_MISSING)ZAsset_RecordDiagnostic(ZDiagnosticEvent::VideoFailed);return result; }
 
 static string clip_path(const string &name)
 {

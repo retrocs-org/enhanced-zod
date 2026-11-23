@@ -1649,6 +1649,7 @@ void ZFrontEnd::RenderSettings(bool interactive)
         for(int i=0;i<4;++i)if(Button(labels[i],268,316+i*60,740,44,interactive,settings_focus==i)||((kb_activate||kb_dx)&&settings_focus==i)){kb_activate=false;settings_focus=i;if(i==0)zod_text_percent=100+(zod_text_percent-100+(kb_dx<0?20:10))%30;if(i==1)zod_cursor_percent=100+(zod_cursor_percent-100+(kb_dx<0?100:50))%150;if(i==2)zod_team_markers=!zod_team_markers;if(i==3)zod_reduced_motion=!zod_reduced_motion;ZPrefs_Save();}
         DrawLabel(font_ui_medium,17,"Team symbols supplement colour. Reduced motion keeps cinematics optional.",268,566,C_STEEL_DIM);
     }
+    if(settings_category==4&&Button("Export diagnostics",650,554,358,40,interactive)){string path;bool exported=ZAsset_ExportDiagnostics(path,asset_import.phase);screen=SCR_IMPORT;import_return_screen=SCR_SETTINGS;asset_import.message=!exported?"Could not export diagnostics.":"Diagnostics saved in your profile diagnostics folder. No personal paths or raw logs included.";}
     if(settings_category==4){DrawLabel(font_ui,23,"Video volume",268,398,C_STEEL);if(Button("-",650,390,40,40,interactive)){zod_video_volume=max(0,zod_video_volume-5);ZPrefs_Save();}DrawLabel(font_ui,22,to_string(zod_video_volume)+"%",848,398,C_STEEL_HI,1);if(Button("+",968,390,40,40,interactive)){zod_video_volume=min(100,zod_video_volume+5);ZPrefs_Save();}if(Button(zod_video_subtitles?"Subtitles: On":"Subtitles: Off",650,448,358,40,interactive)){zod_video_subtitles=!zod_video_subtitles;ZPrefs_Save();}DrawLabel(font_ui_medium,17,"During video: Space pauses, Esc skips, S toggles subtitles.",252,516,C_STEEL_DIM);}
     if(settings_category==0){
         DrawLabel(font_ui_medium,16,"LIVE FILTER / MOVEMENT PREVIEW",548,558,C_STEEL_DIM);
@@ -2028,7 +2029,7 @@ void ZFrontEnd::RenderBriefing()
 }
 
 void ZFrontEnd::DeploymentFailed(const string &message,bool force){
- if(!visible||(!force&&screen!=SCR_LOADING))return;if(workspace&&(editor_testing||screen==SCR_EDITOR)){workspace->ResumeAfterTest();editor_testing=false;screen=SCR_EDITOR;ZVideo_SetFullscreen(true);}else {screen=SCR_MAIN;deployment_failed=has_deployment_retry;}status_message=message;status_until=SDL_GetTicks()+12000;
+ if(!visible||(!force&&screen!=SCR_LOADING))return;if(workspace&&(editor_testing||screen==SCR_EDITOR)){workspace->ResumeAfterTest();editor_testing=false;screen=SCR_EDITOR;ZVideo_SetFullscreen(true);}else {screen=SCR_MAIN;deployment_failed=has_deployment_retry;if(deployment_failed)ZAsset_RecordDiagnostic(ZDiagnosticEvent::DeploymentFailed);}status_message=message;status_until=SDL_GetTicks()+12000;
 }
 
 void ZFrontEnd::RenderLoading()
@@ -2627,10 +2628,15 @@ void ZFrontEnd::RenderImport()
         if(Button(import_only?"Quit":"Back",x+w-160,y+h-74,128,46)||kb_back){kb_back=false;if(import_only)actions.push_back(Action(FE_QUIT));else screen=(Screen)import_return_screen;}
     }
     DrawLabel(font_ui_medium,18,"Imported files stay in your game profile. The installed app stays intact.",x+32,y+378,C_STEEL_DIM);
-    DrawLabel(font_ui_medium,18,"Campaign and private games never require a cloud account.",x+32,y+410,C_STEEL_DIM);
+    auto checks=ZAsset_CheckContent();
+    for(size_t i=0;i<checks.size();++i){const auto &check=checks[i];DrawLabel(font_ui_medium,16,check.category+": "+to_string(check.present)+"/"+to_string(check.total),x+32+(i%3)*255,y+405+(i/3)*24,check.present==check.total?C_STEEL:C_AMBER);}
+    if(!asset_import.Busy()&&Button("Repair / reimport",x+32,y+340,210,32))asset_import.Choose(ZVideo_GetWindow());
+    if(!asset_import.Busy()&&Button("Export diagnostics",x+260,y+340,220,32)){string path;asset_import.message=ZAsset_ExportDiagnostics(path,asset_import.phase)?"Diagnostics saved in your profile diagnostics folder. Contains no personal paths or raw logs.":"Could not write diagnostics report.";}
+    if(!asset_import.Busy()&&Button("Open reports folder",x+500,y+340,260,32)){SDL_CreateDirectory((ZAsset_Profile()+"diagnostics").c_str());SDL_OpenURL(("file://"+ZAsset_Profile()+"diagnostics").c_str());}
+    if(asset_import.Busy())DrawLabel(font_ui_medium,18,to_string(asset_import.percent)+"%",x+w-90,y+345,C_AMBER);
     if(asset_import.phase=="complete") {
-        if(Button("Original MIDI",x+32,y+445,210,38)) {zod_music=true;zod_music_style=MUSIC_STYLE_MIDI;ZPrefs_Save();actions.push_back(Action(FE_SET_MUSIC,1));}
-        if(Button("Recorded music",x+260,y+445,230,38)) {zod_music=true;zod_music_style=MUSIC_STYLE_RECORDED;ZPrefs_Save();actions.push_back(Action(FE_SET_MUSIC,1));}
+        if(Button("Original MIDI",x+32,y+458,210,28)) {zod_music=true;zod_music_style=MUSIC_STYLE_MIDI;ZPrefs_Save();actions.push_back(Action(FE_SET_MUSIC,1));}
+        if(Button("Recorded music",x+260,y+458,230,28)) {zod_music=true;zod_music_style=MUSIC_STYLE_RECORDED;ZPrefs_Save();actions.push_back(Action(FE_SET_MUSIC,1));}
     }
 }
 

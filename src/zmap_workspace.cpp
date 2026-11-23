@@ -306,7 +306,7 @@ Rect(150,150,980,600,{24,32,39,255});Text("CAMPAIGN STUDIO",176,170,28,amber);
     } else {
         if(Button("Add current map",176,278,210,true))AddMission();
         if(Button("Save project",404,278,210)){editField=-1;SaveCampaign();}
-        if(Button("Export pack",632,278,210)){string output,error;if(SaveCampaign()&&ZCampaign_Export(authorCampaign,output,error)){message="Exported "+output;SDL_OpenURL(("file://"+ZAsset_Profile()+"campaign-exports").c_str());}else message=error;}
+        if(Button("Export pack",632,278,210)){string output,error;if(!SaveCampaign())return;issues=ZContent_ValidateCampaign(authorCampaign,true);if(ZContent_HasErrors(issues)){issueScroll=0;validationPanel=true;campaignPanel=false;message="Resolve validation errors before exporting";return;}if(ZCampaign_Export(authorCampaign,output,error)){message="Exported "+output;SDL_OpenURL(("file://"+ZAsset_Profile()+"campaign-exports").c_str());}else message=error;}
         if(Button("Update map",860,278,244)&&campaignMission<(int)authorCampaign.missions.size()) {
             string target;if(SaveCampaign()&&ZCampaign_SafeAsset(authorCampaign.root,authorCampaign.missions[campaignMission].map,target)){
                 string temp=target+".tmp";if(map.Write(temp.c_str())&&SDL_RenamePath(temp.c_str(),target.c_str()))message="Campaign mission map updated";else message="Could not update campaign map";
@@ -331,7 +331,7 @@ Rect(150,150,980,600,{24,32,39,255});Text("CAMPAIGN STUDIO",176,170,28,amber);
     if(!authorCampaign.missions.empty()&&Button("Load mission map",472,694,240)){
         string file;if(ZCampaign_SafeAsset(authorCampaign.root,authorCampaign.missions[campaignMission].map,file))Request(file);
     }
-    if(Button("Validate",730,694,144)){SaveCampaign();issues=ZContent_ValidateCampaign(authorCampaign);issueScroll=0;validationPanel=true;campaignPanel=false;}
+    if(Button("Validate",730,694,144)){SaveCampaign();issues=ZContent_ValidateCampaign(authorCampaign,true);issueScroll=0;validationPanel=true;campaignPanel=false;}
     if(Button("Close",894,694,210)){if(!authorCampaign.root.empty())SaveCampaign();campaignPanel=false;editField=-1;SDL_StopTextInput(SDL_GetKeyboardFocus());}
 }
 

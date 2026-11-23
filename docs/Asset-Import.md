@@ -286,3 +286,21 @@ interactive save selector in the filename panel. A compact footer keeps
 Skirmish, Maps, Options and Import available. Settings and other existing
 dialogs retain their current functionality. Older imports need refreshing or
 reimporting to obtain this image; missing media still opens the offline importer.
+
+### Import health and repair
+
+The import screen shows startup-file checks for levels, terrain metadata,
+buildings/units, interface, music and effects. These are representative checks,
+not a full-disc checksum verification. Use **Repair / reimport** to import again
+without modifying the installed app. The active imported media selection is
+resolved afresh, so a new selection is visible to content checks immediately.
+
+Use **Export diagnostics** from this screen, the main menu's Media settings, or
+the in-game Game settings. Reports are saved under the profile's `diagnostics/`
+folder; **Open reports folder** opens it. Reports contain engine/SDL version,
+renderer, window/output dimensions, display scale, import health and up to 16
+recent fixed error codes. They omit personal paths, credentials, account data,
+raw logs and raw error messages. Nothing is uploaded.
+
+For headless troubleshooting, run `zod-ee --check-content` (exit 0 means startup
+checks pass; exit 2 means imports are needed) or `zod-ee --diagnostics`.

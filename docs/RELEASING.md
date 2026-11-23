@@ -48,21 +48,12 @@ source/build provenance; mount and inspect the disk image separately before
 publishing. Missing provenance is accepted only for local dirty previews.
 Checksums detect changes; they are not a cryptographic publisher signature.
 
-## Native CI packages
+## Local release packages
 
-Run **zod-ee release packages** manually from your own repository. Choose one
-platform or all; publication defaults to off. The workflow prepares source/web,
-macOS app ZIP, native Windows ZIP and a Linux headless-server tarball. It merges
-only packages with identical source fingerprints and release notes into the
-`zod-ee-release` workflow artifact.
-
-The Windows job builds a standalone importer and bundles the native DLL closure,
-FFmpeg, FFprobe and FluidSynth. The Linux job packages the ELF loader/shared
-libraries and a static server agent. Linux is a headless server distribution,
-not a graphical desktop app. The macOS bundle is ad-hoc signed; Developer ID
-signing and notarization must be supplied separately for public distribution.
-Native Windows/Linux jobs must pass on their runners before advertising those
-packages; a successful macOS build does not validate them.
+GitHub Actions and GitLab CI automation are disabled. Build, test, and prepare
+packages locally with the release tools below. Runner automation will be added
+separately. Validate each platform on its native system before distributing its
+packages; a successful macOS build does not validate Windows or Linux.
 
 Merge independently prepared folders with repeatable `--input` arguments:
 
@@ -92,9 +83,6 @@ GitHub creates a draft by default; `--public` publishes immediately. GitLab
 (`--target gitlab`) creates a public release immediately. Successful publication
 writes a local receipt containing the manifest hash and destination. Existing
 release names are not overwritten; resolve duplicate releases in the hosting UI.
-The optional CI publish job uses the protected `release` environment and creates
-a GitHub draft. Dispatch it from the reviewed version tag and configure that
-environment's reviewers in your repository settings.
 
 `source --config release-config.json --confirm-push` is a separate, explicit,
 non-forced source push to the configured branch. None of build, check, prepare,
@@ -141,13 +129,8 @@ This submits the signed app to Apple, waits for acceptance, staples the ticket
 and verifies Gatekeeper assessment. It refuses ad-hoc signatures. Run it before
 final checks, provenance and release preparation.
 
-The workflow's optional **notarize** input imports a temporary signing keychain
-and uses these repository secrets: `MACOS_SIGNING_P12_BASE64`,
-`MACOS_SIGNING_PASSWORD`, `MACOS_KEYCHAIN_PASSWORD`, `APPLE_ID`, and
-`APPLE_APP_PASSWORD`. Set repository variables `MACOS_SIGNING_IDENTITY` and
-`APPLE_TEAM_ID`. The temporary certificate/keychain are removed afterward.
-Credentials are not supplied by the project. A local ad-hoc build does not imply
-Apple notarization or successful Windows/Linux runner validation.
+Keep signing credentials in the local keychain or environment. A local ad-hoc
+build does not imply Apple notarization or Windows/Linux validation.
 
 ## Unified release and source-push entry point
 
@@ -211,7 +194,35 @@ delivered apps, primary executables, release archives and website branding use
 
 Read [Content policy](Content-Policy.md) before source publication. The inherited
 checkout cannot be pushed directly because its old history contains game media.
-Use `tools/export_source.py --output outputs/source-only` and run source pushes
-from that clean repository. Original levels/artwork and local font binaries are
+Use the normal `zodee` checkout cloned from either published repository.
+The one-time clean-history migration is complete; do not recreate an export
+for subsequent source pushes. Original levels/artwork and local font binaries are
 excluded from both its Git history and source archives. Build dependencies are
 fetched locally and game content is supplied by the user's import tools.
+
+## Local fresh-install and display verification
+
+Repository CI workflows have been removed. Use native local builds and run:
+
+```sh
+cmake -S . -B build
+cmake --build build --parallel 4
+ctest --test-dir build --output-on-failure
+python3 tests/release_tool_test.py
+python3 tests/package_tools_test.py
+```
+
+The engine suite creates authored levels in an isolated temporary workspace when
+original content is absent. It covers first-run importer startup, importing a
+level, starting a match, saving/reloading and repeated import preservation,
+without accessing a player's profile. It also tests generated video playback,
+32 menu/window/text-size combinations, fullscreen transitions, letterboxing,
+mouse coordinate conversion and confirmation-dialog scale/click behavior.
+These checks use SDL's dummy renderer; verify Retina hardware and real disc
+import manually before a public release.
+
+`tools/package_smoke.py` additionally checks the staged app from an empty working
+directory and fresh profile, with developer library paths and `ZOD_*` overrides
+removed. It verifies the native loader, helper startup, required-content detection
+and privacy-safe diagnostics export. It does not require or package original
+media. A full original-disc import still needs a user's supported disc image.

@@ -3,6 +3,7 @@
 #include "zprefs.h"
 #include "zvideo.h"
 #include "zaudio.h"
+#include "zasset_import.h"
 #include "constants.h"	//#75: DEFAULT_MAX_UNITS_PER_TEAM + UNIT_LIMIT bounds
 
 //defined in zobject.cpp
@@ -18,7 +19,7 @@ GMMOptions::GMMOptions() : ZGuiMainMenuBase()
 	SetupLayout1();AddWidget(&effects_slider);AddWidget(&music_slider);
     const char *names[]={"Graphics","Audio","Game","Controls","Access"};
     for(int i=0;i<5;++i) { category_button[i].SetType(MMGENERIC_BUTTON);category_button[i].SetText(names[i]);category_button[i].SetCoords(5+(i%3)*90,23+(i/3)*23);category_button[i].SetDimensions(86,20);AddWidget(&category_button[i]); }
-    for(auto *button:{&picture_button,&stick_button,&fullscreen_button,&gamma_button,&text_size_button,&cursor_size_button,&team_marker_button,&motion_button}) {button->SetType(MMGENERIC_BUTTON);AddWidget(button);}defaults_button.SetType(MMGENERIC_BUTTON);defaults_button.SetText("Reset category defaults");AddWidget(&defaults_button);AddWidget(&help_label);Reflow();
+    for(auto *button:{&picture_button,&stick_button,&fullscreen_button,&gamma_button,&text_size_button,&cursor_size_button,&team_marker_button,&motion_button}) {button->SetType(MMGENERIC_BUTTON);AddWidget(button);}diagnostics_button.SetType(MMGENERIC_BUTTON);diagnostics_button.SetText("Export diagnostics");AddWidget(&diagnostics_button);defaults_button.SetType(MMGENERIC_BUTTON);defaults_button.SetText("Reset category defaults");AddWidget(&defaults_button);AddWidget(&help_label);Reflow();
 }
 
 void GMMOptions::SetupLayout1()
@@ -119,9 +120,9 @@ void GMMOptions::SetupLayout1()
 
 void GMMOptions::Reflow()
 {
-    vector<ZGMMWidget*> all={&name_entry,&volume_button,&speed_button,&mouse_button,&smooth_button,&menu_size_button,&difficulty_button,&max_units_button,&reshuffle_button,&reset_button,&effects_slider,&music_slider,&pause_button,&picture_button,&stick_button,&fullscreen_button,&gamma_button,&text_size_button,&cursor_size_button,&team_marker_button,&motion_button};
+    vector<ZGMMWidget*> all={&name_entry,&volume_button,&speed_button,&mouse_button,&smooth_button,&menu_size_button,&difficulty_button,&max_units_button,&reshuffle_button,&reset_button,&effects_slider,&music_slider,&pause_button,&picture_button,&stick_button,&fullscreen_button,&gamma_button,&text_size_button,&cursor_size_button,&team_marker_button,&motion_button,&diagnostics_button};
     for(auto *widget:all) widget->SetActive(false);
-    vector<vector<ZGMMWidget*>> groups={{&fullscreen_button,&gamma_button,&picture_button,&smooth_button,&menu_size_button},{&effects_slider,&music_slider},{&name_entry,&speed_button,&difficulty_button,&max_units_button,&pause_button,&reshuffle_button,&reset_button},{&mouse_button,&stick_button},{&text_size_button,&cursor_size_button,&team_marker_button,&motion_button}};
+    vector<vector<ZGMMWidget*>> groups={{&fullscreen_button,&gamma_button,&picture_button,&smooth_button,&menu_size_button},{&effects_slider,&music_slider},{&name_entry,&speed_button,&difficulty_button,&max_units_button,&pause_button,&reshuffle_button,&reset_button,&diagnostics_button},{&mouse_button,&stick_button},{&text_size_button,&cursor_size_button,&team_marker_button,&motion_button}};
     int y=76;
     for(auto *widget:groups[category]) { widget->SetActive(true);widget->SetCoords(10,y);int height=(widget==&effects_slider||widget==&music_slider)?34:18;widget->SetDimensions(w-20,height);y+=height+5; }
     for(int i=0;i<5;++i) category_button[i].SetGreen(category==i);
@@ -202,6 +203,7 @@ void GMMOptions::SetVolumeStatus()
 void GMMOptions::HandleWidgetEvent(int event_type, ZGMMWidget *event_widget)
 {
     if(event_type==GMM_UNCLICK_EVENT) {
+        if(event_widget==&diagnostics_button){string path;diagnostics_button.SetText(ZAsset_ExportDiagnostics(path,"idle")?"Report saved in profile":"Could not save report");return;}
         if(event_widget==&defaults_button){ZPrefs_ResetCategory(category==4?5:category);ZVideo_SetFullscreen(zod_fullscreen);ZVideo_SetGamma(zod_gamma);ZVideo_SetPictureMode(zod_picture_mode);ZAudio_ApplyVolumes();if(category==1)gmm_flags.set_music=true;if(category==2){gmm_flags.set_game_speed=true;gmm_flags.set_game_speed_value=1;}Reflow();return;}
 
         for(int i=0;i<5;++i) if(event_widget==&category_button[i]) { category=i;focus=0;Reflow();return; }
@@ -350,7 +352,7 @@ void GMMOptions::HandleWidgetEvent(int event_type, ZGMMWidget *event_widget)
 }
 
 std::vector<ZGMMWidget*> GMMOptions::CategoryWidgets(){
- std::vector<std::vector<ZGMMWidget*>> groups={{&fullscreen_button,&gamma_button,&picture_button,&smooth_button,&menu_size_button},{&effects_slider,&music_slider},{&name_entry,&speed_button,&difficulty_button,&max_units_button,&pause_button,&reshuffle_button,&reset_button},{&mouse_button,&stick_button},{&text_size_button,&cursor_size_button,&team_marker_button,&motion_button}};return groups[category];
+ std::vector<std::vector<ZGMMWidget*>> groups={{&fullscreen_button,&gamma_button,&picture_button,&smooth_button,&menu_size_button},{&effects_slider,&music_slider},{&name_entry,&speed_button,&difficulty_button,&max_units_button,&pause_button,&reshuffle_button,&reset_button,&diagnostics_button},{&mouse_button,&stick_button},{&text_size_button,&cursor_size_button,&team_marker_button,&motion_button}};return groups[category];
 }
 bool GMMOptions::KeyPress(int c){
  if(name_entry.IsSelected())return ZGuiMainMenuBase::KeyPress(c);
