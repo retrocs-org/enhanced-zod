@@ -60,7 +60,7 @@ if [ -e "$SITE/config.inc.php" ]; then
     php -l "$SITE/config.inc.php" >/dev/null || { echo "Local configuration syntax is invalid; site left unchanged." >&2; exit 1; }
     cp "$SITE/config.inc.php" "$TEMP/new-site/config.inc.php"
 fi
-chown -R root:wwwrun "$TEMP/new-site"
+chown -R wwwrun:wwwrun "$TEMP/new-site"
 find "$TEMP/new-site" -type d -exec chmod 750 {} +
 find "$TEMP/new-site" -type f -exec chmod 640 {} +
 [ ! -L "$SITE" ] || { echo "Document root became a symlink; refusing update." >&2; exit 1; }
