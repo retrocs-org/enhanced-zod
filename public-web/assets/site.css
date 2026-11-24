@@ -31,3 +31,6 @@ body{background:repeating-linear-gradient(0deg,#24282b 0 2px,#292d30 2px 4px)}
 @media(max-width:520px){.hero h1{font-size:58px}.hero-layout{padding-block:34px}.hero{min-height:0}}
 
 .hero .hero-content{text-align:center}.hero h1,.hero-content>p{margin-inline:auto}.hero-content .button-row,.hero-content .platform-note{justify-content:center}
+
+.footer-main{justify-content:space-between;align-items:center;gap:32px}.footer-main>.footer-identity{display:block;margin:0;width:auto}.footer-credit{margin-top:18px!important;font-size:14px!important;line-height:1.8}.footer-credit a{color:var(--text);text-decoration:underline;text-underline-offset:3px}.footer-links{display:flex;align-items:center;gap:28px;font-size:14px;flex-wrap:wrap}.footer-links a{padding-block:8px}.footer-links a:hover,.footer-credit a:hover{color:var(--accent)}
+@media(max-width:600px){.footer-main{align-items:start;gap:20px}.footer-main>.footer-identity{width:100%}.footer-links{gap:24px}.footer-bottom{gap:12px;flex-wrap:wrap}}
