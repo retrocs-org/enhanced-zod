@@ -28,6 +28,10 @@ function env_value(string $name, string $default = ''): string {
     }
     return $config[$name] ?? $default;
 }
+function route_url(string $path): string {
+    if (!str_starts_with($path, '/') || str_starts_with($path, '//')) throw new InvalidArgumentException('Expected a local application path');
+    return env_value('ZOD_CLEAN_URLS') === '1' ? $path : '/index.php'.$path;
+}
 function db(): PDO {
     static $db;
     if (!$db) {

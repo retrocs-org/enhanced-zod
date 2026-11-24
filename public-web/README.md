@@ -24,3 +24,10 @@ Configure `ZOD_DB_PASSWORD` in `/srv/www/vhosts/zodee.retrocs.org/config.inc.php
 with your application password, then run `php _app/bin/migrate.php` from the
 vhost directory. The same configuration is used by website, API and CLI tools.
 Do not commit your configured production file to Git.
+
+Navigation and API-browser requests use `/index.php/...` by default, so they
+work even if Apache ignores `.htaccess` fallback rules. Compatibility entry
+points also support bookmarked pages such as `/network/` and `/leaderboard/`.
+After enabling `FallbackResource /index.php` for the vhost, you may set
+`ZOD_CLEAN_URLS` to `'1'` for short URLs throughout. Dedicated-server clients
+can use `https://zodee.retrocs.org/index.php` as their hub URL without rewrites.

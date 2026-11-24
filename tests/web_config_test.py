@@ -31,6 +31,11 @@ class Config(unittest.TestCase):
         self.assertEqual(self.value('ZOD_DB_PASSWORD'),'local-file-value')
         self.assertEqual(self.value('ZOD_DB_PASSWORD',ZOD_DB_PASSWORD='explicit-environment'),'explicit-environment')
         self.assertEqual(self.value('ZOD_DB_PASSWORD',ZOD_DB_PASSWORD='ignored',ZOD_DB_PASSWORD_FILE=str(second)),'environment-file-value')
+    def test_route_mode_defaults_to_front_controller(self):
+        self.config({})
+        code='require '+json.dumps(str(self.site/'_app/src/bootstrap.php'))+'; echo route_url("/network");'
+        self.assertEqual(subprocess.check_output(['php','-r',code],env=self.env,text=True),'/index.php/network')
+        self.assertEqual(subprocess.check_output(['php','-r',code],env={**self.env,'ZOD_CLEAN_URLS':'1'},text=True),'/network')
     def test_missing_configuration_uses_environment_or_default(self):
         self.assertEqual(self.value('ZOD_DB_HOST'),'fallback')
         self.assertEqual(self.value('ZOD_DB_HOST',ZOD_DB_HOST='localhost'),'localhost')

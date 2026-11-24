@@ -15,6 +15,7 @@ return [
 
     // Website and integrated network/API services.
     'ZOD_PUBLIC_URL' => 'https://zodee.retrocs.org',
+    'ZOD_CLEAN_URLS' => '0', // Set to '1' only when Apache routes all URLs to index.php.
     'ZOD_DEV_HTTP' => '0', // Set to '1' only for local HTTP development.
     'ZOD_TRUSTED_PROXIES' => '', // Comma-separated trusted proxy IPs/CIDRs.
     'ZOD_DOWNLOADS_FILE' => '', // Optional absolute path to release-download JSON.

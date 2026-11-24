@@ -403,3 +403,22 @@ password, readable by PHP's service account (`wwwrun`) but not other users.
 Shell exports configure the migration command only; set the same variables in
 the web service's persistent environment or Apache vhost before serving requests.
 The administrator's `.my.cnf` remains only on the database host.
+
+## Apache returns 404 for Network, Leaderboard or API
+
+If `/` works but `/network` returns Apache's own Object not found page, PHP is
+not receiving application routes. This is a routing problem, not evidence that
+the database or leaderboard queries failed. By default the website now uses
+`/index.php/network`, `/index.php/leaderboard` and `/index.php/api/...`, which
+work without rewrite rules. Fixed page directories also accept existing clean
+page bookmarks (Apache may add a trailing slash).
+
+Set `ZOD_CLEAN_URLS` to `'1'` only after the vhost has working
+`FallbackResource /index.php` (or equivalent rewriting). With overrides disabled,
+configure that directive in the vhost itself rather than `.htaccess`. Existing
+installed config files need no changes: absent `ZOD_CLEAN_URLS` defaults to
+front-controller URLs. For dedicated servers, use the hub URL
+`https://zodee.retrocs.org/index.php` until clean API URLs are routed by Apache.
+
+The zod-ee website uses a Z-inspired industrial interface with original vector
+battlefield artwork. It contains no Dungeon Keeper artwork or theme assets.

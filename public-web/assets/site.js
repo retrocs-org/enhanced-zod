@@ -1,4 +1,5 @@
 'use strict';
+const apiPath = path => (document.body.dataset.apiPrefix || '') + path;
 const dialog = document.querySelector('#join-dialog');
 let lastJoinButton = null, ticket = null, request = null;
 function commandFor(platform) {
@@ -22,7 +23,7 @@ if (dialog) {
       feedback.textContent = 'Requesting your join ticket…'; copy.textContent = 'Copy command ↗';
       dialog.showModal(); button.disabled = true;
       try {
-        const response = await fetch('/api/tickets', {signal:currentRequest.signal,method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({server:button.dataset.id})});
+        const response = await fetch(apiPath('/api/tickets'), {signal:currentRequest.signal,method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({server:button.dataset.id})});
         const data = await response.json();
         if (currentRequest !== request || !dialog.open) return;
         if (!response.ok) { signIn.hidden = response.status !== 401; throw new Error(data.error || 'Could not issue a ticket.'); }
@@ -51,7 +52,7 @@ if (explorer) {
   const raw = document.querySelector('#api-raw');
   const button = explorer.querySelector('button');
   const allowed = new Set(Array.from(endpoint.options, option => option.value));
-  endpoint.addEventListener('change', () => {raw.href = endpoint.value;});
+  endpoint.addEventListener('change', () => {raw.href = apiPath(endpoint.value);});
   explorer.addEventListener('submit', async event => {
     event.preventDefault();
     const path = endpoint.value;
@@ -60,7 +61,7 @@ if (explorer) {
     output.textContent = ''; const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 10000);
     try {
-      const response = await fetch(path, {method:'GET', credentials:'omit', cache:'no-store', redirect:'error', headers:{Accept:'application/json'}, signal:controller.signal});
+      const response = await fetch(apiPath(path), {method:'GET', credentials:'omit', cache:'no-store', redirect:'error', headers:{Accept:'application/json'}, signal:controller.signal});
       const body = await response.text();
       if (!response.headers.get('content-type')?.includes('application/json')) throw new Error('The endpoint did not return JSON.');
       output.textContent = JSON.stringify(JSON.parse(body), null, 2);

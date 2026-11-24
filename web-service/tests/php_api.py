@@ -108,6 +108,20 @@ class PHPBackend(unittest.TestCase):
         self.assertIn(b'Welcome back, ApiCommander',body)
         self.assertEqual(request('/account/logout',raw=b'',headers={'Content-Type':'application/x-www-form-urlencoded'})[0],200) # error redirects to visible form
         self.assertEqual(request('/api/statistics')[0],200)
+    def test_front_controller_and_directory_routes(self):
+        for page in ['network','leaderboard','statistics','servers','downloads','account','guide','credits','api-browser']:
+            for path in ['/index.php/'+page,'/'+page+'/']:
+                status,body,_=request(path)
+                self.assertEqual(status,200,path)
+                self.assertIn(b'<!doctype html>',body.lower())
+                self.assertIn(b'href="/index.php/network"',body)
+            self.assertTrue((self.site/page/'index.php').is_file())
+        for path in ['/healthz','/api/leaderboard','/api/statistics','/api/servers','/api/catalog']:
+            self.assertEqual(api('/index.php'+path),api(path))
+        self.assertEqual(api('/index.php/api/login',{'username':'ApiCommander','password':'a different test password'})['username'],'ApiCommander')
+        status,body,headers=request('/index.php/account/logout',raw=b'',headers={'Content-Type':'application/x-www-form-urlencoded'})
+        self.assertEqual(status,200)
+        self.assertIn(b'Your identity on the battlefield',body)
     def test_public_api_browser_catalog(self):
         catalog=api('/api/catalog')
         self.assertTrue(any(row['path']=='/api/servers' and row['browsable'] for row in catalog))

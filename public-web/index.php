@@ -6,6 +6,10 @@ require __DIR__.'/_app/src/service.php';
 require_once __DIR__.'/_app/src/api_catalog.php';
 security_headers();
 $path=rawurldecode(parse_url($_SERVER['REQUEST_URI'],PHP_URL_PATH)??'/');
+// PATH_INFO works on standard Apache PHP setups without rewrite rules.
+if ($path === '/index.php') $path = '/';
+elseif (str_starts_with($path, '/index.php/')) $path = substr($path, strlen('/index.php'));
+$path = rtrim($path, '/') ?: '/';
 $method=$_SERVER['REQUEST_METHOD']??'GET';$api=str_starts_with($path,'/api/')||in_array($path,['/matches','/healthz'],true);
 $service=new ZodService();
 try {
@@ -42,14 +46,14 @@ try {
             case '/account/password':$service->changePassword($data);$message='Password updated. Other website sessions are signed out.';break;
             default:fail(404,'Page not found.');
         }
-        header('Location: /account?message='.rawurlencode($message),true,303);exit;
+        header('Location: '.route_url('/account').'?message='.rawurlencode($message),true,303);exit;
     }
     if ($method!=='GET' && $method!=='HEAD') fail(405,'Method not allowed.');
     require __DIR__.'/_app/src/views.php';
     render_page($path,$service);
 } catch(ApiError $e) {
     if ($api) json_response(['error'=>$e->getMessage()],$e->status);
-    if ($method==='POST' && str_starts_with($path,'/account/')) {header('Location: /account?error='.rawurlencode($e->getMessage()),true,303);exit;}
+    if ($method==='POST' && str_starts_with($path,'/account/')) {header('Location: '.route_url('/account').'?error='.rawurlencode($e->getMessage()),true,303);exit;}
     http_response_code($e->status);require_once __DIR__.'/_app/src/views.php';render_error($e->status,$e->getMessage());
 } catch(Throwable $e) {
     error_log('Zod web request failed: '.$e::class.' ['.$e->getCode().']');
