@@ -53,6 +53,13 @@ find "$SOURCE" -type f -name '*.php' -exec sh -c '
 [ ! -e "$TEMP/lint-failed" ] || { echo "PHP lint failed; site left unchanged." >&2; exit 1; }
 mkdir "$TEMP/new-site"
 cp -R "$SOURCE/." "$TEMP/new-site/"
+# Keep server-specific settings, including the database password, across refreshes.
+[ ! -L "$SITE/config.inc.php" ] || { echo "Refusing linked local configuration; site left unchanged." >&2; exit 1; }
+if [ -e "$SITE/config.inc.php" ]; then
+    [ -f "$SITE/config.inc.php" ] || { echo "Local configuration is not a file; site left unchanged." >&2; exit 1; }
+    php -l "$SITE/config.inc.php" >/dev/null || { echo "Local configuration syntax is invalid; site left unchanged." >&2; exit 1; }
+    cp "$SITE/config.inc.php" "$TEMP/new-site/config.inc.php"
+fi
 chown -R root:wwwrun "$TEMP/new-site"
 find "$TEMP/new-site" -type d -exec chmod 750 {} +
 find "$TEMP/new-site" -type f -exec chmod 640 {} +

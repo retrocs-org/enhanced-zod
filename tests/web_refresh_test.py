@@ -30,6 +30,18 @@ class Refresh(unittest.TestCase):
         self.assertTrue((self.site/'_app/src/service.php').is_file())
         self.assertFalse((self.parent/'.zodee-application').exists())
         self.assertEqual(subprocess.check_output([PHP,str(self.site/'index.php')],text=True),'working-private-app')
+    def test_preserves_local_config(self):
+        self.deploy()
+        config="<?php return ['ZOD_DB_HOST'=>'172.16.1.121','ZOD_DB_PASSWORD'=>'test-only-local-secret'];"
+        (self.site/'config.inc.php').write_text(config)
+        (self.repo/'public-web/config.inc.php').write_text("<?php return [];")
+        self.commit();self.deploy()
+        self.assertEqual((self.site/'config.inc.php').read_text(),config)
+    def test_invalid_local_config_keeps_site(self):
+        self.deploy();previous=(self.site/'index.php').read_text()
+        (self.site/'config.inc.php').write_text('<?php broken syntax here;')
+        self.deploy(False)
+        self.assertEqual((self.site/'index.php').read_text(),previous)
     def test_failed_lint_keeps_site(self):
         self.site.mkdir();(self.site/'index.php').write_text('previous')
         (self.repo/'public-web/_app/src/service.php').write_text('<?php this is invalid php ;');self.commit();self.deploy(False)

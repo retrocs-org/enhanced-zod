@@ -117,7 +117,7 @@ class PHPBackend(unittest.TestCase):
         status,body,_=request('/api-browser')
         self.assertEqual(status,200);self.assertIn(b'id="api-explorer"',body)
         self.assertIn(b'/api/results',body);self.assertIn(b'Server bearer key',body)
-        for path in ['/src/service.php','/public-web/_app/src/service.php','/sql/001_initial.sql','/bin/migrate.php','/_app/src/service.php','/_app/src/api_catalog.php','/_app/src/views.php','/_app/sql/001_initial.php','/_app/bin/migrate.php']:
+        for path in ['/config.inc.php','/src/service.php','/public-web/_app/src/service.php','/sql/001_initial.sql','/bin/migrate.php','/_app/src/service.php','/_app/src/api_catalog.php','/_app/src/views.php','/_app/sql/001_initial.php','/_app/bin/migrate.php']:
             status,body,_=request(path);self.assertEqual(status,404);self.assertNotIn(b'<?php',body)
     def test_04_stored_secrets_are_hashed(self):
         self.assertTrue(all(r['password_hash'].startswith('$argon2id$') for r in sql('SELECT password_hash FROM accounts')))

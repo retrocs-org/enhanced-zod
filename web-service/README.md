@@ -11,7 +11,8 @@ service, domain or deployment dependency.
 
 `public-web/` is the complete, self-contained PHP website and document root.
 Internal code, CLI tools and guarded migrations live in its `_app/` directory.
-Deny HTTP access to `_app/`; credentials stay outside the document root.
+Deny HTTP access to `_app/` and `config.inc.php`. Configure database and service
+settings in the installed `config.inc.php`; environment variables override it.
 
 * **Overview:** project introduction, real game imagery and live network totals.
 * **Network services:** integrated service overview, live counts, server directory and developer links.
@@ -27,6 +28,29 @@ The responsive design uses local assets and fonts, no CDN or third-party
 analytics. Empty lists show honest empty states. Release buttons appear only
 when an operator configures real downloads. Account forms work without
 JavaScript; the join-ticket dialog uses a small same-origin script.
+
+## Configuration file
+
+`public-web/config.inc.php` contains database host, port, name, user, password
+(or password-file path), socket, public URL, development HTTP, trusted proxies
+and download-manifest settings. Edit the deployed copy at
+`/srv/www/vhosts/zodee.retrocs.org/config.inc.php`. The refresh script preserves
+that copy and checks its PHP syntax before replacing the website.
+
+The repository copy has the correct private database host and website URL,
+with an empty password. Set the generated application password locally; never
+commit production secrets. All values are strings. Environment variables take
+precedence so Docker and existing Apache/PHP configurations continue to work.
+An environment password-file setting wins over an environment password value;
+a configured password-file setting wins over the password in the config file.
+The same configuration is loaded by the API, website and CLI administration.
+
+After configuration, initialize tables with:
+
+```sh
+cd /srv/www/vhosts/zodee.retrocs.org
+php _app/bin/migrate.php
+```
 
 ## Requirements and configuration
 

@@ -2,15 +2,31 @@
 declare(strict_types=1);
 if (!defined('ZODEE_INTERNAL') && PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 
+function site_config(): array {
+    static $config;
+    if ($config === null) {
+        $file = dirname(__DIR__, 2).'/config.inc.php';
+        $config = is_file($file) ? require $file : [];
+        if (!is_array($config)) throw new RuntimeException('config.inc.php must return a settings array');
+        foreach ($config as $key => $value) {
+            if (!is_string($key) || !is_string($value)) throw new RuntimeException('Configuration keys and values must be strings');
+        }
+    }
+    return $config;
+}
 function env_value(string $name, string $default = ''): string {
     $file = getenv($name . '_FILE');
-    if ($file !== false && $file !== '') {
+    $value = getenv($name);
+    // An explicit environment value wins over the local configuration file.
+    if (($file === false || $file === '') && $value !== false) return $value;
+    $config = site_config();
+    if ($file === false || $file === '') $file = $config[$name . '_FILE'] ?? '';
+    if ($file !== '') {
         $value = file_get_contents($file);
         if ($value === false) throw new RuntimeException('Cannot read configured secret');
         return trim($value);
     }
-    $value = getenv($name);
-    return $value === false ? $default : $value;
+    return $config[$name] ?? $default;
 }
 function db(): PDO {
     static $db;

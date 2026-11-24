@@ -1,3 +1,6 @@
 Options -Indexes -MultiViews
 DirectoryIndex index.php
 FallbackResource /index.php
+<Files "config.inc.php">
+    Require all denied
+</Files>
