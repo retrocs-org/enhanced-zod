@@ -263,6 +263,7 @@ ZPlayer::ZPlayer() : ZClient()
 //#88: zero the post-match summary state (start of a match / next-map load)
 void ZPlayer::ResetMatchStats()
 {
+    session_campaign.clear();session_mission.clear();session_campaign_version.clear();recorded_seed=0;dialogue_queue.clear();dialogue_history.clear();dialogue_started=0;battle_timeline.clear();battle_produced=battle_damage=0;debrief_open=orders_open=false;debrief_scroll=0;edited_orders.clear();edited_order_ref=-1;
     battle_notifications.clear();notification_click=false;notification_history=false;notification_history_page=0;notification_sound_at[0]=notification_sound_at[1]=0;
     battle_notice.clear();battle_notice_until=0;last_factory_ref=-1;summary_menu_ready=false;objective_text.clear();objective_total=0;objective_x=objective_y=-1;
 	show_match_summary = false;
@@ -567,6 +568,8 @@ void ZPlayer::RenderMenuBackground()
 //drawn above everything during the server's end-of-game pause.
 void ZPlayer::RenderMatchSummary()
 {
+    if(debrief_open){RenderDebrief();return;}
+    RenderDebriefButton();
 	EnsureSummaryScaled();
 
 	//background art (cover-scaled to the live resolution), centered; overflow clipped
@@ -620,10 +623,10 @@ void ZPlayer::RenderMatchSummary()
     ZSDL_Surface title;
     title = ZFontEngine::GetFont(BIG_WHITE_FONT).Render(match_won ? "VICTORY" : "DEFEAT");
     if(auto *s=title.GetBaseSurface()) title.BlitSurface(NULL,(init_w-s->w)/2, std::max(8,block_y-40));
-    const char *labels[]={"Continue [Enter]", hosted_setup_available ? "Rematch [Enter / R]" : "Rematch [R]", hosted_setup_available ? "Back to setup [Esc]" : "Main menu [Esc]"};
-    int count=2, width=std::min(180,(init_w-32)/count);
+    const char *labels[]={"Continue [Enter]", hosted_setup_available ? "Rematch [Enter / R]" : !session_campaign.empty()?"Restart mission [R]":"Rematch [R]", hosted_setup_available ? "Back to setup [Esc]" : "Main menu [Esc]", "Retry checkpoint"};
+    int count=CheckpointAvailable()?3:2, width=std::min(180,(init_w-32)/count);
     for(int slot=0;slot<count;++slot) {
-        int action=hosted_setup_available ? slot+1 : slot;
+        int action=slot==2?3:hosted_setup_available ? slot+1 : slot;
         SDL_Rect r{(init_w-count*(width+8)+8)/2+slot*(width+8),init_h-52,width,30};
         bool hover=mouse_x>=r.x && mouse_x<r.x+r.w && mouse_y>=r.y && mouse_y<r.y+r.h;
         ZSDL_FillSurfaceRect(&r,hover ? 65 : 30,hover ? 80 : 40,hover ? 90 : 50);
@@ -3110,7 +3113,7 @@ void ZPlayer::RenderMainMenu()
 	// Only the active page is visible; older pages remain available for Back.
 	for(auto *menu:gui_menu_list) menu->SetRenderScale(MenuRenderScale());
     ZMenuTheme::beginText(ZVideo_GetRenderer());
-    if(zmap.Loaded()&&gui_menu_list.empty()&&!show_match_summary){RenderObjectiveHUD();RenderBattleFeedback();RenderReplay();}
+    if(zmap.Loaded()&&gui_menu_list.empty()&&!show_match_summary){RenderObjectiveHUD();RenderBattleFeedback();RenderReplay();RenderBattleTools();}
     if(!gui_menu_list.empty()) gui_menu_list.front()->DoRender(zmap, screen);
     ZMenuTheme::endText();
 }
@@ -3339,6 +3342,7 @@ void ZPlayer::ProcessSDL()
 		//controller events become mouse/key events (pushed back onto the queue)
 		if(ZGamepad_HandleEvent(event, frontend_presenting)) continue;
 
+		if(event.type==SDL_EVENT_KEY_DOWN&&(orders_open||debrief_open)&&event.key.key==SDLK_ESCAPE){orders_open=debrief_open=false;continue;}
 		if(replay_active&&event.type==SDL_EVENT_KEY_DOWN){auto key=event.key.key;if(key==SDLK_ESCAPE){StopReplay();continue;}if(key==SDLK_SPACE){replay_paused=!replay_paused;continue;}if(key==SDLK_LEFTBRACKET||key==SDLK_RIGHTBRACKET){replay_speed=std::max(.25,std::min(4.0,replay_speed*(key==SDLK_RIGHTBRACKET?2:.5)));continue;}if(key>=SDLK_1&&key<=SDLK_4){SetPlayerTeam((team_type)(key-SDLK_1+1));continue;}}
         //the front-end takes all input while it is on screen
 		if(frontend_presenting)
@@ -5914,7 +5918,7 @@ void ZPlayer::ProcessFrontEndActions()
 				ZSaveInfo info;
 				if(ZSave_ReadInfo(a.value, info))
 				{
-                    frontend.ResumeSavedCampaign(info.map_name,info.campaign_id,info.mission_index);
+                    frontend.ResumeSavedCampaign(info.map_name,info.campaign_id,info.mission_index,info.mission_uid);
                     if(!info.campaign_id.empty()&&info.campaign_id!="original"&&!frontend.CommunityBattle()){frontend.DeploymentFailed("Install the saved battle's campaign pack before loading it.");break;}
 					restore_pending = true;
 					restore_elapsed = info.elapsed;

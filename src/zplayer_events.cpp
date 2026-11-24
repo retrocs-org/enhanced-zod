@@ -281,6 +281,7 @@ void ZPlayer::lclick_event(ZPlayer *p, char *data, int size, int dummy)
 {
 	hud_click_response hud_response;
 
+	if(p->BattleToolsClick(p->mouse_x,p->mouse_y)){p->notification_click=true;p->lbutton.down=false;return;}
 	if(p->ReplayClick(p->mouse_x,p->mouse_y)){p->notification_click=true;p->lbutton.down=false;return;}
 	if(p->gui_menu_list.empty()&&!p->show_match_summary&&p->ClickNotification(p->mouse_x,p->mouse_y)){p->lbutton.down=false;return;}
 	p->lbutton.down = true;
@@ -491,6 +492,7 @@ void ZPlayer::lunclick_event(ZPlayer *p, char *data, int size, int dummy)
 
 void ZPlayer::rclick_event(ZPlayer *p, char *data, int size, int dummy)
 {
+    if(p->orders_open||p->debrief_open)return;
 	p->rbutton.down = true;
 	p->rbutton.dragged = false;
 	p->rbutton.started_over_hud = p->mouse_x < 0 || p->mouse_y < 0
@@ -926,7 +928,7 @@ void ZPlayer::add_new_object_event(ZPlayer *p, char *data, int size, int dummy)
 		if(ot == MAP_ITEM_OBJECT && oid == ROCK_ITEM) ORock::EditRockRender(p->zmap, p->object_list, obj, true);
 
 		obj->CreationMapEffects(p->zmap);
-        if(obj->GetOwner()==p->our_team&&(ot==ROBOT_OBJECT||ot==VEHICLE_OBJECT||ot==CANNON_OBJECT)&&p->MatchElapsed()>5){int x,y;obj->GetCenterCords(x,y);p->NotifyBattle("Unit ready - click to locate",x,y);}
+        if(obj->GetOwner()==p->our_team&&(ot==ROBOT_OBJECT||ot==VEHICLE_OBJECT||ot==CANNON_OBJECT)&&p->MatchElapsed()>5){int x,y;obj->GetCenterCords(x,y);p->NotifyBattle("Unit ready - click to locate",x,y);++p->battle_produced;p->BattleEventLog("production","Unit produced",ot);}
 
 		//set effect list
 		obj->SetEffectList(&p->GetEffectList());
@@ -947,7 +949,7 @@ void ZPlayer::set_zone_info_event(ZPlayer *p, char *data, int size, int dummy)
             auto previous=p->seen_zone_owners.find(packet.zone_number);
             if(previous!=p->seen_zone_owners.end() && previous->second!=packet.owner
                && packet.owner==p->our_team && p->our_team!=NULL_TEAM && !p->show_match_summary && !p->summary_pending)
-                ++p->match_zones_captured;
+                {++p->match_zones_captured;p->BattleEventLog("capture","Territory captured",packet.zone_number);}
             p->seen_zone_owners[packet.zone_number]=packet.owner;
         }
     }
@@ -960,7 +962,7 @@ void ZPlayer::display_news_event(ZPlayer *p, char *data, int size, int dummy)
 	news_entry new_entry;
 	//SDL_Color textcolor;
 
-	if(size <= 5) return;
+	if(size <= 5||!data||!memchr(data+3,0,size-3)) return;
 
 	//extract
 	memcpy(&new_entry.r, data, 1);
@@ -968,6 +970,7 @@ void ZPlayer::display_news_event(ZPlayer *p, char *data, int size, int dummy)
 	memcpy(&new_entry.b, data+2, 1);
 	new_entry.message = data+3;
     if(new_entry.message.find("error")!=string::npos||new_entry.message.find("blocked")!=string::npos||new_entry.message.find("Unit limit")!=string::npos||new_entry.message.find("Order rejected")!=string::npos)p->BattleFeedback(new_entry.message);
+    if(new_entry.message.compare(0,9,"@session|")==0||new_entry.message.compare(0,10,"@dialogue|")==0||new_entry.message.compare(0,12,"@checkpoint|")==0){p->ReceiveBattleTool(new_entry.message);return;}
     if(new_entry.message.compare(0,11,"@objective|")==0){p->ReceiveObjective(new_entry.message);return;}
 
 	p->AddNewsEntry(new_entry.message, new_entry.r, new_entry.g, new_entry.b);
@@ -1165,7 +1168,7 @@ void ZPlayer::set_object_health_event(ZPlayer *p, char *data, int size, int dumm
 
 	int before=-1;if(data&&size==sizeof(object_health_packet)){object_health_packet packet;memcpy(&packet,data,sizeof(packet));if(auto *old=p->GetObjectFromID(packet.ref_id,p->object_list))before=old->GetHealth();}
     obj = p->ProcessObjectHealthTeam(data, size);
-    if(obj&&obj->GetOwner()==p->our_team&&before>obj->GetHealth()){int x,y;obj->GetCenterCords(x,y);p->NotifyBattle("Under fire - click to locate",x,y,true);}
+    if(obj&&obj->GetOwner()==p->our_team&&before>obj->GetHealth()){int x,y;obj->GetCenterCords(x,y);p->NotifyBattle("Under fire - click to locate",x,y,true);p->battle_damage+=before-obj->GetHealth();p->BattleEventLog("damage","Damage received",before-obj->GetHealth());}
 
 	if(!obj) return;
 
@@ -1265,7 +1268,7 @@ void ZPlayer::destroy_object_event(ZPlayer *p, char *data, int size, int dummy)
 		if(ot == ROBOT_OBJECT || ot == VEHICLE_OBJECT || ot == CANNON_OBJECT)
 		{
 			if(obj->GetOwner() == p->our_team)
-				p->match_units_lost++;
+				{p->match_units_lost++;p->BattleEventLog("loss","Unit lost");}
 			else if(pi->killer_ref_id != -1)
 			{
 				ZObject *kobj = ZObject::GetObjectFromID(pi->killer_ref_id, p->object_list);

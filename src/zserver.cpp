@@ -1,4 +1,5 @@
 #include "zperf.h"
+#include "zsavegame.h"
 #include "zcampaign.h"
 #include <tuple>
 #include <map>
@@ -80,7 +81,7 @@ ZServer::ZServer() : ZCore()
 	int i;
 
 	//setup randomizer
-	srand(time(0));
+	session_seed=(unsigned)time(0);if(const char *seed=SDL_getenv("ZOD_SESSION_SEED")){char *end=nullptr;unsigned long value=strtoul(seed,&end,10);if(end&&!*end)session_seed=(unsigned)value;}srand(session_seed);
 	
 	current_map_i = -1;
 	max_unlocked_i = 0;
@@ -4892,7 +4893,7 @@ bool ZServer::CheckCampaignObjectives(double time){
  for(auto *obj:object_list){if(!obj||obj->IsDestroyed()||obj->GetOwner()!=RED_TEAM)continue;unsigned char type,id;obj->GetObjectID(type,id);if(type==ROBOT_OBJECT||type==VEHICLE_OBJECT||type==CANNON_OBJECT)world.playerAlive=true;}
  for(auto &zone:zmap.GetZoneInfoList())world.zoneOwners.push_back(zone.owner);
  for(size_t i=0;i<zmap.GetObjectList().size();++i){ZObject *object=i<mission_object_refs.size()?GetObjectFromID(mission_object_refs[i],object_list):nullptr;world.objectOwners.push_back(object&&!object->IsDestroyed()?object->GetOwner():-1);int zoneIndex=-1;if(object&&!object->IsDestroyed()){int x,y;object->GetCenterCords(x,y);int index=0;for(auto &zone:zmap.GetZoneList()){if(x>=zone.x*16&&y>=zone.y*16&&x<(zone.x+zone.w)*16&&y<(zone.y+zone.h)*16)zoneIndex=index;++index;}}world.objectZones.push_back(zoneIndex);}
- for(int index:mission_runtime.DueEvents(world)){const auto &event=mission_runtime.events[index];if(event.kind=="dialogue"){BroadCastNews(event.text.substr(0,512).c_str(),255,190,80);continue;}vector<ZObject*> spawned;for(int count=0;count<event.count;++count){int tx=event.x+(count%4)*3,ty=event.y+(count/4)*3;if(!zmap.GetPathFinder().TilePassable(tx,ty,event.type==ROBOT_OBJECT))continue;ZObject *object=event.type==ROBOT_OBJECT?CreateRobotGroup(event.id,tx*16,ty*16,event.team,&spawned):CreateObject(event.type,event.id,tx*16,ty*16,event.team,&spawned);(void)object;}for(auto *object:spawned){ols.AddObject(object);RelayNewObject(object);RelayObjectGroupInfo(object);}if(!spawned.empty())ProcessChangeObjectAmount();if(!spawned.empty())BroadCastNews(event.text.empty()?"Reinforcements arrived":event.text.substr(0,512).c_str(),255,190,80);}
+ for(int index:mission_runtime.DueEvents(world)){const auto &event=mission_runtime.events[index];if(event.kind=="checkpoint"){if(!allow_remote_clients&&SaveGame(-1,0,0,(int)std::max(0.0,time-mission_runtime.missionStarted),ZSAVE_CHECKPOINT_SLOT))BroadCastNews(("@checkpoint|"+event.text.substr(0,128)).c_str(),255,190,80);continue;}if(event.kind=="dialogue"){string packet="@dialogue|"+event.speaker+"|"+event.character+"|"+to_string(event.duration)+"|"+event.text;BroadCastNews(packet.c_str(),255,190,80);continue;}vector<ZObject*> spawned;for(int count=0;count<event.count;++count){int tx=event.x+(count%4)*3,ty=event.y+(count/4)*3;if(!zmap.GetPathFinder().TilePassable(tx,ty,event.type==ROBOT_OBJECT))continue;ZObject *object=event.type==ROBOT_OBJECT?CreateRobotGroup(event.id,tx*16,ty*16,event.team,&spawned):CreateObject(event.type,event.id,tx*16,ty*16,event.team,&spawned);(void)object;}for(auto *object:spawned){ols.AddObject(object);RelayNewObject(object);RelayObjectGroupInfo(object);}if(!spawned.empty())ProcessChangeObjectAmount();if(!spawned.empty())BroadCastNews(event.text.empty()?"Reinforcements arrived":event.text.substr(0,512).c_str(),255,190,80);}
  if(mission_runtime.objectives.empty())return false;
  std::vector<std::string> messages;int result=mission_runtime.Update(world,messages);for(auto &message:messages)BroadCastNews(message.substr(0,512).c_str(),255,190,80);
  int step=std::min(mission_runtime.step,(int)mission_runtime.objectives.size()-1);auto &objective=mission_runtime.objectives[step];int remaining=-1,x=-1,y=-1;

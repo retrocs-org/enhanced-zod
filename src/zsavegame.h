@@ -14,17 +14,18 @@
 #include <string>
 #include <vector>
 
-#define ZSAVE_MAGIC "ZODSAVE6"
+#define ZSAVE_MAGIC "ZODSAVE7"
 
 // Slot 0 is the autosave (written by the game itself at the start of a battle
 // and every few minutes); slots 1..ZSAVE_USER_SLOTS are the player's own.
 #define ZSAVE_AUTO_SLOT 0
 #define ZSAVE_USER_SLOTS 5
+#define ZSAVE_CHECKPOINT_SLOT 6
 #define ZSAVE_AUTOSAVE_INTERVAL 180.0   //game seconds between autosaves
 
 struct ZSaveInfo
 {
-	std::string campaign_id;int mission_index=-1;
+	std::string campaign_id,mission_uid;unsigned session_seed=0;int mission_index=-1;
 	std::string map_name;     //map file the battle was started from
 	std::string map_title;    //the map's own name, for menus
 	int campaign_index;       //index in the campaign list, -1 for one-off maps

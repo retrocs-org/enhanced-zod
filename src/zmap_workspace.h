@@ -48,7 +48,8 @@ private:
     void ClearRecovery();
     int fileForm=0,modalLayer=0,editField=-1,newTerrain=0,newSize=1,campaignMission=0,missionScroll=0;
     std::string formName="Untitled",campaignTitle="My campaign";
-    ZCampaign authorCampaign,testCampaign;
+    ZCampaign authorCampaign,testCampaign,lastSavedCampaign;std::vector<ZCampaign> campaignUndo,campaignRedo;
+    void UndoCampaign(bool forward);void AdoptCampaign(const ZCampaign &campaign);
     ZMissionEvent eventDraft;int eventIndex=-1,eventScroll=0;bool pickEventLocation=false;
     std::string eventDelay="0",eventTarget="0",eventX="8",eventY="8",eventCount="1";
     void RenderEvents();void LoadEvent(int index);bool StoreEvent(bool append);

@@ -208,6 +208,10 @@ class ZPlayer : public ZClient
         bool PlayReplay(const std::string &path);void StopReplay();void ProcessReplay();void RenderReplay();void RecordReplayPacket(int id,const char *data,int size);
         void BattleFeedback(const std::string &text);void RenderBattleFeedback();void SelectNextIdleFactory();
         std::string battle_notice;Uint64 battle_notice_until=0;int last_factory_ref=-1;
+        struct Dialogue {std::string speaker,character,text;int seconds=8;};std::vector<Dialogue> dialogue_queue,dialogue_history;ZPortrait dialogue_portrait;Uint64 dialogue_started=0;int dialogue_page=0;
+        struct BattleEvent {int second=0;std::string kind,text;int amount=0;};std::vector<BattleEvent> battle_timeline;int battle_produced=0,battle_damage=0;bool debrief_open=false,orders_open=false;int debrief_scroll=0,order_choice=0;std::vector<waypoint> edited_orders,original_orders;int edited_order_ref=-1;
+        std::string session_campaign,session_mission,session_campaign_version;unsigned recorded_seed=0;
+        void ReceiveBattleTool(const std::string &packet);void RenderBattleTools();bool BattleToolsClick(int x,int y);void StartDialogue();void SkipDialogue();void BattleEventLog(const std::string &kind,const std::string &text,int amount=0);void RenderDebriefButton();void RenderDebrief();void RenderOrders();bool CheckpointAvailable()const;void RetryCheckpoint();void ExportBugBundle();
         void RenderObjectiveHUD();void ReceiveObjective(const std::string &packet);
         std::string objective_text;int objective_step=0,objective_total=0,objective_remaining=-1,objective_x=-1,objective_y=-1;double objective_received=0;
         int last_idle_ref = -1;

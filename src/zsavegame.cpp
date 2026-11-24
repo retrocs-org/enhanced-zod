@@ -31,7 +31,8 @@ bool valid_save(const string &path,ZSaveInfo &info){ZSaveReader reader;return re
 string ZSave_Path(int slot)
 {
 	char name[48];
-	if(slot <= ZSAVE_AUTO_SLOT) snprintf(name, sizeof(name), ".zod_savegame_auto");
+	if(slot==ZSAVE_CHECKPOINT_SLOT) snprintf(name,sizeof(name),".zod_checkpoint");
+	else if(slot <= ZSAVE_AUTO_SLOT) snprintf(name, sizeof(name), ".zod_savegame_auto");
 	else snprintf(name, sizeof(name), ".zod_savegame_%d", slot > ZSAVE_USER_SLOTS ? ZSAVE_USER_SLOTS : slot);
 
 	const char *home = getenv("HOME");
@@ -89,7 +90,7 @@ bool ZSaveWriter::WriteFile(const string &path)
 
     // Keep three previous valid generations for autosaves and manual slots.
     // Generic atomic writers (e.g. the outbox) never receive save backups.
-    bool slotPath=false;for(int slot=0;slot<=ZSAVE_USER_SLOTS;++slot)slotPath|=path==ZSave_Path(slot);
+    bool slotPath=false;for(int slot=0;slot<=ZSAVE_CHECKPOINT_SLOT;++slot)slotPath|=path==ZSave_Path(slot);
     ZSaveInfo previous;if(slotPath&&valid_save(path,previous)){
         for(int generation=3;generation>1;--generation){ifstream exists(path+".bak"+to_string(generation-1),ios::binary);if(exists&&!copy_atomic(path+".bak"+to_string(generation-1),path+".bak"+to_string(generation))){remove(tmp.c_str());return false;}}
         if(!copy_atomic(path,path+".bak1")){remove(tmp.c_str());return false;}
@@ -118,7 +119,7 @@ bool ZSaveReader::ReadFile(const string &path)
 	size_t got;
 	while((got = fread(chunk, 1, sizeof(chunk), fp)) > 0) buf.insert(buf.end(), chunk, chunk + got);
     bool readError=ferror(fp)!=0;fclose(fp);if(readError){ok=false;return false;}
-    bool checksumRequired=buf.size()>=12&&(memcmp(buf.data()+4,ZSAVE_MAGIC,8)==0||memcmp(buf.data()+4,"ZODSAVE5",8)==0);
+    bool checksumRequired=buf.size()>=12&&(memcmp(buf.data()+4,ZSAVE_MAGIC,8)==0||memcmp(buf.data()+4,"ZODSAVE5",8)==0||memcmp(buf.data()+4,"ZODSAVE6",8)==0);
     if(checksumRequired&&(buf.size()<24||memcmp(buf.data()+buf.size()-12,"ZODCRC1!",8)!=0)){ok=false;return false;}
     if(buf.size()>=12&&memcmp(buf.data()+buf.size()-12,"ZODCRC1!",8)==0){unsigned stored=0;for(int i=0;i<4;++i)stored|=(unsigned)buf[buf.size()-4+i]<<(i*8);buf.resize(buf.size()-12);if(save_crc(buf)!=stored){ok=false;return false;}}
 
@@ -171,13 +172,13 @@ void ZSave_WriteInfo(ZSaveWriter &w, const ZSaveInfo &info)
 	w.Int(info.lost);
 	w.Int(info.difficulty);
 	w.Double((double)info.when);
-    w.Str(info.campaign_id);w.Int(info.mission_index);
+    w.Str(info.campaign_id);w.Int(info.mission_index);w.Str(info.mission_uid);w.Int(info.session_seed);
 }
 
 bool ZSave_ReadInfo(ZSaveReader &r, ZSaveInfo &info)
 {
 	vector<char> magic = r.Blob();
-	if(!r.Ok()||magic.size()!=8)return false;bool modern=memcmp(magic.data(),ZSAVE_MAGIC,8)==0||memcmp(magic.data(),"ZODSAVE4",8)==0||memcmp(magic.data(),"ZODSAVE5",8)==0;if(!modern&&memcmp(magic.data(),"ZODSAVE3",8)!=0)return false;
+	if(!r.Ok()||magic.size()!=8)return false;bool modern=memcmp(magic.data(),ZSAVE_MAGIC,8)==0||memcmp(magic.data(),"ZODSAVE4",8)==0||memcmp(magic.data(),"ZODSAVE5",8)==0||memcmp(magic.data(),"ZODSAVE6",8)==0;if(!modern&&memcmp(magic.data(),"ZODSAVE3",8)!=0)return false;
 
 	info.map_name = r.Str();
 	info.map_title = r.Str();
@@ -190,6 +191,7 @@ bool ZSave_ReadInfo(ZSaveReader &r, ZSaveInfo &info)
 	info.when = (long long)r.Double();
     info.campaign_id.clear();info.mission_index=-1;if(modern){info.campaign_id=r.Str();info.mission_index=r.Int();if(info.campaign_id.size()>64||info.mission_index< -1||info.mission_index>4096)return false;}
 
+    info.mission_uid.clear();info.session_seed=0;if(memcmp(magic.data(),ZSAVE_MAGIC,8)==0){info.mission_uid=r.Str();info.session_seed=(unsigned)r.Int();if(info.mission_uid.size()>64)return false;}
 	return r.Ok();
 }
 

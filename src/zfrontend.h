@@ -71,11 +71,12 @@ public:
 	void PlayLevelResult(bool won);
     void RecordCampaignResult(bool won,int seconds=-1,int kills=0,int lost=0,int difficulty=1);
     bool CommunityBattle() const {return community_running;}
+    void LoadCheckpoint();
     void OpenRecordings();void RecordingError(const std::string &message);
     bool EditorTesting() const {return editor_testing;}
     void PrepareEditorReturn(bool advance){editor_continue_pending=editor_testing&&workspace&&!workspace->TestCampaign().root.empty()&&advance&&community_next>=0;}
     void ContinueCommunity();
-    void ResumeSavedCampaign(const std::string &map,const std::string &id="",int mission=-1);
+    void ResumeSavedCampaign(const std::string &map,const std::string &id="",int mission=-1,const std::string &uid="");
 
 	// true while waiting for a requested map to load (shows the loading card)
 	bool Loading() const { return screen == SCR_LOADING; }

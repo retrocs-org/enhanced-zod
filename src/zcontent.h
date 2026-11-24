@@ -7,6 +7,8 @@ std::vector<ZContentIssue> ZContent_ValidateMap(ZMap &map);
 std::vector<ZContentIssue> ZContent_ValidateCampaign(const ZCampaign &campaign,bool distribution=false);
 bool ZContent_HasErrors(const std::vector<ZContentIssue> &issues);
 bool ZCampaign_Export(const ZCampaign &campaign,std::string &output,std::string &error);
+bool ZCampaign_CheckPortable(const std::string &archive,std::string &report,std::string &error);
+bool ZContent_WriteBundle(const std::vector<std::pair<std::string,std::vector<unsigned char>>> &files,const std::string &path,std::string &error);
 bool ZCampaign_InspectPack(const std::string &archive,ZCampaign &summary,std::string &error);
 bool ZCampaign_ImportPack(const std::string &archive,std::string &error,bool update=false);
 struct ZCampaignBackup {std::string folder,version;};

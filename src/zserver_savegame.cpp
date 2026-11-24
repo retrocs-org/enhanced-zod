@@ -4,6 +4,7 @@
 
 #include "zserver.h"
 #include "zsavegame.h"
+#include "zcampaign.h"
 #include "zprefs.h"
 #include "zpath_debug.h"
 
@@ -105,9 +106,9 @@ void ZServer::StartMapFile(string path, int player)
 bool ZServer::SaveGame(int player, int kills, int lost, int elapsed, int slot)
 {
 	//the autosave is the game's own doing: it never talks to the player
-	bool quiet = slot == ZSAVE_AUTO_SLOT;
+	bool quiet = slot == ZSAVE_AUTO_SLOT||slot==ZSAVE_CHECKPOINT_SLOT;
 
-	if(slot < ZSAVE_AUTO_SLOT || slot > ZSAVE_USER_SLOTS) return false;
+	if(slot < ZSAVE_AUTO_SLOT || slot > ZSAVE_CHECKPOINT_SLOT) return false;
 
 	if(allow_remote_clients)
 	{
@@ -123,7 +124,7 @@ bool ZServer::SaveGame(int player, int kills, int lost, int elapsed, int slot)
 	ZSaveWriter w;
 
 	ZSaveInfo info;
-	info.map_name = map_name;info.campaign_id=mission_campaign_id;info.mission_index=mission_campaign_index;
+	info.map_name = map_name;info.campaign_id=mission_campaign_id;info.mission_index=mission_campaign_index;info.session_seed=session_seed;for(const auto &pack:ZCampaign_List())if(pack.id==mission_campaign_id&&mission_campaign_index>=0&&mission_campaign_index<(int)pack.missions.size())info.mission_uid=pack.missions[mission_campaign_index].uid;
 	{
 		char title[sizeof(zmap.GetMapBasics().map_name) + 1];
 		memcpy(title, zmap.GetMapBasics().map_name, sizeof(zmap.GetMapBasics().map_name));
@@ -245,7 +246,7 @@ bool ZServer::SaveGame(int player, int kills, int lost, int elapsed, int slot)
 bool ZServer::LoadSavedGame(int player, int slot)
 {
 	if(allow_remote_clients) return false;
-	if(slot < ZSAVE_AUTO_SLOT || slot > ZSAVE_USER_SLOTS) return false;
+	if(slot < ZSAVE_AUTO_SLOT || slot > ZSAVE_CHECKPOINT_SLOT) return false;
 
 	//---- read and validate everything before touching the running world ----
 	ZSaveReader r;
@@ -411,7 +412,7 @@ bool ZServer::LoadSavedGame(int player, int slot)
 	next_end_game_check_time = ztime.ztime + 3.0;
 
 	PauseGame();
-    ConfigureCampaignMission();if(!info.campaign_id.empty()){mission_campaign_id=info.campaign_id;mission_campaign_index=info.mission_index;}if(has_mission_state){mission_runtime=saved_mission;mission_runtime.started=saved_step_age>=0;mission_runtime.stepStarted=saved_step_age<0?0:ztime.ztime-saved_step_age;mission_runtime.missionStarted=eventAge<0?-1:ztime.ztime-eventAge;if(!savedRefs.empty())mission_object_refs=savedRefs;}
+    session_seed=info.session_seed?info.session_seed:session_seed;srand(session_seed);ConfigureCampaignMission();if(!info.mission_uid.empty())for(const auto &pack:ZCampaign_List())if(pack.id==info.campaign_id)for(size_t i=0;i<pack.missions.size();++i)if(pack.missions[i].uid==info.mission_uid)info.mission_index=i;if(!info.campaign_id.empty()){mission_campaign_id=info.campaign_id;mission_campaign_index=info.mission_index;}if(has_mission_state){mission_runtime=saved_mission;mission_runtime.started=saved_step_age>=0;mission_runtime.stepStarted=saved_step_age<0?0:ztime.ztime-saved_step_age;mission_runtime.missionStarted=eventAge<0?-1:ztime.ztime-eventAge;if(!savedRefs.empty())mission_object_refs=savedRefs;}
     if(savedRefs.empty()){mission_object_refs.clear();for(const auto &initial:zmap.GetObjectList()){int reference=-1;for(auto *object:object_list){unsigned char type,id;int x,y;object->GetObjectID(type,id);object->GetCords(x,y);if(type==initial.object_type&&id==initial.object_id&&x==initial.x*16&&y==initial.y*16){reference=object->GetRefID();break;}}mission_object_refs.push_back(reference);}}
 	game_on = true;
 

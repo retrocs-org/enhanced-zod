@@ -5,7 +5,7 @@
 struct ZMissionObjective {std::string kind="message",text;int target=0,seconds=0;};
 bool ZMission_Parse(const std::string &line,ZMissionObjective &objective);
 std::string ZMission_Encode(const ZMissionObjective &objective);
-struct ZMissionEvent {std::string trigger="time",kind="dialogue",text;int at=0,target=0,team=1,type=5,id=0,x=0,y=0,count=1;};
+struct ZMissionEvent {std::string speaker="Commander",character="grunt";int duration=8;std::string trigger="time",kind="dialogue",text;int at=0,target=0,team=1,type=5,id=0,x=0,y=0,count=1;};
 bool ZMission_ParseEvent(const std::string &line,ZMissionEvent &event);
 std::string ZMission_EncodeEvent(const ZMissionEvent &event);
 struct ZMissionWorld {double time=0;bool playerAlive=true;std::vector<int> zoneOwners,objectOwners,objectZones;};

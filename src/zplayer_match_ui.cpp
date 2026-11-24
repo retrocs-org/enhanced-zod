@@ -8,12 +8,12 @@
 
 int ZPlayer::MatchActionAt(int px,int py) const
 {
-    const int count=2;
+    const int count=CheckpointAvailable()?3:2;
     const int width=std::min(180,(init_w-32)/count);
     for(int slot=0;slot<count;++slot) {
         SDL_Rect r{(init_w-count*(width+8)+8)/2+slot*(width+8),init_h-52,width,30};
         if(px>=r.x && px<r.x+r.w && py>=r.y && py<r.y+r.h)
-            return hosted_setup_available ? slot+1 : slot;
+            return slot==2?3:hosted_setup_available ? slot+1 : slot;
     }
     return -1;
 }
@@ -21,6 +21,7 @@ int ZPlayer::MatchActionAt(int px,int py) const
 void ZPlayer::ChooseMatchAction(int action)
 {
     if(!show_match_summary || summary_continue_sent) return;
+    if(action==3){RetryCheckpoint();return;}
     if(action==0) { SendContinueAfterEnd(); return; }
     if(action==1 && !hosted_setup_available) {
         // Use the existing server-authorized reset/vote path for campaign,
@@ -132,7 +133,7 @@ void ZPlayer::ReceiveObjective(const string &packet){
  std::istringstream input(packet.substr(11));string value;vector<string> fields;for(int i=0;i<5&&std::getline(input,value,'|');++i)fields.push_back(value);if(fields.size()!=5)return;
  auto number=[](const string&s,int &n){if(s.empty()||s.size()>10)return false;char *end=nullptr;long value=strtol(s.c_str(),&end,10);if(!end||*end||value< -1||value>1000000)return false;n=value;return true;};int step,total,time,x,y;
  if(!number(fields[0],step)||!number(fields[1],total)||!number(fields[2],time)||!number(fields[3],x)||!number(fields[4],y)||total>64||step<0||step>total)return;
- string text;std::getline(input,text);if(text.size()>512)return;if(objective_total&&step>objective_step){AddNewsEntry("Objective complete: "+objective_text);BattleFeedback("Objective complete: "+objective_text);}objective_step=step;objective_total=total;objective_remaining=time;objective_x=x;objective_y=y;objective_text=text;objective_received=ztime.ztime;
+ string text;std::getline(input,text);if(text.size()>512)return;if(objective_total&&step>objective_step){AddNewsEntry("Objective complete: "+objective_text);BattleFeedback("Objective complete: "+objective_text);}if(step!=objective_step)BattleEventLog("objective",text,step);objective_step=step;objective_total=total;objective_remaining=time;objective_x=x;objective_y=y;objective_text=text;objective_received=ztime.ztime;
 }
 void ZPlayer::RenderObjectiveHUD(){
  if(!objective_total||objective_text.empty())return;auto *surface=ZSDL_Surface::GetMainSoftwareSurface();if(!surface)return;

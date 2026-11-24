@@ -1,4 +1,5 @@
 #include "zserver.h"
+#include "zcampaign.h"
 #include "packet_io.h"
 #include "zpath_debug.h"
 
@@ -166,6 +167,7 @@ void ZServer::request_map_event(ZServer *p, char *data, int size, int player)
 	pack_num = -1;
 	memcpy(buf, &pack_num, 4);
 	p->server_socket.SendMessage(player, STORE_MAP, buf, 4);
+    string uid,version;for(const auto &pack:ZCampaign_List())if(pack.id==p->mission_campaign_id&&p->mission_campaign_index>=0&&p->mission_campaign_index<(int)pack.missions.size()){uid=pack.missions[p->mission_campaign_index].uid;version=pack.version;}string context="@session|"+p->mission_campaign_id+"|"+uid+"|"+to_string(p->session_seed)+"|"+version;p->SendNews(player,context.c_str(),255,190,80);
 
 	//#93: tell the client which map file this is, so the F12 dump is a complete
 	//reproduction (the client only has map DATA, not the filename). Sent with the
