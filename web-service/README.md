@@ -9,8 +9,9 @@ service, domain or deployment dependency.
 
 ## Website
 
-`public-web/` is the document root; `web-service/php/src/`, `web-service/php/sql/` and `web-service/php/bin/` must
-remain outside the public root.
+`public-web/` is the complete, self-contained PHP website and document root.
+Internal code, CLI tools and guarded migrations live in its `_app/` directory.
+Deny HTTP access to `_app/`; credentials stay outside the document root.
 
 * **Overview:** project introduction, real game imagery and live network totals.
 * **Network services:** integrated service overview, live counts, server directory and developer links.
@@ -53,7 +54,7 @@ for CLI administration and web requests. Never expose MariaDB to game clients.
 # Create the database/user using your MariaDB administration tools, then:
 export ZOD_DB_HOST=127.0.0.1 ZOD_DB_NAME=zod ZOD_DB_USER=zod
 export ZOD_DB_PASSWORD_FILE=/private/zod-db-password
-php web-service/php/bin/migrate.php
+php public-web/_app/bin/migrate.php
 ```
 
 For local development, after creating a disposable database:
@@ -99,7 +100,7 @@ Back up MariaDB with `mariadb-dump` or your normal transactional database toolin
 Database credentials, backups, server keys, and downloaded release archives must
 not be committed. `packaging/linux/secrets/` is ignored by Git and Docker context.
 
-Run `php web-service/php/bin/cleanup.php` periodically (for example hourly via
+Run `php public-web/_app/bin/cleanup.php` periodically (for example hourly via
 cron) to remove expired sessions, tickets, grants, stale listings and rate limits.
 Expiry is enforced in queries even when the cleanup job has not run. Match
 history and account statistics are retained.
@@ -111,7 +112,7 @@ Generate a different key for every approved server:
 ```sh
 openssl rand -hex 32 > /private/zod-server-key
 chmod 600 /private/zod-server-key
-php web-service/php/bin/server.php --id europe-1 --name 'Europe' \
+php public-web/_app/bin/server.php --id europe-1 --name 'Europe' \
   --key-file /private/zod-server-key
 ```
 
@@ -122,7 +123,7 @@ mount the key file temporarily into that container; do not put it on a command
 line or in a public directory. Disable an operator key and withdraw its listing:
 
 ```sh
-php web-service/php/bin/server.php --id europe-1 --disable
+php public-web/_app/bin/server.php --id europe-1 --disable
 ```
 
 The same provisioning command rotates a key. Current server agents use bearer
@@ -177,7 +178,7 @@ python3 packaging/linux/package.py --engine build/zod-ee \
 ```
 
 The package includes engine runtime libraries, the Go agent, and the PHP website
-source under `public-web/` with its private backend under `web-service/php/`. Host that website with PHP/MariaDB separately; there is
+source under `public-web/` with its private backend under `public-web/_app/`. Host that website with PHP/MariaDB separately; there is
 no longer a Go `zod-web` executable.
 
 ## Joining and statistics
@@ -216,10 +217,10 @@ Stop the old hub and back up its JSON file. Create an empty MariaDB schema, then
 
 ```sh
 # First inspect record counts; no writes by default.
-php web-service/php/bin/import-json.php --file /backup/zod.json
+php public-web/_app/bin/import-json.php --file /backup/zod.json
 
 # Preserve accounts, IDs, active sessions/tickets/grants, and complete results.
-php web-service/php/bin/import-json.php --file /backup/zod.json \
+php public-web/_app/bin/import-json.php --file /backup/zod.json \
   --keys-json /private/old-server-keys.json --commit
 ```
 
@@ -298,14 +299,12 @@ or other game media is committed with the website.
 
 ## Deploying the repository website
 
-The PHP front controller is `public-web/index.php`. Set the Apache document root
-to `public-web/`; preserve the sibling `web-service/php/` directory for private
-application code, migrations and CLI administration. Copying only the public
-folder is not a complete application deployment.
+Copy `public-web/.` directly into `/srv/www/vhosts/zodee.retrocs.org/`, including
+its dotfiles and `_app/` directory. The real `index.php` begins with `<?php` and
+loads the application from `__DIR__.'/_app/'`. No wrapper, external release
+directory or sibling repository files are used.
 
-On sth-ts-web003, use the repository refresh script (as root). It stages both
-folders, lints PHP, keeps backend files outside the public document root, and
-restores the previous site if switching fails:
+As root on sth-ts-web003:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/retrocs-org/zodee/main/packaging/linux/refresh-zodee.sh -o /srv/www/vhosts/refresh-zodee.sh
@@ -313,15 +312,70 @@ sh -n /srv/www/vhosts/refresh-zodee.sh
 sh /srv/www/vhosts/refresh-zodee.sh
 ```
 
-The live root remains `/srv/www/vhosts/zodee.retrocs.org`. Apache must route
-non-file requests through `/index.php` using `FallbackResource /index.php`, and
-forward the Authorization header as shown in `packaging/linux/apache.conf`.
-Keep database secrets outside the document root; set `ZOD_DB_HOST` to
-`sth-ts-dbs001.kladhest.se` and `ZOD_PUBLIC_URL` to `https://zodee.retrocs.org`.
-Existing credentials and databases are not replaced by refreshes. Run schema
-migrations separately with the configured database credentials.
+The script stages only `public-web`, verifies the opening PHP tag and all PHP
+syntax, then replaces the vhost tree with rollback on failure. It does not modify
+databases, credentials or existing legacy `.zodee-application` releases.
 
-The network overview is `/network`, and the integrated API browser is
-`/api-browser` (`/api` is an alias). `/api/catalog` exposes the same endpoint
-reference as JSON. The browser runs only public GET endpoints, without cookies
-or bearer keys. Account and operator actions retain their existing authentication.
+Apache must execute PHP, use `DirectoryIndex index.php`, route application URLs
+through `FallbackResource /index.php`, and deny HTTP access to `_app/`:
+
+```apache
+<Directory /srv/www/vhosts/zodee.retrocs.org>
+    Options -Indexes -MultiViews
+    DirectoryIndex index.php
+    FallbackResource /index.php
+    Require all granted
+</Directory>
+<Directory /srv/www/vhosts/zodee.retrocs.org/_app>
+    Require all denied
+</Directory>
+SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
+```
+
+The bundled `.htaccess` files supply routing and internal-directory protection
+when the vhost permits overrides. With `AllowOverride None`, use the explicit
+vhost configuration above. Keep the database password file outside this tree.
+If the page is blank, inspect Apache/PHP-FPM's error log and confirm that the
+vhost PHP version is 8.4 or newer and PDO MySQL/mbstring are installed.
+
+The network overview is `/network`; the API browser is `/api-browser` (`/api` is
+an alias). `/api/catalog` provides the endpoint reference as JSON.
+
+## Database host setup for zodee.retrocs.org
+
+On `sth-ts-dbs001.kladhest.se` (`172.16.1.121`), run as the administrator whose
+`.my.cnf` contains the existing MariaDB administrator login. No `-p` is needed:
+
+```sh
+ZODEE_DB_PASSWORD=$(openssl rand -hex 32)
+mariadb <<SQL
+CREATE DATABASE IF NOT EXISTS zodee CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'zodee'@'172.16.1.133' IDENTIFIED BY '$ZODEE_DB_PASSWORD';
+GRANT ALL PRIVILEGES ON zodee.* TO 'zodee'@'172.16.1.133';
+SHOW GRANTS FOR 'zodee'@'172.16.1.133';
+SQL
+printf 'Save this application password securely: %s\n' "$ZODEE_DB_PASSWORD"
+unset ZODEE_DB_PASSWORD
+```
+
+This account accepts connections from `sth-ts-web003` (`172.16.1.133`) and only
+has privileges on `zodee`. CREATE USER/GRANT take effect immediately; no FLUSH
+PRIVILEGES is needed. If the account already exists, retain its password or use
+ALTER USER explicitly rather than recreating it.
+
+Allow TCP 3306 from `172.16.1.133` to `172.16.1.121`; MariaDB must listen on that
+private interface. Configure these values for both PHP-FPM/Apache and CLI:
+
+```sh
+export ZOD_DB_HOST=172.16.1.121 ZOD_DB_PORT=3306
+export ZOD_DB_NAME=zodee ZOD_DB_USER=zodee
+export ZOD_DB_PASSWORD_FILE=/etc/zodee/db-password
+export ZOD_PUBLIC_URL=https://zodee.retrocs.org
+php /srv/www/vhosts/zodee.retrocs.org/_app/bin/migrate.php
+```
+
+Create `/etc/zodee/db-password` on the webserver with the generated application
+password, readable by PHP's service account (`wwwrun`) but not other users.
+Shell exports configure the migration command only; set the same variables in
+the web service's persistent environment or Apache vhost before serving requests.
+The administrator's `.my.cnf` remains only on the database host.

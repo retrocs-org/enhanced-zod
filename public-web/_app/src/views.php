@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+if (!defined('ZODEE_INTERNAL') && PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 require_once __DIR__.'/network_views.php';
 function e(mixed $value): string { return htmlspecialchars((string)$value,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'); }
 function number(mixed $n): string { return number_format((int)$n); }

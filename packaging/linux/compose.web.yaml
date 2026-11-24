@@ -32,7 +32,6 @@ services:
     secrets: [db_password, db_root_password]
     volumes:
       - cloud-database:/var/lib/mysql
-      - ../../web-service/php/sql/001_initial.sql:/docker-entrypoint-initdb.d/001-zod.sql:ro
     healthcheck:
       test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
       interval: 10s

@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+if (!defined('ZODEE_INTERNAL') && PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 
 function env_value(string $name, string $default = ''): string {
     $file = getenv($name . '_FILE');

@@ -1,3 +1,7 @@
+<?php
+declare(strict_types=1);
+if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
+return <<<'ZODEE_SCHEMA'
 -- MariaDB 10.6+, InnoDB, UTC timestamps. Run using bin/migrate.php.
 CREATE TABLE IF NOT EXISTS schema_migrations (
  version INT PRIMARY KEY, applied_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6)
@@ -77,3 +81,5 @@ CREATE TABLE IF NOT EXISTS rate_limits (
  PRIMARY KEY (bucket,window_id), INDEX rate_expiry (window_id)
 ) ENGINE=InnoDB;
 INSERT IGNORE INTO schema_migrations (version) VALUES (1);
+
+ZODEE_SCHEMA;

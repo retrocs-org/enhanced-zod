@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+if (!defined('ZODEE_INTERNAL') && PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 require_once __DIR__.'/api_catalog.php';
 function render_network_services(ZodService $service): void {
     $servers=$service->servers();$totals=$service->totals();

@@ -53,7 +53,7 @@ with tempfile.TemporaryDirectory(prefix='zod-cloud-') as tmp:
  key='7'*64;keyfile=root/'key';keyfile.write_text(key)
  hp=port();base=f'http://127.0.0.1:{hp}'
  env.update(ZOD_DEV_HTTP='1',ZOD_PUBLIC_URL=base)
- subprocess.run([PHP,str(pathlib.Path(ROOT)/'web-service/php/bin/server.php'),'--id','test','--name','Test server','--key-file',str(keyfile)],env=env,cwd=ROOT,check=True,capture_output=True)
+ subprocess.run([PHP,str(pathlib.Path(ROOT)/'public-web/_app/bin/server.php'),'--id','test','--name','Test server','--key-file',str(keyfile)],env=env,cwd=ROOT,check=True,capture_output=True)
  with process([PHP,'-S',f'127.0.0.1:{hp}','-t',str(pathlib.Path(ROOT)/'public-web'),str(pathlib.Path(ROOT)/'public-web/router.php')],env,root/'hub.log') as hub:
   wait(lambda:api(base,'/healthz'))
   api(base,'/api/accounts',{'Username':'CloudAlice','Password':'correct horse cloud password'})

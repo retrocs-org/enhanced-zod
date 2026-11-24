@@ -1,18 +1,20 @@
-# Public PHP website
+# Self-contained PHP website
 
-This directory is the website document root for zod-ee. It serves the public
-pages, Network Services dashboard, API Browser, accounts, statistics, server
-listings and JSON API through `index.php`.
+Copy this entire directory, including dotfiles and `_app/`, into the vhost
+document root. No sibling repository directory or generated PHP wrapper is needed.
+The same PHP entry point handles the website, network services and JSON API.
 
-The private PHP application is in the sibling `../web-service/php/` directory.
-Deploy both directories while exposing only this directory over HTTP. See
-[deployment and configuration](../web-service/README.md).
+`_app/` contains internal PHP code and CLI administration tools. Its `.htaccess`
+denies HTTP access; the packaged Apache configuration also denies that directory
+explicitly. Internal PHP files refuse direct HTTP execution. Schema migrations
+are guarded PHP files rather than downloadable SQL. Credentials remain outside
+the document root, configured through environment variables.
 
-Local development, after configuring MariaDB and running migrations:
+See [configuration and database setup](../web-service/README.md). Local preview:
 
 ```sh
 php -S 127.0.0.1:8088 -t public-web public-web/router.php
 ```
 
-Production requires PHP 8.4+, PDO MySQL, mbstring and an Apache/PHP-FPM front
-controller. No Node.js or Go server is required for the website.
+Production requires PHP 8.4+, PDO MySQL, mbstring, MariaDB and Apache/PHP-FPM.
+Route non-file requests to `/index.php` and deny HTTP access to `_app/`.

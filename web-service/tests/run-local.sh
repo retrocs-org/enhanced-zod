@@ -23,7 +23,7 @@ if [ "$ready" -eq 100 ]; then cat "$TASK_TMP/db.log" >&2; exit 1; fi
 mariadb --no-defaults --socket="$TASK_TMP/db.sock" -uroot -e 'CREATE DATABASE zod_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'
 unset ZOD_DB_PASSWORD_FILE ZOD_TRUSTED_PROXIES
 export ZOD_DB_SOCKET="$TASK_TMP/db.sock" ZOD_DB_NAME=zod_test ZOD_DB_USER=root ZOD_DB_PASSWORD=""
-"$PHP_BIN" "$ROOT/web-service/php/bin/migrate.php"
+"$PHP_BIN" "$ROOT/public-web/_app/bin/migrate.php"
 python3 "$ROOT/web-service/tests/php_api.py"
 if [ "$#" -eq 3 ]; then
     python3 "$ROOT/web-service/tests/integration.py" "$PHP_BIN" "$1" "$2" "$3" "$ROOT"

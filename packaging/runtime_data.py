@@ -17,7 +17,7 @@ def copy_runtime(root, destination, website=False):
         relative=Path(name);source=root/relative
         if not source.is_file():continue
         selected=name.startswith(('assets/','maps/')) or name in {'map_list.txt','default_settings.txt','README.md','LICENSE','VERSION'}
-        if website and name.startswith(('web-service/php/','public-web/')):selected=True
+        if website and name.startswith('public-web/'):selected=True
         if source_policy.forbidden(name):continue
         if not selected or name in omitted or name.startswith(('assets/videos/','assets/original-z/')):continue
         if source.is_symlink() or any((root/p).is_symlink() for p in relative.parents):raise RuntimeError('Linked runtime source: '+name)

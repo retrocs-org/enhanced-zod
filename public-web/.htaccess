@@ -1,0 +1,3 @@
+Options -Indexes -MultiViews
+DirectoryIndex index.php
+FallbackResource /index.php

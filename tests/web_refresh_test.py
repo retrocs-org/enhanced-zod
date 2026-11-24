@@ -1,4 +1,4 @@
-"""Exercise website staging, private layout, lint failures and rollback locally."""
+"""Exercise self-contained website staging, lint failures and rollback."""
 import os,pathlib,shutil,subprocess,tempfile,unittest
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 PHP=shutil.which('php')
@@ -13,7 +13,7 @@ class Refresh(unittest.TestCase):
         self.env=dict(os.environ,PATH=str(self.bin)+os.pathsep+os.environ['PATH'],ZODEE_DEPLOY_PARENT=str(self.parent),ZODEE_REPOSITORY=str(self.repo))
         subprocess.run(['git','init','-q','-b','main',str(self.repo)],check=True)
         app=self.repo
-        for name,text in {'public-web/index.php':"<?php require __DIR__.'/../web-service/php/src/service.php'; echo refresh_fixture();",'public-web/assets/site.css':'body{}','web-service/php/src/service.php':"<?php function refresh_fixture(){return 'working-private-app';}",'web-service/php/src/bootstrap.php':'<?php','web-service/php/src/views.php':'<?php','web-service/php/bin/migrate.php':'<?php'}.items():
+        for name,text in {'public-web/index.php':"<?php require __DIR__.'/_app/src/service.php'; echo refresh_fixture();",'public-web/assets/site.css':'body{}','public-web/_app/src/service.php':"<?php function refresh_fixture(){return 'working-private-app';}",'public-web/_app/src/bootstrap.php':'<?php','public-web/_app/src/views.php':'<?php','public-web/_app/bin/migrate.php':'<?php'}.items():
             file=app/name;file.parent.mkdir(parents=True,exist_ok=True);file.write_text(text)
         self.commit()
     def commit(self):
@@ -22,14 +22,23 @@ class Refresh(unittest.TestCase):
     def deploy(self,success=True,**extra):
         result=subprocess.run(['sh',str(ROOT/'packaging/linux/refresh-zodee.sh')],env=dict(self.env,**extra),text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         self.assertEqual(result.returncode==0,success,result.stdout+result.stderr);return result
-    def test_private_application_and_repeated_refresh(self):
+    def test_self_contained_application_and_repeated_refresh(self):
         self.deploy();self.assertEqual(subprocess.check_output([PHP,str(self.site/'index.php')],text=True),'working-private-app')
         self.assertFalse((self.site/'src').exists());self.assertFalse((self.site/'bin').exists());self.assertTrue((self.site/'assets/site.css').is_file())
-        first=(self.site/'index.php').read_text();self.deploy();self.assertNotEqual(first,(self.site/'index.php').read_text())
+        first=(self.site/'index.php').read_text();self.deploy();self.assertEqual(first,(self.site/'index.php').read_text())
+        self.assertEqual(first,(self.repo/'public-web/index.php').read_text())
+        self.assertTrue((self.site/'_app/src/service.php').is_file())
+        self.assertFalse((self.parent/'.zodee-application').exists())
         self.assertEqual(subprocess.check_output([PHP,str(self.site/'index.php')],text=True),'working-private-app')
     def test_failed_lint_keeps_site(self):
         self.site.mkdir();(self.site/'index.php').write_text('previous')
-        (self.repo/'web-service/php/src/service.php').write_text('<?php this is invalid php ;');self.commit();self.deploy(False)
+        (self.repo/'public-web/_app/src/service.php').write_text('<?php this is invalid php ;');self.commit();self.deploy(False)
+        self.assertEqual((self.site/'index.php').read_text(),'previous')
+    def test_missing_php_opening_tag_keeps_site(self):
+        self.site.mkdir();(self.site/'index.php').write_text('previous')
+        (self.repo/'public-web/index.php').write_text("declare(strict_types=1); echo 'broken';")
+        self.commit();result=self.deploy(False)
+        self.assertIn('Missing PHP opening tag',result.stderr)
         self.assertEqual((self.site/'index.php').read_text(),'previous')
     def test_missing_entry_keeps_site(self):
         self.site.mkdir();(self.site/'index.php').write_text('previous');(self.repo/'public-web/index.php').unlink();self.commit();self.deploy(False)

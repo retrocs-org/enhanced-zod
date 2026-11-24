@@ -1,8 +1,8 @@
 """PHP + real MariaDB contract, migration, concurrency and website tests.
 Requires an isolated empty database configured through ZOD_DB_* environment.
 """
-import concurrent.futures,hashlib,http.cookiejar,json,os,pathlib,re,socket,subprocess,sys,tempfile,time,unittest,urllib.request,urllib.error
-ROOT=pathlib.Path(__file__).resolve().parents[2];PHP=os.environ.get('PHP_BIN','php');APP=ROOT/'web-service/php'
+import concurrent.futures,shutil,hashlib,http.cookiejar,json,os,pathlib,re,socket,subprocess,sys,tempfile,time,unittest,urllib.request,urllib.error
+ROOT=pathlib.Path(__file__).resolve().parents[2];PHP=os.environ.get('PHP_BIN','php');APP=ROOT/'public-web/_app'
 def sql(statement):
     code='require '+json.dumps(str(APP/'src/bootstrap.php'))+'; echo json_encode(query('+json.dumps(statement)+')->fetchAll());'
     return json.loads(subprocess.check_output([PHP,'-r',code],text=True))
@@ -39,8 +39,10 @@ class PHPBackend(unittest.TestCase):
             if identifier=='api-two':keyfile.write_text('c'*64)
             subprocess.run([PHP,str(APP/'bin/server.php'),'--id',identifier,'--name',identifier,'--key-file',str(keyfile)],check=True,capture_output=True)
         env=os.environ.copy();env.update(ZOD_DEV_HTTP='1',ZOD_PUBLIC_URL=BASE,PHP_CLI_SERVER_WORKERS='4')
+        cls.site=directory/'standalone-site'
+        shutil.copytree(ROOT/'public-web',cls.site)
         cls.log=open(directory/'php.log','w+')
-        cls.process=subprocess.Popen([PHP,'-S',f'127.0.0.1:{PORT}','-t',str(ROOT/'public-web'),str(ROOT/'public-web/router.php')],env=env,stdout=cls.log,stderr=subprocess.STDOUT,start_new_session=True)
+        cls.process=subprocess.Popen([PHP,'-S',f'127.0.0.1:{PORT}','-t',str(cls.site),str(cls.site/'router.php')],env=env,stdout=cls.log,stderr=subprocess.STDOUT,start_new_session=True)
         for _ in range(100):
             try:
                 if request('/healthz')[0]==200:break
@@ -115,7 +117,7 @@ class PHPBackend(unittest.TestCase):
         status,body,_=request('/api-browser')
         self.assertEqual(status,200);self.assertIn(b'id="api-explorer"',body)
         self.assertIn(b'/api/results',body);self.assertIn(b'Server bearer key',body)
-        for path in ['/src/service.php','/web-service/php/src/service.php','/sql/001_initial.sql','/bin/migrate.php']:
+        for path in ['/src/service.php','/public-web/_app/src/service.php','/sql/001_initial.sql','/bin/migrate.php','/_app/src/service.php','/_app/src/api_catalog.php','/_app/src/views.php','/_app/sql/001_initial.php','/_app/bin/migrate.php']:
             status,body,_=request(path);self.assertEqual(status,404);self.assertNotIn(b'<?php',body)
     def test_04_stored_secrets_are_hashed(self):
         self.assertTrue(all(r['password_hash'].startswith('$argon2id$') for r in sql('SELECT password_hash FROM accounts')))

@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+if (!defined('ZODEE_INTERNAL') && PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 /** Shared public documentation; never contains credentials or operator keys. */
 function api_catalog(): array {
     return [
