@@ -1,7 +1,7 @@
 # zod-enhanced website, PHP API and MariaDB
 
 The central Zod service is **PHP + MariaDB**. The earlier Go/JSON hub has been
-replaced. The small Go **dedicated-server agent** remains a separate client of
+replaced. The small Go **dedicated-server agent** in `server-agent/` remains a separate client of
 the PHP API; it never stores website accounts or statistics.
 
 Everything is in this repository. There is no OpenFP code, account database,
@@ -14,9 +14,9 @@ Internal code, CLI tools and guarded migrations live in its `_app/` directory.
 Deny HTTP access to `_app/` and `config.inc.php`. Configure database and service
 settings in the installed `config.inc.php`; environment variables override it.
 
-* **Overview:** project introduction, real game imagery and live network totals.
+* **Overview:** project introduction and live network totals.
 * **Network services:** integrated service overview, live counts, server directory and leaderboard links.
-* **Features:** a dedicated page describing campaign, editor, recording and interface additions.
+* **Features:** a project timeline and highlights of multiplayer, community services, editors and modern desktop support.
 * **API browser:** developer tooling available by direct URL, hidden from public navigation.
 * **Servers:** searchable public directory, lobby state, addresses and join tickets.
 * **Leaderboard:** all-time unranked wins, matches, units destroyed and captures.
@@ -159,8 +159,8 @@ authentication and work with the PHP API unchanged.
 Build only the Go agent:
 
 ```sh
-go -C web-service build -o ../build-web/zod-agent ./cmd/zod-agent
-go -C web-service test -race ./...
+go -C server-agent build -o ../build-web/zod-agent ./cmd/zod-agent
+go -C server-agent test -race ./...
 ```
 
 Build the engine with CMake, or use the Linux server package. It initializes no
@@ -295,10 +295,10 @@ Passwords, keys and session/ticket credentials must not be placed in URLs or log
 Configure an **isolated empty MariaDB database**, migrate it, then run:
 
 ```sh
-python3 web-service/tests/php_api.py
-python3 web-service/tests/integration.py php "$PWD/build-web/zod-agent" \
+python3 tests/network/php_api.py
+python3 tests/network/integration.py php "$PWD/build-web/zod-agent" \
   "$PWD/build/zod-enhanced" "$PWD/build/zod_engine_regressions" "$PWD"
-go -C web-service test -race ./...
+go -C server-agent test -race ./...
 ```
 
 The PHP tests cover schema/import compatibility, Argon2id upgrade, concurrent

@@ -20,7 +20,7 @@ with tempfile.TemporaryDirectory(prefix='zod-package-') as temporary:
  if not loader:raise RuntimeError('Could not identify ELF loader')
  shutil.copy2(args.engine,dest/'zod-enhanced-bin');shutil.copy2(args.agent,dest/'zod-agent')
  copy_runtime(args.root,dest,website=True)
- shutil.copy2(args.root/'web-service/README.md',dest/'CLOUD-README.md')
+ shutil.copy2(args.root/'docs/NETWORK-SERVICES.md',dest/'CLOUD-README.md')
  (dest/'zod-enhanced').write_text('#!/bin/sh\nset -eu\nroot=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec "$root/lib/'+loader+'" --library-path "$root/lib" "$root/zod-enhanced-bin" "$@"\n')
  (dest/'start-server').write_text('''#!/bin/sh
 set -eu

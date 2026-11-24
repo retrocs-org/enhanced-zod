@@ -185,7 +185,7 @@ The same service supplies website sign-in, single-use join tickets, a live serve
 list and persistent unranked match statistics. It has no dependency on OpenFP or
 any other project's accounts or service.
 
-See [web-service/README.md](web-service/README.md) for builds, Docker/systemd
+See [docs/NETWORK-SERVICES.md](docs/NETWORK-SERVICES.md) for builds, Docker/systemd
 setup, server credentials and the current website-based join-ticket flow.
 Private Docker quick start:
 

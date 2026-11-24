@@ -182,7 +182,7 @@ from fenio/zod; the original Zod Engine is by Michael Bok / Nighsoft.
 
 See [Asset Import](docs/Asset-Import.md) for usage and verification tools,
 [Asset Cleanup](docs/Asset-Cleanup.md) for retained media, and
-[the service guide](web-service/README.md) for hosting and account setup.
+[the service guide](docs/NETWORK-SERVICES.md) for hosting and account setup.
 
 ## Project lineage
 

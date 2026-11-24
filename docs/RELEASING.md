@@ -89,7 +89,7 @@ verify or collect creates tags, pushes commits or publishes anything.
 
 ## Website deployment
 
-Deploy the web ZIP using `web-service/README.md`. Place the platform packages
+Deploy the web ZIP using `docs/NETWORK-SERVICES.md`. Place the platform packages
 under the site's `/downloads/` directory, deploy the prepared `downloads.json`,
 and set `ZOD_DOWNLOADS_FILE` to its absolute server path. The manifest supplies
 version, architecture, SHA-256 and relative download URL; it includes the existing

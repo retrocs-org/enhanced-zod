@@ -11,7 +11,7 @@ are guarded PHP files rather than downloadable SQL. Database and website setting
 refreshes preserve it. Environment variables override file settings. You can
 keep the password in an external file using `ZOD_DB_PASSWORD_FILE` instead.
 
-See [configuration and database setup](../web-service/README.md). Local preview:
+See [configuration and database setup](../docs/NETWORK-SERVICES.md). Local preview:
 
 ```sh
 php -S 127.0.0.1:8088 -t public-web public-web/router.php

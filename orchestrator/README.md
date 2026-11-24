@@ -1,7 +1,7 @@
 # Zod match orchestrator (PoC)
 
 The independent public website, accounts, directory and statistics API now live
-in [`../web-service/`](../web-service/README.md) and use PHP/MariaDB. This
+in [`../public-web/`](../public-web/README.md) and use PHP/MariaDB. This
 orchestrator only manages local match processes; it is not the public account API.
 
 A tiny standalone service that spawns `zod -d` dedicated-server processes on

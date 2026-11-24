@@ -26,9 +26,9 @@ COPY orchestrator/ ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/orchestrator .
 
 # Independent Zod dedicated-server agent (the web service uses PHP below).
-FROM golang:1.26 AS webbuild
+FROM golang:1.26 AS agentbuild
 WORKDIR /src
-COPY web-service/ ./
+COPY server-agent/ ./
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/zod-agent ./cmd/zod-agent
 
 # --- Stage 2: build the C++ engine (zod) against SDL3 ------------------------
@@ -115,7 +115,7 @@ ENTRYPOINT ["/app/orchestrator"]
 
 # Standalone Linux server: private by default, public only with explicit settings.
 FROM runtime AS dedicated-runtime
-COPY --from=webbuild /out/zod-agent /app/zod-agent
+COPY --from=agentbuild /out/zod-agent /app/zod-agent
 COPY --from=cppbuild /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=cppbuild --chown=65532:65532 /rootfs/data/ /data/
 USER 65532:65532
@@ -143,14 +143,14 @@ FROM cppbuild AS cloud-test
 ARG JOBS=4
 RUN apt-get update && apt-get install -y --no-install-recommends php-cli php-mysql php-mbstring mariadb-server \
  && rm -rf /var/lib/apt/lists/*
-COPY --from=webbuild /out/zod-agent /out/zod-agent
-COPY web-service/ /src/web-service/
+COPY --from=agentbuild /out/zod-agent /out/zod-agent
+COPY tests/network/ /src/tests/network/
 COPY public-web/ /src/public-web/
 COPY maps/ /src/maps/
 COPY assets/planets/ /src/assets/planets/
 COPY map_list.txt default_settings.txt /src/
 RUN cmake --build build --target zod_engine_regressions --parallel ${JOBS} \
- && web-service/tests/run-local.sh /out/zod-agent /src/build/zod-enhanced /src/build/zod_engine_regressions
+ && tests/network/run-local.sh /out/zod-agent /src/build/zod-enhanced /src/build/zod_engine_regressions
 
 # Preserve the existing orchestrator image as the default target.
 FROM runtime AS default

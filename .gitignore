@@ -36,7 +36,7 @@ assets/videos/*
 
 # Zod cloud build outputs and local credentials/state
 /build-web/
-/web-service/data/
+/server-agent/data/
 /packaging/linux/secrets/
 /build-linux-vm/
 

@@ -24,7 +24,7 @@ zod_screenshot_*.png
 .DS_Store
 Thumbs.db
 
-web-service/data/
+server-agent/data/
 packaging/linux/secrets/
 build-web/
 

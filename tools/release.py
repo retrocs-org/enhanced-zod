@@ -147,7 +147,7 @@ def _prepare(root,out,artifacts,allow_dirty=False,notes=None):
     with zipfile.ZipFile(website,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=9) as archive:
         add_file(archive,root/'LICENSE','zod-enhanced-web/LICENSE')
         for name in record['files']:
-            if name.startswith(('web-service/','public-web/')): add_file(archive,root/name,'zod-enhanced-web/'+name)
+            if name.startswith('public-web/') or name == 'docs/NETWORK-SERVICES.md': add_file(archive,root/name,'zod-enhanced-web/'+name)
     names.append(website.name)
     platforms={}
     for label, raw in artifacts:

@@ -24,9 +24,9 @@ mariadb --no-defaults --socket="$TASK_TMP/db.sock" -uroot -e 'CREATE DATABASE zo
 unset ZOD_DB_PASSWORD_FILE ZOD_TRUSTED_PROXIES
 export ZOD_DB_SOCKET="$TASK_TMP/db.sock" ZOD_DB_NAME=zod_test ZOD_DB_USER=root ZOD_DB_PASSWORD=""
 "$PHP_BIN" "$ROOT/public-web/_app/bin/migrate.php"
-python3 "$ROOT/web-service/tests/php_api.py"
+python3 "$ROOT/tests/network/php_api.py"
 if [ "$#" -eq 3 ]; then
-    python3 "$ROOT/web-service/tests/integration.py" "$PHP_BIN" "$1" "$2" "$3" "$ROOT"
+    python3 "$ROOT/tests/network/integration.py" "$PHP_BIN" "$1" "$2" "$3" "$ROOT"
 elif [ "$#" -ne 0 ]; then
     echo "Usage: run-local.sh [agent-binary engine-binary engine-regression-driver]" >&2
     exit 1
