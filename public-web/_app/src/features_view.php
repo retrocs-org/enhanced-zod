@@ -7,11 +7,11 @@ function feature_section(): void {
         ['1996','Original game','Z','The Bitmap Brothers','Robot armies, territory control and factory production.','https://www.mobygames.com/game/346/z/','original','Z on MobyGames'],
         ['2010','Open-source remake','Zod Engine','Michael Bok / Nighsoft','Multiplayer, bot opponents and custom maps.','https://zod.sourceforge.net/','engine','Zod Engine website'],
         ['JUN 2026','SDL3 fork','fenio / zod','Modernizing the engine','Native SDL3 and modern macOS, Windows and Linux support.','https://github.com/fenio/zod','sdl','Visit the SDL3 fork'],
-        ['NOV 2026','Our community fork','zod-enhanced','Play together. Create more.','Online services, server discovery and expanded map and campaign editors.','https://github.com/retrocs-org/zodee','enhanced','Our project on GitHub'],
+        ['NOV 2026','Our community fork','zod-enhanced','Play together. Create more.','Online services, server discovery and expanded map and campaign editors.','#enhanced','enhanced','See our multiplayer & creator features'],
     ];
     $features=[
         ['MULTIPLAYER','Find a battle. Bring your friends.','Play over LAN, connect directly or join a public server. Host private games with guests, or run a headless Linux dedicated server.','/servers','Browse servers'],
-        ['ONLINE PORTAL','A home for the community.','Find public servers, see who is playing and follow player profiles, leaderboards and unranked match statistics. Public servers use accounts and join tickets; private and LAN play work without a cloud account.','/network','Explore the online portal'],
+        ['NETWORKING & COMMUNITY','A home for players and servers.','Use the networking portal to discover public servers, see who is playing and explore community profiles, leaderboards and unranked match statistics. Public servers use accounts and join tickets; private and LAN play work without a cloud account.','/network','Explore the online portal'],
         ['MAP & CAMPAIGN EDITORS','Build more than a battlefield.','Create and playtest in the integrated full-screen editor, with terrain tools, object groups and undo/redo. Campaign Studio adds mission sequences, objectives and briefings. Open original maps as starting points and save your own copies.','https://github.com/retrocs-org/zodee/blob/main/docs/Campaigns.md','Explore the creator tools'],
         ['macOS · WINDOWS · LINUX','Classic strategy on modern systems.','Built on the upstream SDL3 port, with modern desktop builds, scalable menus and configurable controls. Import your own original game data, then play the Original Campaign or add community campaigns.','/downloads','Get the game'],
     ];
