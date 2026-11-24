@@ -1,5 +1,7 @@
 # Self-contained PHP website
 
+Website and API changes are tracked in [changelog.md](changelog.md).
+
 Copy this entire directory, including dotfiles and `_app/`, into the vhost
 document root. No sibling repository directory or generated PHP wrapper is needed.
 The same PHP entry point handles the website, network services and JSON API.

@@ -4,6 +4,10 @@ Changes in zod-enhanced — Zod Engine Enhanced are recorded here. This is a wor
 changelog, not an announcement of a published release. The SDL3 foundation comes
 from fenio/zod; the original Zod Engine is by Michael Bok / Nighsoft.
 
+Website and PHP API changes are tracked separately in
+[public-web/changelog.md](public-web/changelog.md). Historical combined entries
+are retained below; new website changes belong in that separate log.
+
 ## Unreleased
 
 - Project renamed to **zod-enhanced — Zod Engine Enhanced**. Existing profiles,
