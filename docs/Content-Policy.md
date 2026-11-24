@@ -1,6 +1,6 @@
 # Source-only repositories
 
-GitHub and GitLab receive source code, authored conversion recipes/configuration,
+GitHub receives source code, authored conversion recipes/configuration,
 project-authored SVGs, documentation and license notices. Original game graphics,
 audio, videos, converted levels, raw game data, compatibility raster patches,
 font binaries, SoundFonts, installers and generated packages are excluded.
@@ -14,12 +14,12 @@ The published repositories now have clean source-only history. Use a normal
 `zodee` clone for development and future pushes:
 
 ```sh
-git clone git@gitlab.kladhest.se:retrocs-org/zodee.git zodee
+git clone https://github.com/retrocs-org/zodee.git zodee
 cd zodee
 git config core.hooksPath .githooks
 python3 tools/audit_source.py --history
-python3 scripts/release.py source --to gitlab,github --dry-run
-python3 scripts/release.py source --to gitlab,github --confirm-push
+python3 scripts/release.py source --to github --dry-run
+python3 scripts/release.py source --to github --confirm-push
 ```
 
 The existing local primary checkout is `/Users/frossmant/Development/repositories/zodee`.

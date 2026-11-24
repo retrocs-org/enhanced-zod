@@ -313,8 +313,7 @@ Canonical URL: `https://zodee.retrocs.org` (`ZOD_PUBLIC_URL`).
 Web host: `sth-ts-web003.kladhest.se`; database host: `sth-ts-dbs001.kladhest.se`.
 Existing MariaDB database/user names remain independently configurable through
 `ZOD_DB_NAME` and `ZOD_DB_USER`; the project rename does not migrate database accounts.
-Project source: https://gitlab.kladhest.se/retrocs-org/zodee
-and https://github.com/retrocs-org/zodee.
+Project source: https://github.com/retrocs-org/zodee.
 
 Before deploying a source checkout, run `python3 tools/bootstrap_fonts.py` from
 the repository root to populate the ignored, licensed UI font dependencies.
@@ -420,5 +419,5 @@ installed config files need no changes: absent `ZOD_CLEAN_URLS` defaults to
 front-controller URLs. For dedicated servers, use the hub URL
 `https://zodee.retrocs.org/index.php` until clean API URLs are routed by Apache.
 
-The zod-ee website uses a Z-inspired industrial interface with original vector
-battlefield artwork. It contains no Dungeon Keeper artwork or theme assets.
+The zod-ee website uses a Z-inspired industrial interface with beveled metal panels inspired by the game menus. It contains no gameplay
+illustrations or simulated screenshots.

@@ -2,7 +2,7 @@
 
 **Zod Engine Enhanced**
 
-Website: https://zodee.retrocs.org · [GitLab](https://gitlab.kladhest.se/retrocs-org/zodee) · [GitHub](https://github.com/retrocs-org/zodee)
+Website: https://zodee.retrocs.org · [GitHub](https://github.com/retrocs-org/zodee)
 
 A community fork of **Zod Engine**, the open-source remake of The Bitmap
 Brothers’ 1996 real-time strategy game *Z*. This repository builds on

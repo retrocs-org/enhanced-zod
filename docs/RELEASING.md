@@ -50,7 +50,7 @@ Checksums detect changes; they are not a cryptographic publisher signature.
 
 ## Local release packages
 
-GitHub Actions and GitLab CI automation are disabled. Build, test, and prepare
+Hosted CI automation is disabled. Build, test, and prepare
 packages locally with the release tools below. Runner automation will be added
 separately. Validate each platform on its native system before distributing its
 packages; a successful macOS build does not validate Windows or Linux.
@@ -65,9 +65,9 @@ python3 tools/release.py collect --input outputs/release-macos \
 ## Publication and source synchronization
 
 Copy `examples/release-config.json` to ignored `release-config.json` and set
-`github_repo` or `gitlab_repo` to your own repository. No destination is inferred
+`github_repo` to your own repository. No destination is inferred
 from the existing upstream remote. The upstream `fenio/zod` destination is
-explicitly refused. Credentials stay in authenticated `gh`/`glab` CLI sessions,
+explicitly refused. Credentials stay in authenticated `gh` CLI sessions,
 never in archives or configuration committed to source control.
 
 Commit the reviewed source, create a local `vVERSION` tag at that exact commit,
@@ -79,8 +79,7 @@ python3 tools/release.py publish --output outputs/release-combined \
   --config release-config.json --confirm-publish
 ```
 
-GitHub creates a draft by default; `--public` publishes immediately. GitLab
-(`--target gitlab`) creates a public release immediately. Successful publication
+GitHub creates a draft by default; `--public` publishes immediately. Successful publication
 writes a local receipt containing the manifest hash and destination. Existing
 release names are not overwritten; resolve duplicate releases in the hosting UI.
 
@@ -140,7 +139,6 @@ are adapted from NovaDock. Build/package verification and explicit publication
 remain separate operations. The tracked, non-secret `examples/release-config.json`
 is the default profile and points to:
 
-- GitLab: https://gitlab.kladhest.se/retrocs-org/zodee
 - GitHub: https://github.com/retrocs-org/zodee
 - Website: https://zodee.retrocs.org
 
@@ -152,34 +150,30 @@ python3 scripts/release.py prepare --artifact macos-arm64=build-app/zod-ee.app
 python3 scripts/release.py status
 
 # After reviewing and committing the source:
-python3 scripts/release.py source --to gitlab,github --dry-run
-python3 scripts/release.py source --to gitlab,github --confirm-push
+python3 scripts/release.py source --to github --dry-run
+python3 scripts/release.py source --to github --confirm-push
 
 # After reviewing verified packages and creating the matching local version tag:
-python3 scripts/release.py publish --to gitlab,github --confirm-publish
+python3 scripts/release.py publish --to github --confirm-publish
 ```
 
 Source dry runs perform Git's remote push preflight without uploading commits.
-Both destinations must pass preflight before either real push starts. The tool
+The selected destination must pass preflight before uploading. The tool
 pushes an exact commit without force or automatic tag pushing, verifies each
-remote branch, and writes separate receipts under `outputs/source/`. A failure
-on the second repository can leave the first updated; its receipt identifies
-that successful push. Retrying the same reviewed commit is safe.
+remote branch, and writes separate receipts under `outputs/source/`. The receipt identifies the successful push. Retrying the same reviewed commit is safe.
 
 Source pushes require a clean committed checkout and reject tracked private files,
 generated outputs and credentials. They use Git credential helpers or configured
-SSH URLs (`github_git` / `gitlab_git`); URLs must match the selected repositories.
+SSH URLs (`github_git`); URLs must match the selected repository.
 No command initializes or commits this existing checkout implicitly.
 
-Release uploads use authenticated `gh` / `glab` CLIs. Self-hosted GitLab is passed
-explicitly to `glab`; source pushes also use its configured hostname. For optional
+Release uploads use the authenticated `gh` CLI. For optional
 NovaDock-style credential lookup, copy the profile to ignored `release-config.json`
 and add a `credentials` object, then pass `--config release-config.json`:
 
 ```json
 {"credentials": {
-  "github": {"provider": "env", "variable": "GITHUB_TOKEN"},
-  "gitlab": {"provider": "1password", "reference": "op://COPY-EXACT-SECRET-REFERENCE"}
+  "github": {"provider": "env", "variable": "GITHUB_TOKEN"}
 }}
 ```
 
