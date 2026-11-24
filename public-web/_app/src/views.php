@@ -2,6 +2,7 @@
 declare(strict_types=1);
 if (!defined('ZODEE_INTERNAL') && PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 require_once __DIR__.'/network_views.php';
+require_once __DIR__.'/features_view.php';
 function e(mixed $value): string { return htmlspecialchars((string)$value,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'); }
 function number(mixed $n): string { return number_format((int)$n); }
 function duration(mixed $n): string { $n=(int)$n;return $n>=3600?sprintf('%dh %02dm',intdiv($n,3600),intdiv($n%3600,60)):sprintf('%dm %02ds',intdiv($n,60),$n%60); }
@@ -17,7 +18,7 @@ function page_header(string $active,?array $me=null): void {
         },$html);
     });
     $titles=['features'=>'Features','network'=>'Network services','api-browser'=>'API browser','home'=>'A new front for a classic RTS','servers'=>'Server directory','leaderboard'=>'Leaderboards','statistics'=>'Community statistics','downloads'=>'Downloads','account'=>'Your account','guide'=>'Field guide','profile'=>'Player profile','credits'=>'Credits & project history'];
-    ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="zod-enhanced. A classic real-time strategy game, rebuilt for modern machines. Find servers, track your battles, and join the community."><meta name="theme-color" content="#1b2227"><title><?=e($titles[$active]??'zod-enhanced')?> — zod-enhanced</title><link rel="icon" type="image/svg+xml" href="/assets/favicon.svg?v=z-enhanced-9"><link rel="stylesheet" href="/assets/site.css?v=z-enhanced-9"><script src="/assets/site.js?v=z-enhanced-9" defer></script></head><body data-api-prefix="<?=env_value('ZOD_CLEAN_URLS')==='1'?'':'/index.php'?>"><a class="skip-link" href="#main">Skip to content</a><header class="site-header"><div class="shell header-inner"><a class="brand" href="/" aria-label="zod-enhanced home"><span class="brand-mark">Z</span><span>zod-enhanced<span class="brand-sub">ZOD ENGINE ENHANCED</span></span></a><button class="nav-toggle" aria-expanded="false" aria-controls="main-nav">Menu <span>☰</span></button><nav id="main-nav" aria-label="Main navigation"><?php foreach(['home'=>'Overview','features'=>'Features','network'=>'Network','servers'=>'Servers','leaderboard'=>'Leaderboard','downloads'=>'Downloads'] as $key=>$label):?><a href="<?=$key==='home'?'/':'/'.$key?>" <?=$active===$key?'aria-current="page"':''?>><?=$label?></a><?php endforeach?></nav><a class="account-link" href="/account"><span class="account-dot"></span><?=e($me['username']??'Sign in')?> <span aria-hidden="true">↗</span></a></div></header><main id="main">
+    ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="zod-enhanced. A classic real-time strategy game, rebuilt for modern machines. Find servers, track your battles, and join the community."><meta name="theme-color" content="#1b2227"><title><?=e($titles[$active]??'zod-enhanced')?> — zod-enhanced</title><link rel="icon" type="image/svg+xml" href="/assets/favicon.svg?v=z-history-10"><link rel="stylesheet" href="/assets/site.css?v=z-history-10"><script src="/assets/site.js?v=z-history-10" defer></script></head><body data-api-prefix="<?=env_value('ZOD_CLEAN_URLS')==='1'?'':'/index.php'?>"><a class="skip-link" href="#main">Skip to content</a><header class="site-header"><div class="shell header-inner"><a class="brand" href="/" aria-label="zod-enhanced home"><span class="brand-mark">Z</span><span>zod-enhanced<span class="brand-sub">ZOD ENGINE ENHANCED</span></span></a><button class="nav-toggle" aria-expanded="false" aria-controls="main-nav">Menu <span>☰</span></button><nav id="main-nav" aria-label="Main navigation"><?php foreach(['home'=>'Overview','features'=>'Features','network'=>'Network','servers'=>'Servers','leaderboard'=>'Leaderboard','downloads'=>'Downloads'] as $key=>$label):?><a href="<?=$key==='home'?'/':'/'.$key?>" <?=$active===$key?'aria-current="page"':''?>><?=$label?></a><?php endforeach?></nav><a class="account-link" href="/account"><span class="account-dot"></span><?=e($me['username']??'Sign in')?> <span aria-hidden="true">↗</span></a></div></header><main id="main">
     <?php
 }
 function page_footer(): void { ?>
@@ -94,19 +95,3 @@ open build-app/zod-enhanced.app</code></pre><p><a href="https://github.com/retro
     join_dialog();echo '</main>';page_footer();
 }
 function render_error(int $status,string $message): void {page_header('error');?><section class="shell section page-section"><span class="eyebrow">TRANSMISSION / <?=e($status)?></span><h1><?=$status===404?'Off the map.':'Connection interrupted.'?></h1><p class="page-description"><?=e($message)?></p><a href="/" class="button button-primary">Back to overview</a></section></main><?php page_footer();}
-
-function feature_section(): void {
-    $features=[
-        ['CAMPAIGNS','More stories to command.','Keep the Original Campaign and its progress, or import community campaign packs with their own missions, briefings and optional cutscenes.'],
-        ['MAP EDITOR','Build inside the game.','Edit maps in the integrated full-screen editor, try them in playtests, and create campaign packs. Original levels can be opened and saved as new copies.'],
-        ['BATTLE RECORDINGS','Revisit the action.','Record local battles and review them with pause, playback speed, seeking and team views. Recordings require the matching engine version.'],
-        ['INTERFACE & ACCESSIBILITY','Make it comfortable.','Scale menus, remap controls, adjust music and effects separately, and choose larger cursors, team symbols, subtitles and accessibility presets.'],
-        ['MULTIPLAYER','Choose how you connect.','Find LAN games, connect directly, or run a headless dedicated server. Optional public accounts add join tickets, match records and unranked leaderboards.'],
-        ['OFFLINE PLAY & IMPORT','Your game. Your machine.','Import media from your original DOS Z disc image. Campaigns and private/LAN games work without a cloud account; original game media is required.'],
-    ];
-    ?><section class="shell section page-section features-page">
-    <?php title_block('ZOD ENGINE ENHANCED / FEATURES','What zod-enhanced adds.','Building on the original Zod Engine and fenio’s SDL3 modernization, zod-enhanced adds tools for campaign creators, more ways to revisit battles, and a more flexible interface.'); ?>
-    <div class="enhancement-grid"><?php foreach($features as [$label,$title,$description]): ?><article class="feature-card"><span class="eyebrow"><?=e($label)?></span><h2><?=e($title)?></h2><p><?=e($description)?></p></article><?php endforeach ?></div>
-    <p class="features-note">An evolving community fork. See the <a href="https://github.com/retrocs-org/zodee/blob/main/docs/RELEASE-NOTES.md">release notes</a> for details and current limitations.</p>
-    </section><?php
-}
