@@ -297,6 +297,7 @@ void ZSoundEngine::PlayWav(int snd)
 
 	switch(snd)
 	{
+    case RADAR_SND:radar.PlaySound();break;
 	default:
 		engine_sound[snd].PlaySound();
 		break;

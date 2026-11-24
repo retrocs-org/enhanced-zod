@@ -281,6 +281,7 @@ void ZPlayer::lclick_event(ZPlayer *p, char *data, int size, int dummy)
 {
 	hud_click_response hud_response;
 
+	if(p->ReplayClick(p->mouse_x,p->mouse_y)){p->notification_click=true;p->lbutton.down=false;return;}
 	if(p->gui_menu_list.empty()&&!p->show_match_summary&&p->ClickNotification(p->mouse_x,p->mouse_y)){p->lbutton.down=false;return;}
 	p->lbutton.down = true;
 

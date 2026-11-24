@@ -19,8 +19,19 @@ def workspace(root,destination):
     for font in (root/'assets/frontend/fonts').glob('*'):
         if font.is_file():shutil.copy2(font,fonts/font.name)
     # Authored flat-colour terrain atlas, not original game pixels.
-    width,height=320,384;row=bytes([40,60,90])*width;pixels=row*height
-    bmp=struct.pack('<2sIHHI',b'BM',54+len(pixels),0,0,54)+struct.pack('<IiiHHIIiiII',40,width,height,1,24,0,len(pixels),0,0,0,0)+pixels
+    width,height=320,384;row=bytes([40,60,90])*width;pixels=bytearray(row*height)
+    # Authored connection atlas: all sixteen NESW masks for roads and water.
+    for start,colour in [(460,bytes([170,170,170])),(400,bytes([180,90,20]))]:
+        for mask in range(16):
+            tile=start+mask
+            for y in range(16):
+                for x in range(16):
+                    connected=(4<=x<12 and 4<=y<12) or (mask&1 and 4<=x<12 and y<4) or (mask&2 and x>=12 and 4<=y<12) or (mask&4 and 4<=x<12 and y>=12) or (mask&8 and x<4 and 4<=y<12)
+                    if connected:
+                        offset=((tile//20*16+y)*width+tile%20*16+x)*3
+                        pixels[offset:offset+3]=colour
+    pixels=bytes(pixels)
+    bmp=struct.pack('<2sIHHI',b'BM',54+len(pixels),0,0,54)+struct.pack('<IiiHHIIiiII',40,width,-height,1,24,0,len(pixels),0,0,0,0)+pixels
     planets=destination/'assets/planets';planets.mkdir(parents=True,exist_ok=True)
     for planet in ['desert','volcanic','arctic','jungle','city']:
         (planets/(planet+'.bmp')).write_bytes(bmp)

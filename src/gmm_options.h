@@ -25,10 +25,11 @@ private:
 	// art was never shipped, so the menu had no working volume/speed control
 	// (issue #41); buttons are the reliable control this fork ships
 	GMMWSlider effects_slider{"Sound effects",&zod_effects_volume},music_slider{"Music",&zod_music_volume};
-    GMMWButton category_button[6],picture_button,stick_button,fullscreen_button,gamma_button;
+    GMMWButton category_button[7],picture_button,stick_button,fullscreen_button,gamma_button;
     GMMWButton text_size_button,cursor_size_button,team_marker_button,motion_button;
     int category=0,focus=0,preview_y=0;
     GMMWSlider video_slider{"Video volume",&zod_video_volume};
+    GMMWButton damage_alert_button,production_alert_button,alert_sound_button,alert_cooldown_button;
     GMMWButton preset_button,recording_button;
     GMMWButton subtitle_toggle_button,deadzone_button,edge_button,subtitle_size_button,subtitle_bg_button,profile_button;
     GMMWButton diagnostics_button;GMMWButton defaults_button;GMMWLabel help_label;

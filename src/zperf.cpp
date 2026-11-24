@@ -1,5 +1,10 @@
 #include "zperf.h"
 #include <atomic>
+#ifdef __APPLE__
+#include <mach/mach.h>
+#elif defined(__linux__)
+#include <unistd.h>
+#endif
 #include <mutex>
 #include <map>
 #include <sstream>
@@ -11,6 +16,14 @@
 #include <sys/resource.h>
 #endif
 namespace {struct Sample {Uint64 count=0,total=0,maximum=0,histogram[32]{};};std::atomic<bool> enabled{false};std::mutex guard;std::map<std::string,Sample> samples;}
+Uint64 ZPerf_ResidentBytes(){
+#ifdef __APPLE__
+ mach_task_basic_info_data_t info{};mach_msg_type_number_t count=MACH_TASK_BASIC_INFO_COUNT;if(task_info(mach_task_self(),MACH_TASK_BASIC_INFO,(task_info_t)&info,&count)==KERN_SUCCESS)return info.resident_size;
+#elif defined(__linux__)
+ std::ifstream stat("/proc/self/statm");Uint64 total,resident;if(stat>>total>>resident)return resident*sysconf(_SC_PAGESIZE);
+#endif
+ return 0;
+}
 void ZPerf_Enable(bool value){enabled=value;}
 bool ZPerf_Enabled(){return enabled;}
 void ZPerf_Record(const char *tag,Uint64 ns){if(!enabled||!tag)return;std::lock_guard<std::mutex> lock(guard);if(samples.size()>=32&&!samples.count(tag))return;auto &sample=samples[tag];++sample.count;sample.total+=ns;sample.maximum=std::max(sample.maximum,ns);Uint64 us=ns/1000;int bin=0;while(us>1&&bin<31){us>>=1;++bin;}++sample.histogram[bin];}

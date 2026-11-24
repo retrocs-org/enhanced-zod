@@ -303,7 +303,9 @@ Installation checks installed dependencies and cycles before changing a pack; an
 must have a strictly newer version and preserves the existing mission order/map identities.
 The campaign browser checks compatibility again before launch. Original Campaign is separate.
 
-Studio > Events accepts one bounded event per line:
+Studio > Events provides a visual timeline, trigger/action selectors, unit/team pickers,
+validated numeric fields and a map-position picker. Select an event to edit it, then use
+Apply changes; Add event creates another entry. The manifest representation is:
 
 ```ini
 event=time|30|0|reinforce|2|5|0|8|8|2|Enemy reinforcements!
@@ -333,9 +335,23 @@ missions and the current branch destination only, preserving hidden future missi
 Terrain tools include Smooth, Road and River. Smooth uses neighboring ground tiles and
 preserves roads/water. Road/River use two clicks for a continuous L-shaped stroke and learn
 connection variants from the currently loaded map; empty maps use a usable palette tile.
-These tools do not generate new artwork. Undo restores each completed edit.
+These tools do not generate new artwork. Connected strokes are previewed before Apply
+(or Enter); Escape cancels. Palette pixels supply connection hints even on blank maps,
+and existing map patterns are preferred. Connections edits persistent per-palette NESW
+overrides for endpoints, corners, T junctions and crossings. Unmatched variants are
+reported in the preview instead of being presented as exact matches. Undo restores each
+applied stroke.
 
 Select objects and open Object groups to save a reusable group in the private profile.
 Load a group, then Ctrl/Cmd+V places it at the pointer. New Map offers Blank, Duel, Defense
 and Escort templates. Adding a Defense/Escort template to a campaign creates its objective.
 Original maps remain protected; edits save as user copies.
+
+## Managing requirements and restoring updates
+
+The campaign import preview lists required packs, installed versions and the supported
+engine range. Missing packs, cycles, incompatible engine versions, authoring-project
+conflicts and non-newer updates block installation. Dependency lists can be scrolled.
+Manage campaign offers previous update versions. Restore preserves the current version
+as another backup, checks the restored pack and the requirements of all installed packs,
+and swaps folders transactionally. Progress/records remain outside the content folders.

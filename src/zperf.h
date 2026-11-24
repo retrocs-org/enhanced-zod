@@ -2,6 +2,7 @@
 #define ZPERF_H
 #include <string>
 #include <SDL3/SDL.h>
+Uint64 ZPerf_ResidentBytes();
 void ZPerf_Enable(bool enabled);
 bool ZPerf_Enabled();
 void ZPerf_Record(const char *tag,Uint64 nanoseconds);

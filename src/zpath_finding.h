@@ -76,6 +76,9 @@ class ZPath_Finding_RegionInfo
 {
 public:
 	ZPath_Finding_RegionInfo();
+    ~ZPath_Finding_RegionInfo(){Delete();}
+    ZPath_Finding_RegionInfo(const ZPath_Finding_RegionInfo&)=delete;
+    ZPath_Finding_RegionInfo& operator=(const ZPath_Finding_RegionInfo&)=delete;
 
 	void Init(int w_, int h_);
 	void Delete();

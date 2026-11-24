@@ -49,7 +49,12 @@ private:
     int fileForm=0,modalLayer=0,editField=-1,newTerrain=0,newSize=1,campaignMission=0,missionScroll=0;
     std::string formName="Untitled",campaignTitle="My campaign";
     ZCampaign authorCampaign,testCampaign;
-    bool compatibilityPanel=false,eventPanel=false,prefabPanel=false;std::string dependencyText,eventText,prefabName="Selection group";std::vector<std::string> prefabFiles;int prefabChoice=0,templateKind=0;
+    ZMissionEvent eventDraft;int eventIndex=-1,eventScroll=0;bool pickEventLocation=false;
+    std::string eventDelay="0",eventTarget="0",eventX="8",eventY="8",eventCount="1";
+    void RenderEvents();void LoadEvent(int index);bool StoreEvent(bool append);
+    bool compatibilityPanel=false,eventPanel=false,prefabPanel=false;std::string dependencyText,prefabName="Selection group";std::vector<std::string> prefabFiles;int prefabChoice=0,templateKind=0;
+    bool connectionsPanel=false,terrainConfirm=false;int connectionMask=0,connectionTile=0,terrainUnresolved=0;std::map<int,int> connectionOverrides[2];std::vector<map_tile> terrainPreview;
+    void RenderConnections();void SaveConnections();std::map<int,int> PaletteConnections(bool water);void ApplyTerrainPreview();
     void RenderPrefabs();void SavePrefab();void LoadPrefab();void SmoothTerrain(int x,int y);void ConnectedTerrain(int x,int y,bool water);
     bool timelinePanel=false,metadataPanel=false;int timelineIndex=-1,timelineScroll=0;ZMissionObjective objectiveDraft;std::string objectiveTarget="0",objectiveSeconds="30";
     void RenderTimeline();

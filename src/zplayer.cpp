@@ -263,7 +263,7 @@ ZPlayer::ZPlayer() : ZClient()
 //#88: zero the post-match summary state (start of a match / next-map load)
 void ZPlayer::ResetMatchStats()
 {
-    battle_notifications.clear();notification_click=false;
+    battle_notifications.clear();notification_click=false;notification_history=false;notification_history_page=0;notification_sound_at[0]=notification_sound_at[1]=0;
     battle_notice.clear();battle_notice_until=0;last_factory_ref=-1;summary_menu_ready=false;objective_text.clear();objective_total=0;objective_x=objective_y=-1;
 	show_match_summary = false;
 	summary_pending = false;
@@ -5568,6 +5568,7 @@ static double BuildingMenuRenderScale()
 
 void ZPlayer::LoadMainMenu(int menu_type, bool kill_if_open, gmm_warning_flag warning_flags)
 {
+    if(replay_active){if(menu_type==GMM_MAIN_MAIN)menu_type=GMM_OPTIONS;else if(menu_type!=GMM_OPTIONS&&menu_type!=GMM_WARNING)return;}
 	ZGuiMainMenuBase *new_menu = NULL;
 
 	//already loaded?

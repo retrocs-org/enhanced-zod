@@ -91,6 +91,15 @@ class EngineRegressions(unittest.TestCase):
             result=subprocess.check_output([DRIVER,'preview-palette'],cwd=WORKSPACE,env=env,text=True)
             self.assertIn('imported-preview-ok',result)
 
+    def test_stress_assessment_rejects_inactive_and_growing_runs(self):
+        sys.path.insert(0,str(pathlib.Path(ROOT)/'tools'))
+        import stress
+        good=dict(ticks=600,reloads=6,moved=10,damaged=5,dead=1,live_units=2,survivors=2,warm_rss=1024,final_rss=2048,peak_rss=2048)
+        self.assertFalse(stress.assess_metrics(good,600,32))
+        for key,value in [('moved',0),('damaged',0),('reloads',0),('live_units',0),('survivors',0),('peak_rss',100*1024*1024),('warm_rss',None)]:
+            bad=dict(good);bad[key]=value
+            self.assertTrue(stress.assess_metrics(bad,600,32),key)
+
     def test_campaign_script_replay_and_presets(self):
         for mode,arg in [("replay-feedback",None),("authoring-tools",None),("feature-checks",None),("script-save",MAP),("stress",MAP)]:
             with tempfile.TemporaryDirectory(prefix="zodee-features-") as directory:

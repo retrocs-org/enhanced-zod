@@ -648,7 +648,7 @@ void ZMap::ClearMap()
 {
 	file_loaded = false;
 
-	basic_info.clear();
+	// Keep dimensions alive until all per-column allocations have been freed.
 	zone_list.clear();
 	object_list.clear();
 	tile_list.clear();
@@ -667,6 +667,7 @@ void ZMap::ClearMap()
 	DeleteRockList();
 	DeleteStampList();
 	FreeMapData();
+	basic_info.clear();
 }
 
 void ZMap::InitEffects()

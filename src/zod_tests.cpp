@@ -315,8 +315,15 @@ static void test_bridge_traffic_and_factory_exit(){
  CHECK(!factory.InSameRegion(px(7),px(7),px(2),px(2),true),"blocked factory exit is detected");factory.SetImpassable(7,10,false);factory.SetImpassable(8,10,false);finalize_map(factory);CHECK(factory.InSameRegion(px(7),px(7),px(2),px(2),true),"robots can leave reopened factory exit");
 }
 
+static void test_pending_route_cleanup(){
+    puts("pending routes and resized-map cleanup");int baseline=ZPath_Finding_Response::existing_responses;
+    for(int round=0;round<12;++round){ZPath_Finding_Engine pf;build_map(pf,96,96);for(int y=0;y<90;++y)pf.SetImpassable(48,y,true);finalize_map(pf);CHECK(pf.Find_Path(px(4),px(4),px(80),px(80),true,false,42)>0,"starts asynchronous detour");build_map(pf,32+round,40);finalize_map(pf);pf.Lock_List();bool empty=pf.GetList().empty();pf.Unlock_List();CHECK(empty,"new map has no stale path responses");CHECK(ZPath_Finding_Response::existing_responses==baseline,"reset releases owned path responses");}
+    CHECK(ZPath_Finding_Response::existing_responses==baseline,"destruction leaves no path responses");
+}
+
 int main()
 {
+    test_pending_route_cleanup();
 	test_passability();
 	test_direct_path();
 	test_regions();

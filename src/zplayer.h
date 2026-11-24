@@ -199,10 +199,12 @@ class ZPlayer : public ZClient
         void RenderSelectionReadout();
         bool summary_menu_ready=false;void CompleteMenuReturn();
         struct BattleNotification {std::string text;int x=0,y=0;bool damage=false;Uint64 born=0,until=0;};
+        bool notification_history=false;int notification_history_page=0;Uint64 notification_sound_at[2]{};
         std::vector<BattleNotification> battle_notifications;bool notification_click=false;
         void NotifyBattle(const std::string &text,int x,int y,bool damage=false);
         bool ClickNotification(int x,int y);
         ZReplayRecorder replay_recorder;ZReplayTape replay_tape;bool replay_active=false,replay_paused=false,replay_ended=false;size_t replay_index=0;double replay_clock=0,replay_speed=1;Uint64 replay_tick=0,replay_record_start=0;int replay_previous_team=1;
+        bool replay_seeking=false;bool ReplayClick(int x,int y);void SeekReplay(double milliseconds);
         bool PlayReplay(const std::string &path);void StopReplay();void ProcessReplay();void RenderReplay();void RecordReplayPacket(int id,const char *data,int size);
         void BattleFeedback(const std::string &text);void RenderBattleFeedback();void SelectNextIdleFactory();
         std::string battle_notice;Uint64 battle_notice_until=0;int last_factory_ref=-1;

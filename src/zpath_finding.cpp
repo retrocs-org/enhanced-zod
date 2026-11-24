@@ -379,14 +379,10 @@ ZPath_Finding_Engine::ZPath_Finding_Engine()
 
 ZPath_Finding_Engine::~ZPath_Finding_Engine()
 {
-	SDL_LockMutex(list_mutex);
-	Clear_Response_List();
-	SDL_UnlockMutex(list_mutex);
-
+    // Join workers while their response mutex and tile data still exist.
+    DeleteAllTileInfo();
 	SDL_DestroyMutex(list_mutex);
 	list_mutex = NULL;
-
-	DeleteAllTileInfo();
 }
 
 void ZPath_Finding_Engine::Push_Response(ZPath_Finding_Response *response)
@@ -416,6 +412,10 @@ void ZPath_Finding_Engine::DeleteAllTileInfo()
 {
 	//we must first stop all path finding threads
 	Clear_Thread_List();
+    SDL_LockMutex(list_mutex);
+    Clear_Response_List();
+    SDL_UnlockMutex(list_mutex);
+    region_info.Delete();
 
 	DeleteTileInfo(&path_robot_tile);
 	DeleteTileInfo(&path_robot_norocks_tile);

@@ -71,7 +71,7 @@ public:
 	void PlayLevelResult(bool won);
     void RecordCampaignResult(bool won,int seconds=-1,int kills=0,int lost=0,int difficulty=1);
     bool CommunityBattle() const {return community_running;}
-    void OpenRecordings();
+    void OpenRecordings();void RecordingError(const std::string &message);
     bool EditorTesting() const {return editor_testing;}
     void PrepareEditorReturn(bool advance){editor_continue_pending=editor_testing&&workspace&&!workspace->TestCampaign().root.empty()&&advance&&community_next>=0;}
     void ContinueCommunity();
@@ -96,7 +96,7 @@ public:
 
 private:
 	friend struct ZFrontEndRegression;
-	enum Screen { SCR_MAIN, SCR_REPLAY, SCR_SCORES, SCR_BRIEFING, SCR_LOADING, SCR_QUIT, SCR_LOAD, SCR_CUSTOM, SCR_KEYS, SCR_IMPORT, SCR_SETTINGS, SCR_EDITOR, SCR_CAMPAIGNS, SCR_RECORDINGS };
+	enum Screen { SCR_MAIN, SCR_REPLAY, SCR_SCORES, SCR_BRIEFING, SCR_LOADING, SCR_QUIT, SCR_LOAD, SCR_CUSTOM, SCR_KEYS, SCR_IMPORT, SCR_SETTINGS, SCR_EDITOR, SCR_CAMPAIGNS, SCR_RECORDINGS, SCR_ALERTS };
 
 	struct CustomMap
 	{
@@ -133,8 +133,10 @@ private:
 	ZAssetImport asset_import;
 	bool import_only = false;
 	int focus_button=-1,focus_count=0,focus_index=0;bool focus_activate=false;Screen focus_screen=SCR_MAIN;
+    int campaign_dependency_scroll=0,campaign_backup_choice=0;
+    std::string recordingDetails,recordingError;int recordingInspected=-1;
     std::vector<std::string> recordingFiles;int recordingChoice=0,recordingScroll=0;
-    void RenderRecordings();
+    void RenderRecordings();void RenderAlerts();
     void RenderImport();
 
 	// ---- state ----

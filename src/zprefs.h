@@ -10,6 +10,8 @@
 // Classic (original-Z) mouse: left click orders and drops the selection,
 // right click cancels. Off = RTS-style right-click orders.
 extern bool zod_classic_mouse;
+extern bool zod_damage_alerts,zod_production_alerts,zod_alert_sounds;
+extern int zod_alert_cooldown_ms;
 
 // Audio volume (a sound_setting index, 0..MAX_SOUND_SETTINGS-1) and game speed
 // multiplier, remembered across sessions so the Options menu values stick (#73).

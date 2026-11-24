@@ -52,3 +52,14 @@ Hosted CI remains removed; validation is performed with local build/test tools.
 
 Replay files require the same engine version. They record world packets, not video,
 chat or account data; team views use only the data received during recording.
+
+## Reliability and workflow follow-up
+
+- Fixed map-column and pathfinding-region memory leaks during repeated loading.
+- Joined pathfinding workers before releasing their response queues and mutex.
+- Visual mission-event editor with timeline, unit selection and map-position picking.
+- Replay seeking, clickable controls, recording metadata and verified partial recovery.
+- Dependency/version installation previews and transactional update-backup restoration.
+- Road/river previews, palette-derived variants and persistent connection overrides.
+- Shared alert preferences, optional sounds, cooldowns and clickable history.
+- Stress checks now assert movement, combat, world-state preservation and memory bounds.
