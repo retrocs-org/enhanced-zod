@@ -15,8 +15,9 @@ Deny HTTP access to `_app/` and `config.inc.php`. Configure database and service
 settings in the installed `config.inc.php`; environment variables override it.
 
 * **Overview:** project introduction, real game imagery and live network totals.
-* **Network services:** integrated service overview, live counts, server directory and developer links.
-* **API browser:** same-origin public GET explorer, JSON response viewer and authentication reference.
+* **Network services:** integrated service overview, live counts, server directory and leaderboard links.
+* **Features:** a dedicated page describing campaign, editor, recording and interface additions.
+* **API browser:** developer tooling available by direct URL, hidden from public navigation.
 * **Servers:** searchable public directory, lobby state, addresses and join tickets.
 * **Leaderboard:** all-time unranked wins, matches, units destroyed and captures.
 * **Statistics:** network totals, map popularity, average duration and recent battles.

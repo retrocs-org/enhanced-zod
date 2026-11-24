@@ -109,7 +109,7 @@ class PHPBackend(unittest.TestCase):
         self.assertEqual(request('/account/logout',raw=b'',headers={'Content-Type':'application/x-www-form-urlencoded'})[0],200) # error redirects to visible form
         self.assertEqual(request('/api/statistics')[0],200)
     def test_front_controller_and_directory_routes(self):
-        for page in ['network','leaderboard','statistics','servers','downloads','account','guide','credits','api-browser']:
+        for page in ['features','network','leaderboard','statistics','servers','downloads','account','guide','credits','api-browser']:
             for path in ['/index.php/'+page,'/'+page+'/']:
                 status,body,_=request(path)
                 self.assertEqual(status,200,path)
