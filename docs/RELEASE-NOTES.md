@@ -1,4 +1,4 @@
-# zod-ee 0.5.2
+# zod-ee 0.6.0
 
 Zod Engine Enhanced is a community fork of fenio/zod and the original
 Zod Engine by Michael Bok / Nighsoft.
@@ -37,3 +37,18 @@ Recent local-workflow improvements:
 - Opt-in timing and memory profiling in privacy-safe diagnostic exports.
 
 Hosted CI remains removed; validation is performed with local build/test tools.
+
+## Campaign and battle tools
+
+- Engine and campaign dependency checks, cycle detection and downgrade protection.
+- Timed/capture/destruction events, reinforcement groups, dialogue, escort objectives
+  and win/loss mission branches. Event state and original-object identities survive saves.
+- Smooth terrain, connected road/river strokes, reusable object groups and map templates.
+- Opt-in local battle recordings with pause, speed and team view controls.
+- Coalesced damage and production notifications with click-to-focus.
+- Shared high contrast, reduced motion, large interface and subtitle presets.
+- Isolated local stress runner for large unit counts and repeated save/editor sessions.
+- Checksummed v6 saves retain readers for v3/v4/v5; older engines cannot read v6.
+
+Replay files require the same engine version. They record world packets, not video,
+chat or account data; team views use only the data received during recording.

@@ -118,7 +118,7 @@ bool ZSaveReader::ReadFile(const string &path)
 	size_t got;
 	while((got = fread(chunk, 1, sizeof(chunk), fp)) > 0) buf.insert(buf.end(), chunk, chunk + got);
     bool readError=ferror(fp)!=0;fclose(fp);if(readError){ok=false;return false;}
-    bool checksumRequired=buf.size()>=12&&memcmp(buf.data()+4,ZSAVE_MAGIC,8)==0;
+    bool checksumRequired=buf.size()>=12&&(memcmp(buf.data()+4,ZSAVE_MAGIC,8)==0||memcmp(buf.data()+4,"ZODSAVE5",8)==0);
     if(checksumRequired&&(buf.size()<24||memcmp(buf.data()+buf.size()-12,"ZODCRC1!",8)!=0)){ok=false;return false;}
     if(buf.size()>=12&&memcmp(buf.data()+buf.size()-12,"ZODCRC1!",8)==0){unsigned stored=0;for(int i=0;i<4;++i)stored|=(unsigned)buf[buf.size()-4+i]<<(i*8);buf.resize(buf.size()-12);if(save_crc(buf)!=stored){ok=false;return false;}}
 
@@ -177,7 +177,7 @@ void ZSave_WriteInfo(ZSaveWriter &w, const ZSaveInfo &info)
 bool ZSave_ReadInfo(ZSaveReader &r, ZSaveInfo &info)
 {
 	vector<char> magic = r.Blob();
-	if(!r.Ok()||magic.size()!=8)return false;bool modern=memcmp(magic.data(),ZSAVE_MAGIC,8)==0||memcmp(magic.data(),"ZODSAVE4",8)==0;if(!modern&&memcmp(magic.data(),"ZODSAVE3",8)!=0)return false;
+	if(!r.Ok()||magic.size()!=8)return false;bool modern=memcmp(magic.data(),ZSAVE_MAGIC,8)==0||memcmp(magic.data(),"ZODSAVE4",8)==0||memcmp(magic.data(),"ZODSAVE5",8)==0;if(!modern&&memcmp(magic.data(),"ZODSAVE3",8)!=0)return false;
 
 	info.map_name = r.Str();
 	info.map_title = r.Str();

@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-#define ZSAVE_MAGIC "ZODSAVE5"
+#define ZSAVE_MAGIC "ZODSAVE6"
 
 // Slot 0 is the autosave (written by the game itself at the start of a battle
 // and every few minutes); slots 1..ZSAVE_USER_SLOTS are the player's own.

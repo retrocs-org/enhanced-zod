@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <sstream>
 #include "zmenu_theme.h"
+#include "zasset_import.h"
+#include <ctime>
 
 int ZPlayer::MatchActionAt(int px,int py) const
 {
@@ -70,7 +72,7 @@ void ZPlayer::SelectNextIdleUnit()
 
 void ZPlayer::RenderSelectionReadout()
 {
-    if(show_match_summary || summary_pending || our_team==NULL_TEAM) return;
+    if(replay_active||show_match_summary || summary_pending || our_team==NULL_TEAM) return;
     int robots=0,vehicles=0,cannons=0,idle=0,factories=0;
     for(auto *object:object_list)if(object->GetOwner()==our_team&&object->ProducesUnits()&&!object->IsDestroyed()&&(object->GetBuildState()==BUILDING_SELECT||object->GetBuildState()==BUILDING_PAUSED))++factories;
     for(auto *object:object_list) if(IsIdleUnit(object)) ++idle;
@@ -143,6 +145,16 @@ void ZPlayer::BattleFeedback(const string &text){if(text==battle_notice&&SDL_Get
 void ZPlayer::RenderBattleFeedback(){
     auto *surface=ZSDL_Surface::GetMainSoftwareSurface();if(!surface)return;
     if(!battle_notice.empty()&&SDL_GetTicks()<battle_notice_until){int width=std::min(560,init_w-120);ZMenuTheme::panel(surface,8,86,width,34);ZMenuTheme::queueText(battle_notice.c_str(),18,96,12,{255,215,130,255},width-20);}
+    int row=0;for(auto it=battle_notifications.rbegin();it!=battle_notifications.rend()&&row<3;++it){if(SDL_GetTicks()>=it->until)continue;int width=std::min(420,init_w-120);ZMenuTheme::panel(surface,8,132+row*28,width,24);ZMenuTheme::queueText(it->text.c_str(),16,136+row*28,11,it->damage?SDL_Color{255,140,100,255}:SDL_Color{180,235,180,255},width-16);if(it->damage){int sx,sy;zmap.GetViewShift(sx,sy);int px=std::max(12,std::min(init_w-116,it->x-sx)),py=std::max(16,std::min(init_h-52,it->y-sy));ZMenuTheme::rect(surface,px-6,py-6,12,12,230,55,35);ZMenuTheme::queueText("!",px-2,py-6,10,{255,255,255,255},10);}++row;}
     if(zod_team_markers){int sx,sy;zmap.GetViewShift(sx,sy);int count=0;for(auto *object:object_list){if(object->IsDestroyed()||object->IsMinion()||object->GetOwner()==NULL_TEAM)continue;int x,y;object->GetCenterCords(x,y);x-=sx;y-=sy;if(x<0||y<0||x>=init_w-100||y>=init_h-36)continue;string marker="T"+to_string(object->GetOwner());ZMenuTheme::rect(surface,x-8,y-24,22,12,10,17,23);ZMenuTheme::queueText(marker.c_str(),x-6,y-24,10,{255,255,255,255},20);if(++count>=100)break;}}
 }
 void ZPlayer::SelectNextIdleFactory(){ZObject *first=nullptr,*next=nullptr;for(auto *object:object_list){if(object->GetOwner()!=our_team||!object->ProducesUnits()||object->IsDestroyed()||(object->GetBuildState()!=BUILDING_SELECT&&object->GetBuildState()!=BUILDING_PAUSED))continue;if(!first||object->GetRefID()<first->GetRefID())first=object;if(object->GetRefID()>last_factory_ref&&(!next||object->GetRefID()<next->GetRefID()))next=object;}if(!next)next=first;if(!next){BattleFeedback("All factories are producing or ready to deploy.");return;}last_factory_ref=next->GetRefID();int x,y;next->GetCenterCords(x,y);FocusCameraTo(x,y);BattleFeedback(unit_limit_reached[our_team]?"Production blocked: unit limit reached. Free a unit slot.":"Idle factory selected: choose production or resume its queue.");select_info.Clear();select_info.selected_list.push_back(next);select_info.SetupGroupDetails();GiveHudSelected();}
+
+void ZPlayer::NotifyBattle(const string &text,int x,int y,bool damage){Uint64 now=SDL_GetTicks();for(auto &notice:battle_notifications)if(notice.damage==damage&&notice.text==text&&std::abs(notice.x-x)<128&&std::abs(notice.y-y)<128&&now-notice.born<2500){notice.until=now+8000;notice.x=x;notice.y=y;return;}if(battle_notifications.size()>=8)battle_notifications.erase(battle_notifications.begin());battle_notifications.push_back({text.substr(0,64),x,y,damage,now,now+8000});}
+bool ZPlayer::ClickNotification(int x,int y){int row=0;for(auto it=battle_notifications.rbegin();it!=battle_notifications.rend()&&row<3;++it){if(SDL_GetTicks()>=it->until)continue;int width=std::min(420,init_w-120);if(x>=8&&x<8+width&&y>=132+row*28&&y<158+row*28){FocusCameraTo(it->x,it->y);notification_click=true;return true;}++row;}return false;}
+
+void ZPlayer::RecordReplayPacket(int id,const char *data,int size){if(replay_active||!zod_record_replays)return;if(id==RESET_GAME||(!replay_recorder.Active()&&id==STORE_MAP&&size>=4&&data&&data[0]==0&&data[1]==0&&data[2]==0&&data[3]==0)){replay_recorder.Finish();auto folder=ZAsset_Profile()+"replays";SDL_CreateDirectory(folder.c_str());replay_record_start=SDL_GetTicks();replay_recorder.Start(folder+"/battle-"+to_string(std::time(nullptr))+"-"+to_string(SDL_GetTicksNS())+".zreplay",our_team);}if(replay_recorder.Active()&&!replay_recorder.Record(SDL_GetTicks()-replay_record_start,id,data,size)){replay_recorder.Finish();BattleFeedback("Replay recording stopped: recording limit or storage error");}}
+bool ZPlayer::PlayReplay(const string &path){ZReplayTape tape;string error;if(!tape.Load(path,error)){frontend.DeploymentFailed(error);return false;}replay_recorder.Finish();ReturnToMenu();client_socket.ClearConnection();replay_tape=std::move(tape);replay_active=true;replay_paused=replay_ended=false;replay_clock=0;replay_speed=1;replay_index=0;replay_tick=SDL_GetTicks();replay_previous_team=our_team;SetPlayerTeam((team_type)replay_tape.team);frontend.Hide();CloseAllMenus();ztime.Resume();ztime.SetGameSpeed(1);return true;}
+void ZPlayer::StopReplay(){if(!replay_active)return;replay_active=false;replay_tape={};replay_index=0;ztime.SetGameSpeed(zod_game_speed);ztime.Resume();SetPlayerTeam((team_type)replay_previous_team);ReturnToMenu();frontend.OpenRecordings();}
+void ZPlayer::ProcessReplay(){auto now=SDL_GetTicks();if(!replay_paused)replay_clock+=(now-replay_tick)*replay_speed;replay_tick=now;int budget=2000;while(replay_index<replay_tape.packets.size()&&replay_tape.packets[replay_index].ms<=replay_clock&&budget--){auto &packet=replay_tape.packets[replay_index++];ehandler.ProcessEvent(TCP_EVENT,packet.id,packet.data.empty()?nullptr:packet.data.data(),packet.data.size(),0);}if(replay_index==replay_tape.packets.size()&&!replay_ended){replay_ended=true;replay_paused=true;BattleFeedback("Replay finished. Esc returns to recordings.");}if(replay_paused)ztime.Pause();else ztime.Resume();ztime.SetGameSpeed(replay_speed);}
+void ZPlayer::RenderReplay(){if(!replay_active)return;auto *surface=ZSDL_Surface::GetMainSoftwareSurface();int width=std::min(620,init_w-120);ZMenuTheme::panel(surface,8,8,width,32);string label=string("REPLAY ")+(replay_paused?"paused / ":"")+to_string(replay_speed).substr(0,3)+"x / "+team_type_string[our_team]+" | Space pause | [ ] speed | 1-4 team | Esc exit";ZMenuTheme::queueText(label.c_str(),16,15,10,{255,220,130,255},width-16);int progress=replay_tape.duration?std::min(1.0,replay_clock/replay_tape.duration)*(width-8):0;ZMenuTheme::rect(surface,12,36,progress,3,244,164,65);}

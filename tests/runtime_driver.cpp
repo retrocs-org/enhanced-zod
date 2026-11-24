@@ -97,12 +97,12 @@ int main(int argc, char **argv)
         for(size_t length = 0; length < header_size; ++length) {
             std::ofstream truncated(path, std::ios::binary | std::ios::trunc);
             truncated.write(data.data(), length); truncated.close();
-            if(!reader.ReadFile(path) || ZSave_ReadInfo(reader, restored)) return 7;
+            if(reader.ReadFile(path) && ZSave_ReadInfo(reader, restored)) return 7;
         }
         data[4] = 'X';
         std::ofstream corrupt(path, std::ios::binary | std::ios::trunc);
         corrupt.write(data.data(), data.size()); corrupt.close();
-        if(!reader.ReadFile(path) || ZSave_ReadInfo(reader, restored)) return 8;
+        if(reader.ReadFile(path) && ZSave_ReadInfo(reader, restored)) return 8;
         return 0;
     }
     if(argc == 3 && std::string(argv[1]) == "save") {

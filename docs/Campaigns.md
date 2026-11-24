@@ -294,3 +294,48 @@ Campaign selection shows a thumbnail of the selected accessible mission, cover
 art when supplied, optional-video availability, and a rough planning estimate of
 10–25 minutes per mission. Completed missions and the next mission remain the
 only missions exposed by the normal progression browser.
+
+## Compatibility and scripted missions (0.6.0)
+
+Campaign Studio > Details > Compatibility edits `engine_min`, optional `engine_max`,
+and comma-separated `id@minimum-version` dependencies. Version components are numeric.
+Installation checks installed dependencies and cycles before changing a pack; an update
+must have a strictly newer version and preserves the existing mission order/map identities.
+The campaign browser checks compatibility again before launch. Original Campaign is separate.
+
+Studio > Events accepts one bounded event per line:
+
+```ini
+event=time|30|0|reinforce|2|5|0|8|8|2|Enemy reinforcements!
+event=capture|0|1|dialogue|1|5|0|0|0|1|Commander: Crossing secured.
+```
+
+The fields are `trigger|seconds|target|kind|team|type|unitId|x|y|count|text`.
+Triggers are `time` since mission start, `capture` of a zero-based territory by the given
+team, or `destroy` of an initial zero-based map object. Kinds are `dialogue` (news text)
+and `reinforce`; types are robot 5, vehicle 4 and cannon 3. Coordinates are tiles.
+Count is 1–16 groups/units per event; 64 events and 256 total scripted groups per mission.
+Reinforcements skip blocked or out-of-map positions. Dialogue is text; animated character
+briefings remain available through the existing mission briefing system. Events fire once;
+save/load preserves fired flags, mission time and original object references.
+
+Escort objectives use `escort|object-index|destination-zone-index|text`. The original red
+unit must remain alive and reach that territory. The objective editor labels the destination
+field accordingly. Other objective kinds retain their duration in seconds.
+
+`next_win` and `next_loss` are zero-based mission indices; -1 means next mission on victory
+or retry on defeat, and -2 ends the campaign. Studio's Win/Loss controls edit these values.
+Reordering/removing missions remaps explicit branches. Branched campaigns show completed
+missions and the current branch destination only, preserving hidden future missions.
+
+## Editor productivity
+
+Terrain tools include Smooth, Road and River. Smooth uses neighboring ground tiles and
+preserves roads/water. Road/River use two clicks for a continuous L-shaped stroke and learn
+connection variants from the currently loaded map; empty maps use a usable palette tile.
+These tools do not generate new artwork. Undo restores each completed edit.
+
+Select objects and open Object groups to save a reusable group in the private profile.
+Load a group, then Ctrl/Cmd+V places it at the pointer. New Map offers Blank, Duel, Defense
+and Escort templates. Adding a Defense/Escort template to a campaign creates its objective.
+Original maps remain protected; edits save as user copies.

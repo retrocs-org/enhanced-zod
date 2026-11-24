@@ -601,3 +601,7 @@ Develop in this clean repository (normal checkout directory: `zodee`).
 The old `zod-engine-enhanced` checkout is retained only for local reference;
 its inherited media history must never be pushed. Do not recreate the published
 history with a new export.
+
+Campaign scripting, compatibility requirements and editor tools are documented in
+[Campaigns](docs/Campaigns.md). See [Local testing and battle recordings](docs/Local-Testing.md)
+for replay controls, accessibility presets and the isolated stress runner.

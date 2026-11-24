@@ -20,7 +20,7 @@ GMMOptions::GMMOptions() : ZGuiMainMenuBase()
 	SetupLayout1();AddWidget(&effects_slider);AddWidget(&music_slider);
     const char *names[]={"Graphics","Audio","Game","Controls","Access","Media"};
     for(int i=0;i<6;++i) { category_button[i].SetType(MMGENERIC_BUTTON);category_button[i].SetText(names[i]);category_button[i].SetCoords(5+(i%3)*90,23+(i/3)*23);category_button[i].SetDimensions(86,20);AddWidget(&category_button[i]); }
-    for(auto *button:{&picture_button,&stick_button,&fullscreen_button,&gamma_button,&text_size_button,&cursor_size_button,&team_marker_button,&motion_button}) {button->SetType(MMGENERIC_BUTTON);AddWidget(button);}AddWidget(&video_slider);for(auto *button:{&subtitle_toggle_button,&deadzone_button,&edge_button,&subtitle_size_button,&subtitle_bg_button,&profile_button}){button->SetType(MMGENERIC_BUTTON);AddWidget(button);}
+    for(auto *button:{&picture_button,&stick_button,&fullscreen_button,&gamma_button,&text_size_button,&cursor_size_button,&team_marker_button,&motion_button}) {button->SetType(MMGENERIC_BUTTON);AddWidget(button);}AddWidget(&video_slider);for(auto *button:{&recording_button,&preset_button,&subtitle_toggle_button,&deadzone_button,&edge_button,&subtitle_size_button,&subtitle_bg_button,&profile_button}){button->SetType(MMGENERIC_BUTTON);AddWidget(button);}
     diagnostics_button.SetType(MMGENERIC_BUTTON);diagnostics_button.SetText("Export diagnostics");AddWidget(&diagnostics_button);defaults_button.SetType(MMGENERIC_BUTTON);defaults_button.SetText("Reset category defaults");AddWidget(&defaults_button);AddWidget(&help_label);Reflow();
 }
 
@@ -122,9 +122,9 @@ void GMMOptions::SetupLayout1()
 
 void GMMOptions::Reflow()
 {
-    vector<ZGMMWidget*> all={&name_entry,&volume_button,&speed_button,&mouse_button,&smooth_button,&menu_size_button,&difficulty_button,&max_units_button,&reshuffle_button,&reset_button,&effects_slider,&music_slider,&pause_button,&picture_button,&stick_button,&fullscreen_button,&gamma_button,&text_size_button,&cursor_size_button,&team_marker_button,&motion_button,&diagnostics_button,&deadzone_button,&edge_button,&subtitle_size_button,&subtitle_bg_button,&profile_button,&video_slider,&subtitle_toggle_button};
+    vector<ZGMMWidget*> all={&name_entry,&volume_button,&speed_button,&mouse_button,&smooth_button,&menu_size_button,&difficulty_button,&max_units_button,&reshuffle_button,&reset_button,&effects_slider,&music_slider,&pause_button,&picture_button,&stick_button,&fullscreen_button,&gamma_button,&text_size_button,&cursor_size_button,&team_marker_button,&motion_button,&diagnostics_button,&deadzone_button,&edge_button,&subtitle_size_button,&subtitle_bg_button,&profile_button,&video_slider,&subtitle_toggle_button,&preset_button,&recording_button};
     for(auto *widget:all) widget->SetActive(false);
-    vector<vector<ZGMMWidget*>> groups={{&fullscreen_button,&gamma_button,&picture_button,&smooth_button,&menu_size_button},{&effects_slider,&music_slider},{&name_entry,&speed_button,&difficulty_button,&max_units_button,&pause_button,&reshuffle_button,&reset_button,&diagnostics_button,&profile_button},{&mouse_button,&stick_button,&deadzone_button,&edge_button},{&text_size_button,&cursor_size_button,&team_marker_button,&motion_button},{&video_slider,&subtitle_toggle_button,&subtitle_size_button,&subtitle_bg_button}};
+    vector<vector<ZGMMWidget*>> groups={{&fullscreen_button,&gamma_button,&picture_button,&smooth_button,&menu_size_button},{&effects_slider,&music_slider},{&name_entry,&speed_button,&difficulty_button,&max_units_button,&pause_button,&reshuffle_button,&reset_button,&diagnostics_button,&profile_button,&recording_button},{&mouse_button,&stick_button,&deadzone_button,&edge_button},{&text_size_button,&cursor_size_button,&team_marker_button,&motion_button,&preset_button},{&video_slider,&subtitle_toggle_button,&subtitle_size_button,&subtitle_bg_button}};
     int y=76;
     for(auto *widget:groups[category]) { widget->SetActive(true);widget->SetCoords(10,y);int height=(widget==&effects_slider||widget==&music_slider||widget==&video_slider)?34:18;widget->SetDimensions(w-20,height);y+=height+5; }
     for(int i=0;i<6;++i) category_button[i].SetGreen(category==i);
@@ -134,7 +134,7 @@ void GMMOptions::Reflow()
 
 void GMMOptions::Process()
 {
-    subtitle_toggle_button.SetText(zod_video_subtitles?"Subtitles: On":"Subtitles: Off");deadzone_button.SetText("Stick dead zone: "+to_string(zod_stick_deadzone)+"%");edge_button.SetText("Edge scrolling: "+to_string(zod_edge_scroll_percent)+"%");subtitle_size_button.SetText("Subtitle size: "+to_string(zod_subtitle_percent)+"%");subtitle_bg_button.SetText(zod_subtitle_background?"Subtitle background: On":"Subtitle background: Off");profile_button.SetText(ZPerf_Enabled()?"Profiling: On":"Profiling: Off");
+    recording_button.SetText(zod_record_replays?"Record replays: On":"Record replays: Off");preset_button.SetText(string("Preset: ")+ZPrefs_PresetName(zod_access_preset));subtitle_toggle_button.SetText(zod_video_subtitles?"Subtitles: On":"Subtitles: Off");deadzone_button.SetText("Stick dead zone: "+to_string(zod_stick_deadzone)+"%");edge_button.SetText("Edge scrolling: "+to_string(zod_edge_scroll_percent)+"%");subtitle_size_button.SetText("Subtitle size: "+to_string(zod_subtitle_percent)+"%");subtitle_bg_button.SetText(zod_subtitle_background?"Subtitle background: On":"Subtitle background: Off");profile_button.SetText(ZPerf_Enabled()?"Profiling: On":"Profiling: Off");
 	//#246: reflect the current saved name when the field isn't being edited (so it
 	//shows the startup default / any external change without clobbering live typing)
 	if(!name_entry.IsSelected())
@@ -206,6 +206,8 @@ void GMMOptions::SetVolumeStatus()
 void GMMOptions::HandleWidgetEvent(int event_type, ZGMMWidget *event_widget)
 {
     if(event_type==GMM_UNCLICK_EVENT) {
+        if(event_widget==&recording_button){zod_record_replays=!zod_record_replays;ZPrefs_Save();return;}
+        if(event_widget==&preset_button){ZPrefs_ApplyPreset((zod_access_preset+1)%4);ZVideo_SetGamma(zod_gamma);return;}
         if(event_widget==&subtitle_toggle_button){zod_video_subtitles=!zod_video_subtitles;ZPrefs_Save();return;}
         if(event_widget==&deadzone_button){zod_stick_deadzone=zod_stick_deadzone>=40?5:min(40,zod_stick_deadzone+5);ZPrefs_Save();return;}
         if(event_widget==&edge_button){zod_edge_scroll_percent=(zod_edge_scroll_percent+25)%225;ZPrefs_Save();return;}
@@ -361,7 +363,7 @@ void GMMOptions::HandleWidgetEvent(int event_type, ZGMMWidget *event_widget)
 }
 
 std::vector<ZGMMWidget*> GMMOptions::CategoryWidgets(){
- std::vector<std::vector<ZGMMWidget*>> groups={{&fullscreen_button,&gamma_button,&picture_button,&smooth_button,&menu_size_button},{&effects_slider,&music_slider},{&name_entry,&speed_button,&difficulty_button,&max_units_button,&pause_button,&reshuffle_button,&reset_button,&diagnostics_button,&profile_button},{&mouse_button,&stick_button,&deadzone_button,&edge_button},{&text_size_button,&cursor_size_button,&team_marker_button,&motion_button},{&video_slider,&subtitle_toggle_button,&subtitle_size_button,&subtitle_bg_button}};return groups[category];
+ std::vector<std::vector<ZGMMWidget*>> groups={{&fullscreen_button,&gamma_button,&picture_button,&smooth_button,&menu_size_button},{&effects_slider,&music_slider},{&name_entry,&speed_button,&difficulty_button,&max_units_button,&pause_button,&reshuffle_button,&reset_button,&diagnostics_button,&profile_button,&recording_button},{&mouse_button,&stick_button,&deadzone_button,&edge_button},{&text_size_button,&cursor_size_button,&team_marker_button,&motion_button,&preset_button},{&video_slider,&subtitle_toggle_button,&subtitle_size_button,&subtitle_bg_button}};return groups[category];
 }
 bool GMMOptions::KeyPress(int c){
  if(name_entry.IsSelected())return ZGuiMainMenuBase::KeyPress(c);

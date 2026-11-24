@@ -111,3 +111,7 @@ assets/videos/*
 # Python test/tool bytecode
 __pycache__/
 *.pyc
+
+*.zreplay
+*.zreplay.part
+*.prefab

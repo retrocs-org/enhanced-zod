@@ -91,6 +91,14 @@ class EngineRegressions(unittest.TestCase):
             result=subprocess.check_output([DRIVER,'preview-palette'],cwd=WORKSPACE,env=env,text=True)
             self.assertIn('imported-preview-ok',result)
 
+    def test_campaign_script_replay_and_presets(self):
+        for mode,arg in [("replay-feedback",None),("authoring-tools",None),("feature-checks",None),("script-save",MAP),("stress",MAP)]:
+            with tempfile.TemporaryDirectory(prefix="zodee-features-") as directory:
+                command=[DRIVER,mode,arg or directory]
+                if mode=="stress":command += ["120","64"]
+                result=subprocess.check_output(command,cwd=WORKSPACE,env=self.environment(directory),text=True,timeout=60)
+                self.assertIn({"replay-feedback":"replay-feedback-ok","authoring-tools":"authoring-tools-ok","feature-checks":"feature-checks-ok","script-save":"script-save-ok","stress":"stress-ok"}[mode],result)
+
     def test_objective_hud_packets_and_summary_return_before_continue(self):
         with tempfile.TemporaryDirectory(prefix='zod-ee-objective-ui-') as directory:
             result=subprocess.check_output([DRIVER,'objectives-summary'],cwd=WORKSPACE,env=self.environment(directory),text=True)

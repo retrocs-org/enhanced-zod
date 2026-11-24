@@ -29,6 +29,7 @@ private:
     GMMWButton text_size_button,cursor_size_button,team_marker_button,motion_button;
     int category=0,focus=0,preview_y=0;
     GMMWSlider video_slider{"Video volume",&zod_video_volume};
+    GMMWButton preset_button,recording_button;
     GMMWButton subtitle_toggle_button,deadzone_button,edge_button,subtitle_size_button,subtitle_bg_button,profile_button;
     GMMWButton diagnostics_button;GMMWButton defaults_button;GMMWLabel help_label;
     std::vector<ZGMMWidget*> CategoryWidgets();

@@ -49,6 +49,8 @@ private:
     int fileForm=0,modalLayer=0,editField=-1,newTerrain=0,newSize=1,campaignMission=0,missionScroll=0;
     std::string formName="Untitled",campaignTitle="My campaign";
     ZCampaign authorCampaign,testCampaign;
+    bool compatibilityPanel=false,eventPanel=false,prefabPanel=false;std::string dependencyText,eventText,prefabName="Selection group";std::vector<std::string> prefabFiles;int prefabChoice=0,templateKind=0;
+    void RenderPrefabs();void SavePrefab();void LoadPrefab();void SmoothTerrain(int x,int y);void ConnectedTerrain(int x,int y,bool water);
     bool timelinePanel=false,metadataPanel=false;int timelineIndex=-1,timelineScroll=0;ZMissionObjective objectiveDraft;std::string objectiveTarget="0",objectiveSeconds="30";
     void RenderTimeline();
     void RenderFileTools();void RenderCampaignStudio();void Field(std::string &value,int id,float x,float y,float w,int height=38);

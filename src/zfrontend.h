@@ -35,7 +35,7 @@ class ZFrontEnd
 public:
 	enum ActionType
 	{
-		FE_NONE,
+		FE_NONE, FE_PLAY_RECORDING,
 		FE_START_CAMPAIGN_MAP,
         FE_START_MAP,        //value = campaign map index
 		FE_LOAD_SAVE,        //restore a saved battle; value = slot
@@ -71,6 +71,7 @@ public:
 	void PlayLevelResult(bool won);
     void RecordCampaignResult(bool won,int seconds=-1,int kills=0,int lost=0,int difficulty=1);
     bool CommunityBattle() const {return community_running;}
+    void OpenRecordings();
     bool EditorTesting() const {return editor_testing;}
     void PrepareEditorReturn(bool advance){editor_continue_pending=editor_testing&&workspace&&!workspace->TestCampaign().root.empty()&&advance&&community_next>=0;}
     void ContinueCommunity();
@@ -95,7 +96,7 @@ public:
 
 private:
 	friend struct ZFrontEndRegression;
-	enum Screen { SCR_MAIN, SCR_REPLAY, SCR_SCORES, SCR_BRIEFING, SCR_LOADING, SCR_QUIT, SCR_LOAD, SCR_CUSTOM, SCR_KEYS, SCR_IMPORT, SCR_SETTINGS, SCR_EDITOR, SCR_CAMPAIGNS };
+	enum Screen { SCR_MAIN, SCR_REPLAY, SCR_SCORES, SCR_BRIEFING, SCR_LOADING, SCR_QUIT, SCR_LOAD, SCR_CUSTOM, SCR_KEYS, SCR_IMPORT, SCR_SETTINGS, SCR_EDITOR, SCR_CAMPAIGNS, SCR_RECORDINGS };
 
 	struct CustomMap
 	{
@@ -132,6 +133,8 @@ private:
 	ZAssetImport asset_import;
 	bool import_only = false;
 	int focus_button=-1,focus_count=0,focus_index=0;bool focus_activate=false;Screen focus_screen=SCR_MAIN;
+    std::vector<std::string> recordingFiles;int recordingChoice=0,recordingScroll=0;
+    void RenderRecordings();
     void RenderImport();
 
 	// ---- state ----

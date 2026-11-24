@@ -263,6 +263,7 @@ ZPlayer::ZPlayer() : ZClient()
 //#88: zero the post-match summary state (start of a match / next-map load)
 void ZPlayer::ResetMatchStats()
 {
+    battle_notifications.clear();notification_click=false;
     battle_notice.clear();battle_notice_until=0;last_factory_ref=-1;summary_menu_ready=false;objective_text.clear();objective_total=0;objective_x=objective_y=-1;
 	show_match_summary = false;
 	summary_pending = false;
@@ -298,6 +299,8 @@ void ZPlayer::CompleteMenuReturn(){bool next=frontend.CommunityBattle()&&summary
 
 void ZPlayer::ReturnToMenu()
 {
+    replay_recorder.Finish();
+    if(replay_active){replay_active=false;replay_tape={};ztime.SetGameSpeed(zod_game_speed);ztime.Resume();SetPlayerTeam((team_type)replay_previous_team);}
 	fort_ref_id = -1;
 	ResetMatchStats();
 	zmap.ClearMap();
@@ -1599,6 +1602,7 @@ void ZPlayer::Run()
 
 void ZPlayer::ProcessSocketEvents()
 {
+    if(replay_active){ProcessReplay();return;}
 	char *message;
 	int size;
 	int pack_id;
@@ -1633,7 +1637,8 @@ void ZPlayer::ProcessSocketEvents()
 		*/
 		while(shandler->DoFastProcess(&message, &size, &pack_id))
 		{
-			server_response_seen = true;   //#254: the server is alive and talking
+			RecordReplayPacket(pack_id,message,size);
+            server_response_seen = true;   //#254: the server is alive and talking
 			ehandler.ProcessEvent(TCP_EVENT, pack_id, message, size, 0);
 			//packets_processed++;
 		}
@@ -3105,7 +3110,7 @@ void ZPlayer::RenderMainMenu()
 	// Only the active page is visible; older pages remain available for Back.
 	for(auto *menu:gui_menu_list) menu->SetRenderScale(MenuRenderScale());
     ZMenuTheme::beginText(ZVideo_GetRenderer());
-    if(zmap.Loaded()&&gui_menu_list.empty()&&!show_match_summary){RenderObjectiveHUD();RenderBattleFeedback();}
+    if(zmap.Loaded()&&gui_menu_list.empty()&&!show_match_summary){RenderObjectiveHUD();RenderBattleFeedback();RenderReplay();}
     if(!gui_menu_list.empty()) gui_menu_list.front()->DoRender(zmap, screen);
     ZMenuTheme::endText();
 }
@@ -3334,7 +3339,8 @@ void ZPlayer::ProcessSDL()
 		//controller events become mouse/key events (pushed back onto the queue)
 		if(ZGamepad_HandleEvent(event, frontend_presenting)) continue;
 
-		//the front-end takes all input while it is on screen
+		if(replay_active&&event.type==SDL_EVENT_KEY_DOWN){auto key=event.key.key;if(key==SDLK_ESCAPE){StopReplay();continue;}if(key==SDLK_SPACE){replay_paused=!replay_paused;continue;}if(key==SDLK_LEFTBRACKET||key==SDLK_RIGHTBRACKET){replay_speed=std::max(.25,std::min(4.0,replay_speed*(key==SDLK_RIGHTBRACKET?2:.5)));continue;}if(key>=SDLK_1&&key<=SDLK_4){SetPlayerTeam((team_type)(key-SDLK_1+1));continue;}}
+        //the front-end takes all input while it is on screen
 		if(frontend_presenting)
 		{
 			if(event.type == SDL_EVENT_QUIT) ExitProgram();
@@ -4493,6 +4499,7 @@ bool ZPlayer::DevWayPointsNoWay()
 
 void ZPlayer::SendDevWayPointsOfObj(ZObject *obj)
 {
+    if(replay_active)return;
 	char *data;
 	int size;
 
@@ -5891,7 +5898,8 @@ void ZPlayer::ProcessFrontEndActions()
         }
 		switch(a.type)
 		{
-		case ZFrontEnd::FE_START_MAP:
+		case ZFrontEnd::FE_PLAY_RECORDING:PlayReplay(a.text);break;
+        case ZFrontEnd::FE_START_MAP:
 			{
 				int_packet the_data;
 				the_data.map_num = a.value;
@@ -5964,7 +5972,7 @@ double ZPlayer::MatchElapsed()
 //"Save Game" in the in-game menu: the server writes the world, we add our tally
 void ZPlayer::SendSaveGame(int slot)
 {
-    if(frontend.EditorTesting())return;
+    if(replay_active||frontend.EditorTesting())return;
 	bool quiet = slot == ZSAVE_AUTO_SLOT;
 
 	if(!zmap.Loaded())
@@ -6005,7 +6013,7 @@ void ZPlayer::CheckAutosave()
 //a won single-player match goes into the local high-score table
 void ZPlayer::RecordHighScore()
 {
-	if(frontend.EditorTesting()||!match_won || game_map_name.empty()) return;
+	if(replay_active||frontend.EditorTesting()||!match_won || game_map_name.empty()) return;
 
 	ZHighScoreEntry e;
 	e.player = zod_player_name.size() ? zod_player_name : player_name;

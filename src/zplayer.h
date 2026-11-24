@@ -2,6 +2,7 @@
 #define _ZPLAYER_H_
 
 #include "zclient.h"
+#include "zreplay.h"
 #include "zsdl.h"
 #include "zsdl_opengl.h"
 #include "cursor.h"
@@ -197,6 +198,12 @@ class ZPlayer : public ZClient
         bool IsIdleUnit(ZObject *object) const;
         void RenderSelectionReadout();
         bool summary_menu_ready=false;void CompleteMenuReturn();
+        struct BattleNotification {std::string text;int x=0,y=0;bool damage=false;Uint64 born=0,until=0;};
+        std::vector<BattleNotification> battle_notifications;bool notification_click=false;
+        void NotifyBattle(const std::string &text,int x,int y,bool damage=false);
+        bool ClickNotification(int x,int y);
+        ZReplayRecorder replay_recorder;ZReplayTape replay_tape;bool replay_active=false,replay_paused=false,replay_ended=false;size_t replay_index=0;double replay_clock=0,replay_speed=1;Uint64 replay_tick=0,replay_record_start=0;int replay_previous_team=1;
+        bool PlayReplay(const std::string &path);void StopReplay();void ProcessReplay();void RenderReplay();void RecordReplayPacket(int id,const char *data,int size);
         void BattleFeedback(const std::string &text);void RenderBattleFeedback();void SelectNextIdleFactory();
         std::string battle_notice;Uint64 battle_notice_until=0;int last_factory_ref=-1;
         void RenderObjectiveHUD();void ReceiveObjective(const std::string &packet);

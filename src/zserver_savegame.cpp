@@ -224,6 +224,7 @@ bool ZServer::SaveGame(int player, int kills, int lost, int elapsed, int slot)
     w.Str("zod-ee_MISSION1");w.Int(mission_runtime.objectives.size());
     for(auto &o:mission_runtime.objectives)w.Str(ZMission_Encode(o));
     w.Int(mission_runtime.step);w.Double(!mission_runtime.started?-1:std::max(0.0,ztime.ztime-mission_runtime.stepStarted));w.Int(mission_runtime.announced?1:0);
+	w.Str("zod-ee_SCRIPT2");w.Int(mission_runtime.events.size());for(auto &event:mission_runtime.events)w.Str(ZMission_EncodeEvent(event));for(size_t i=0;i<mission_runtime.events.size();++i)w.Int(i<mission_runtime.fired.size()&&mission_runtime.fired[i]);w.Double(mission_runtime.missionStarted<0?-1:ztime.ztime-mission_runtime.missionStarted);w.Int(mission_object_refs.size());for(int ref:mission_object_refs)w.Int(ref);
 	if(!w.WriteFile(ZSave_Path(slot)))
 	{
 		ZDiag("save FAILED: could not write %s", ZSave_Path(slot).c_str());
@@ -287,12 +288,13 @@ bool ZServer::LoadSavedGame(int player, int slot)
 			objs.push_back(s);
 	}
 
-    ZMissionRuntime saved_mission;double saved_step_age=-1;bool has_mission_state=r.Remaining()>0;
+    std::vector<int> savedRefs;double eventAge=-1;ZMissionRuntime saved_mission;double saved_step_age=-1;bool has_mission_state=r.Remaining()>0;
     if(good&&has_mission_state){
         good=r.Str()=="zod-ee_MISSION1";int count=r.Int();good=good&&count>=0&&count<=64;
         for(int i=0;good&&i<count;++i){ZMissionObjective o;good=ZMission_Parse(r.Str(),o);if(good)saved_mission.objectives.push_back(o);}
         saved_mission.step=r.Int();saved_step_age=r.Double();saved_mission.announced=r.Int()!=0;
-        good=good&&r.Ok()&&saved_mission.step>=0&&saved_mission.step<=(int)saved_mission.objectives.size()&&std::isfinite(saved_step_age)&&saved_step_age>=-1&&saved_step_age<=864000&&r.Remaining()==0;
+        good=good&&r.Ok()&&saved_mission.step>=0&&saved_mission.step<=(int)saved_mission.objectives.size()&&std::isfinite(saved_step_age)&&saved_step_age>=-1&&saved_step_age<=864000;
+        if(good&&r.Remaining()){good=r.Str()=="zod-ee_SCRIPT2";int count=r.Int();good=good&&count>=0&&count<=64;for(int i=0;good&&i<count;++i){ZMissionEvent event;good=ZMission_ParseEvent(r.Str(),event);if(good)saved_mission.events.push_back(event);}for(int i=0;good&&i<count;++i){int fired=r.Int();good=fired==0||fired==1;saved_mission.fired.push_back(fired!=0);}eventAge=r.Double();int refs=r.Int();good=good&&std::isfinite(eventAge)&&eventAge>=-1&&eventAge<=864000&&refs>=0&&refs<=100000;for(int i=0;good&&i<refs;++i)savedRefs.push_back(r.Int());}good=good&&r.Ok()&&r.Remaining()==0;
     }
 	//the map goes through a file: that is how ZMap keeps the bytes it later
 	//sends to clients
@@ -409,7 +411,8 @@ bool ZServer::LoadSavedGame(int player, int slot)
 	next_end_game_check_time = ztime.ztime + 3.0;
 
 	PauseGame();
-    ConfigureCampaignMission();if(!info.campaign_id.empty()){mission_campaign_id=info.campaign_id;mission_campaign_index=info.mission_index;}if(has_mission_state){mission_runtime=saved_mission;mission_runtime.started=saved_step_age>=0;mission_runtime.stepStarted=saved_step_age<0?0:ztime.ztime-saved_step_age;}
+    ConfigureCampaignMission();if(!info.campaign_id.empty()){mission_campaign_id=info.campaign_id;mission_campaign_index=info.mission_index;}if(has_mission_state){mission_runtime=saved_mission;mission_runtime.started=saved_step_age>=0;mission_runtime.stepStarted=saved_step_age<0?0:ztime.ztime-saved_step_age;mission_runtime.missionStarted=eventAge<0?-1:ztime.ztime-eventAge;if(!savedRefs.empty())mission_object_refs=savedRefs;}
+    if(savedRefs.empty()){mission_object_refs.clear();for(const auto &initial:zmap.GetObjectList()){int reference=-1;for(auto *object:object_list){unsigned char type,id;int x,y;object->GetObjectID(type,id);object->GetCords(x,y);if(type==initial.object_type&&id==initial.object_id&&x==initial.x*16&&y==initial.y*16){reference=object->GetRefID();break;}}mission_object_refs.push_back(reference);}}
 	game_on = true;
 
 	ZDiag("game loaded: %s, %d objects", map_name.c_str(), (int)objs.size());

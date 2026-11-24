@@ -22,6 +22,7 @@ double zod_game_speed = 1.0;
 //both touch and modern high-res displays); auto-capped per menu so nothing clips.
 double zod_menu_scale = 2.0;
 int zod_text_percent=100,zod_cursor_percent=100;
+bool zod_record_replays=false;bool zod_high_contrast=false;int zod_access_preset=-1;
 bool zod_team_markers=false,zod_reduced_motion=false;
 int zod_picture_mode = PICTURE_SMOOTH;
 int zod_stick_speed = STICK_NORMAL;
@@ -117,7 +118,10 @@ void ZPrefs_Load()
 			const char *key = line;
 			bool value = (eq[1] == '1');
 
-			if(!strcmp(key,"stick_deadzone"))zod_stick_deadzone=std::max(5,std::min(40,atoi(eq+1)));
+			if(!strcmp(key,"record_replays"))zod_record_replays=atoi(eq+1)!=0;
+            else if(!strcmp(key,"high_contrast"))zod_high_contrast=atoi(eq+1)!=0;
+            else if(!strcmp(key,"access_preset"))zod_access_preset=std::max(-1,std::min(3,atoi(eq+1)));
+            else if(!strcmp(key,"stick_deadzone"))zod_stick_deadzone=std::max(5,std::min(40,atoi(eq+1)));
             else if(!strcmp(key,"edge_scroll_percent"))zod_edge_scroll_percent=std::max(0,std::min(200,atoi(eq+1)));
             else if(!strcmp(key,"subtitle_percent"))zod_subtitle_percent=std::max(75,std::min(200,atoi(eq+1)));
             else if(!strcmp(key,"subtitle_background"))zod_subtitle_background=atoi(eq+1)!=0;
@@ -219,6 +223,8 @@ void ZPrefs_Save()
 
 	if(!fp) return;
 
+	fprintf(fp,"record_replays=%d\n",zod_record_replays);
+	fprintf(fp,"high_contrast=%d\naccess_preset=%d\n",zod_high_contrast,zod_access_preset);
 	fprintf(fp,"stick_deadzone=%d\nedge_scroll_percent=%d\nsubtitle_percent=%d\nsubtitle_background=%d\n",zod_stick_deadzone,zod_edge_scroll_percent,zod_subtitle_percent,zod_subtitle_background);
 	fprintf(fp,"text_percent=%d\ncursor_percent=%d\nteam_markers=%d\nreduced_motion=%d\n",zod_text_percent,zod_cursor_percent,zod_team_markers,zod_reduced_motion);
 	fprintf(fp, "classic_mouse=%d\n", zod_classic_mouse ? 1 : 0);
@@ -247,10 +253,13 @@ void ZPrefs_ResetCategory(int category){
  switch(category){
  case 0:zod_fullscreen=false;zod_gamma=0;zod_picture_mode=PICTURE_SMOOTH;zod_render_smoothing=true;zod_menu_scale=2;break;
  case 1:zod_effects_volume=zod_music_volume=100;zod_volume_setting=4;zod_music=true;zod_music_style=MUSIC_STYLE_MIDI;break;
- case 2:zod_game_speed=1;zod_scenes=true;zod_bot_difficulty=BOT_DIFF_NORMAL;zod_max_units_per_team=DEFAULT_MAX_UNITS_PER_TEAM;break;
+ case 2:zod_record_replays=false;zod_game_speed=1;zod_scenes=true;zod_bot_difficulty=BOT_DIFF_NORMAL;zod_max_units_per_team=DEFAULT_MAX_UNITS_PER_TEAM;break;
  case 3:zod_stick_deadzone=22;zod_edge_scroll_percent=100;zod_classic_mouse=true;zod_stick_speed=STICK_NORMAL;ZPrefs_ResetKeys();break;
- case 5:zod_text_percent=zod_cursor_percent=100;zod_team_markers=zod_reduced_motion=false;break;
+ case 5:zod_high_contrast=false;zod_access_preset=-1;zod_text_percent=zod_cursor_percent=100;zod_team_markers=zod_reduced_motion=false;break;
  case 4:zod_subtitle_percent=100;zod_subtitle_background=true;zod_scenes=true;zod_video_volume=100;zod_video_subtitles=true;break;
  }
  ZPrefs_Save();
 }
+
+const char *ZPrefs_PresetName(int preset){const char *names[]={"High contrast","Reduced motion","Large interface","Readable subtitles"};return preset>=0&&preset<4?names[preset]:"Custom";}
+void ZPrefs_ApplyPreset(int preset){if(preset<0||preset>3)return;zod_access_preset=preset;if(preset==0){zod_high_contrast=true;zod_team_markers=true;zod_gamma=1;}if(preset==1){zod_reduced_motion=true;zod_scenes=false;}if(preset==2){zod_text_percent=120;zod_menu_scale=2.5;zod_cursor_percent=200;zod_subtitle_percent=175;}if(preset==3){zod_video_subtitles=true;zod_subtitle_percent=150;zod_subtitle_background=true;}ZPrefs_Save();}

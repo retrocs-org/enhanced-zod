@@ -18,7 +18,10 @@ extern int zod_video_volume;extern bool zod_video_subtitles;
 extern int zod_effects_volume,zod_music_volume; // independent 0..100 gains
 extern double zod_game_speed;
 extern int zod_text_percent,zod_cursor_percent;
-extern bool zod_team_markers,zod_reduced_motion;
+extern bool zod_team_markers,zod_reduced_motion,zod_high_contrast;
+extern int zod_access_preset;extern bool zod_record_replays;
+void ZPrefs_ApplyPreset(int preset);
+const char *ZPrefs_PresetName(int preset);
 extern double zod_menu_scale;   //#196: UI scale for menus + resume bar
 
 // Bot AI difficulty (an index into the profiles in zbot.cpp). NORMAL == the

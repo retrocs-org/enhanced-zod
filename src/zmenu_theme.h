@@ -16,6 +16,7 @@ inline SDL_Surface *text(const char *value,float size=12,SDL_Color colour={218,2
  if(!TTF_WasInit() && !TTF_Init()) return nullptr;
  TTF_Font *font=TTF_OpenFont(ZSDL_DataPath("assets/frontend/fonts/Rajdhani-SemiBold.ttf").c_str(),size*zod_text_percent/100.0f);
  if(!font) return nullptr;
+ if(zod_high_contrast&&colour.r+colour.g+colour.b<500)colour={255,255,255,255};
  SDL_Surface *result=TTF_RenderText_Blended(font,value,0,colour);
  TTF_CloseFont(font);return result;
 }
@@ -25,7 +26,7 @@ inline void rect(SDL_Surface *s,int x,int y,int w,int h,Uint8 r,Uint8 g,Uint8 b)
 }
 inline void panel(SDL_Surface *s,int x,int y,int w,int h,int u=1) {
  rect(s,x,y,w,h,12,17,22); rect(s,x+u,y+u,w-2*u,h-2*u,43,53,62);
- rect(s,x+2*u,y+2*u,w-4*u,h-4*u,24,32,39);
+ rect(s,x+2*u,y+2*u,w-4*u,h-4*u,zod_high_contrast?0:24,zod_high_contrast?0:32,zod_high_contrast?0:39);
  rect(s,x+2*u,y+2*u,w-4*u,u,83,98,109);
  rect(s,x+2*u,y+2*u,2*u,12*u,244,164,65);
  for(int yy=18*u;yy<h-4*u;yy+=4*u) rect(s,x+4*u,y+yy,w-8*u,1,27,35,42);

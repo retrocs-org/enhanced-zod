@@ -251,6 +251,7 @@ class ZServer : public ZCore
 		bool menu_first;	//#79: idle without a map until the player picks one
 		bool menu_mode_session;	//#136: this session is menu-driven (return to menu after a match)
 		ZMissionRuntime mission_runtime;std::string mission_campaign_id;int mission_campaign_index=-1;
+        std::vector<int> mission_object_refs;
         void ConfigureCampaignMission();bool CheckCampaignObjectives(double time);
         bool user_continue_requested=false;
         bool playing_generated_map;	//#136: current map is a generated/one-off (not campaign)

@@ -281,6 +281,7 @@ void ZPlayer::lclick_event(ZPlayer *p, char *data, int size, int dummy)
 {
 	hud_click_response hud_response;
 
+	if(p->gui_menu_list.empty()&&!p->show_match_summary&&p->ClickNotification(p->mouse_x,p->mouse_y)){p->lbutton.down=false;return;}
 	p->lbutton.down = true;
 
 	//#120: while the post-match summary is up, a left click dismisses it and
@@ -369,6 +370,7 @@ void ZPlayer::lclick_event(ZPlayer *p, char *data, int size, int dummy)
 
 void ZPlayer::lunclick_event(ZPlayer *p, char *data, int size, int dummy)
 {
+    if(p->notification_click){p->notification_click=false;p->lbutton.down=false;return;}
 	hud_click_response hud_response;
 
 	//taken by a main menu?
@@ -923,6 +925,7 @@ void ZPlayer::add_new_object_event(ZPlayer *p, char *data, int size, int dummy)
 		if(ot == MAP_ITEM_OBJECT && oid == ROCK_ITEM) ORock::EditRockRender(p->zmap, p->object_list, obj, true);
 
 		obj->CreationMapEffects(p->zmap);
+        if(obj->GetOwner()==p->our_team&&(ot==ROBOT_OBJECT||ot==VEHICLE_OBJECT||ot==CANNON_OBJECT)&&p->MatchElapsed()>5){int x,y;obj->GetCenterCords(x,y);p->NotifyBattle("Unit ready - click to locate",x,y);}
 
 		//set effect list
 		obj->SetEffectList(&p->GetEffectList());
@@ -1159,7 +1162,9 @@ void ZPlayer::set_object_health_event(ZPlayer *p, char *data, int size, int dumm
 {
 	ZObject *obj;
 
-	obj = p->ProcessObjectHealthTeam(data, size);
+	int before=-1;if(data&&size==sizeof(object_health_packet)){object_health_packet packet;memcpy(&packet,data,sizeof(packet));if(auto *old=p->GetObjectFromID(packet.ref_id,p->object_list))before=old->GetHealth();}
+    obj = p->ProcessObjectHealthTeam(data, size);
+    if(obj&&obj->GetOwner()==p->our_team&&before>obj->GetHealth()){int x,y;obj->GetCenterCords(x,y);p->NotifyBattle("Under fire - click to locate",x,y,true);}
 
 	if(!obj) return;
 
@@ -1361,7 +1366,9 @@ void ZPlayer::set_building_state_event(ZPlayer *p, char *data, int size, int dum
 {
 	ZObject *obj;
 
+	int before=-1;if(size==sizeof(set_building_state_packet)){auto *packet=(set_building_state_packet*)data;auto *previous=GetObjectFromID(packet->ref_id,p->object_list);if(previous)before=previous->GetBuildState();}
 	obj = p->ProcessBuildingState(data, size);
+    if(before!=BUILDING_PLACE&&obj&&obj->GetOwner()==p->our_team&&obj->GetBuildState()==BUILDING_PLACE&&p->MatchElapsed()>5){int x,y;obj->GetCenterCords(x,y);p->NotifyBattle("Production ready - click to locate",x,y);}
 }
 
 void ZPlayer::set_building_cannon_list_event(ZPlayer *p, char *data, int size, int dummy)

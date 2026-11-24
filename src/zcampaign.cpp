@@ -9,6 +9,8 @@
 #include <climits>
 #include <iomanip>
 #include <ctime>
+#include <functional>
+#include <set>
 namespace {
 bool slug(const std::string &s){if(s.empty()||s.size()>64||s=="original")return false;for(unsigned char c:s)if(!std::isalnum(c)&&c!='-'&&c!='_')return false;return true;}
 std::string clean(std::string s){s.erase(std::remove(s.begin(),s.end(),'\r'),s.end());return s;}
@@ -38,10 +40,13 @@ bool ZCampaign_Load(const std::string &file,ZCampaign &out,std::string &error){
   if(line=="[mission]"){if(out.missions.size()>=128){error="Too many missions";return false;}out.missions.emplace_back();mission=&out.missions.back();continue;}
   auto eq=line.find('=');if(eq==std::string::npos){error="Invalid campaign entry";return false;}auto key=line.substr(0,eq),value=unescape(line.substr(eq+1));
   if(value.size()>4096){error="Campaign text too long";return false;}
-  if(!mission){if(key=="format")format=value=="1";else if(key=="id")out.id=value;else if(key=="title")out.title=value;else if(key=="author")out.author=value;else if(key=="description")out.description=value;else if(key=="cover")out.cover=value;else if(key=="difficulty")out.difficulty=value;else if(key=="version")out.version=value;}
-  else {if(key=="map")mission->map=value;else if(key=="title")mission->title=value;else if(key=="briefing")mission->briefing=value;else if(key=="speaker")mission->speaker=value;else if(key=="character")mission->character=value;else if(key=="video")mission->video=value;else if(key=="victory_video")mission->victoryVideo=value;else if(key=="objective"){ZMissionObjective o;if(mission->objectives.size()>=64||!ZMission_Parse(value,o)){error="Invalid objective; use kind|target|seconds|text";return false;}mission->objectives.push_back(o);}}
+  if(!mission){if(key=="format")format=value=="1";else if(key=="id")out.id=value;else if(key=="title")out.title=value;else if(key=="author")out.author=value;else if(key=="description")out.description=value;else if(key=="cover")out.cover=value;else if(key=="difficulty")out.difficulty=value;else if(key=="version")out.version=value;else if(key=="engine_min")out.engineMin=value;else if(key=="engine_max")out.engineMax=value;else if(key=="requires"){if(out.requires.size()>=32){error="Too many campaign dependencies";return false;}out.requires.push_back(value);}}
+  else {if(key=="map")mission->map=value;else if(key=="title")mission->title=value;else if(key=="briefing")mission->briefing=value;else if(key=="speaker")mission->speaker=value;else if(key=="character")mission->character=value;else if(key=="video")mission->video=value;else if(key=="victory_video")mission->victoryVideo=value;else if(key=="next_win"||key=="next_loss"){char *end=nullptr;long index=strtol(value.c_str(),&end,10);if(value.empty()||!end||*end||index< -2||index>127){error="Invalid branch mission index";return false;}(key=="next_win"?mission->nextWin:mission->nextLoss)=index;}else if(key=="event"){ZMissionEvent event;if(mission->events.size()>=64||!ZMission_ParseEvent(value,event)){error="Invalid mission event";return false;}mission->events.push_back(event);}else if(key=="objective"){ZMissionObjective o;if(mission->objectives.size()>=64||!ZMission_Parse(value,o)){error="Invalid objective; use kind|target|seconds|text";return false;}mission->objectives.push_back(o);}}
  }
  if(!format||!slug(out.id)||out.title.empty()||out.title.size()>120||out.missions.empty()){error="Campaign needs format=1, a unique ID, title and missions";return false;}
+ if((!out.engineMin.empty()&&ZCampaign_CompareVersion(out.engineMin,out.engineMin)==-2)||(!out.engineMax.empty()&&ZCampaign_CompareVersion(out.engineMax,out.engineMax)==-2)||ZCampaign_CompareVersion(out.version,out.version)==-2){error="Campaign versions must use numeric components";return false;}
+ if(!out.engineMin.empty()&&!out.engineMax.empty()&&ZCampaign_CompareVersion(out.engineMin,out.engineMax)>0){error="Minimum engine version exceeds maximum";return false;}
+ for(const auto &mission:out.missions)if(mission.nextWin>=(int)out.missions.size()||mission.nextLoss>=(int)out.missions.size()){error="Campaign branch points outside its mission list";return false;}
  if(!out.cover.empty()){std::string asset;if(!ZCampaign_SafeAsset(out.root,out.cover,asset)){error="Missing or unsafe cover image";return false;}}
  for(auto &m:out.missions){std::string path;if(!ZCampaign_SafeAsset(out.root,m.map,path)||m.map.size()<4||m.map.substr(m.map.size()-4)!=".map"){error="Missing or unsafe mission map: "+m.map;return false;}
   if(m.title.empty())m.title=m.map;
@@ -59,15 +64,15 @@ std::vector<ZCampaign> ZCampaign_List(std::vector<std::string> *errors){std::vec
   else if(errors)errors->push_back(std::string(paths[i])+": "+error);
  }SDL_free(paths);std::sort(result.begin(),result.end(),[](const ZCampaign&a,const ZCampaign&b){return a.title<b.title;});return result;}
 bool ZCampaign_Create(const std::string &title,ZCampaign &campaign,std::string &error){if(title.empty()){error="Campaign title is required";return false;}std::string id;for(unsigned char c:title)if(std::isalnum(c))id+=(char)std::tolower(c);else if(c==' '||c=='-')id+='-';if(id.empty()||id=="original")id="new-campaign";id=id.substr(0,48);auto root=ZCampaign_Root();std::string base=id;SDL_PathInfo info;int suffix=2;while(SDL_GetPathInfo((root+"/"+id).c_str(),&info))id=base+"-"+std::to_string(suffix++);
- campaign={};campaign.id=id;campaign.title=title.substr(0,120);campaign.root=root+"/"+id;if(!SDL_CreateDirectory(campaign.root.c_str())){error=SDL_GetError();return false;}
+ campaign={};campaign.engineMin=ZOD_VERSION;campaign.id=id;campaign.title=title.substr(0,120);campaign.root=root+"/"+id;if(!SDL_CreateDirectory(campaign.root.c_str())){error=SDL_GetError();return false;}
  std::ofstream marker(campaign.root+"/.zod-authoring");marker<<"Zod campaign workspace\n";if(!marker){error="Could not create authoring project";return false;}return true;}
 bool ZCampaign_Write(const ZCampaign &campaign,std::string &error){std::string marker;if(!slug(campaign.id)||!ZCampaign_SafeAsset(campaign.root,".zod-authoring",marker)||!inside(ZCampaign_Root(),campaign.root)){error="Imported campaigns are read-only; create a new campaign to author a copy";return false;}
- std::string path=campaign.root+"/campaign.ini",temp=path+".tmp";std::ofstream out(temp,std::ios::trunc);out<<"format=1\nid="<<campaign.id<<"\ntitle="<<escaped(campaign.title)<<"\nauthor="<<escaped(campaign.author)<<"\ndescription="<<escaped(campaign.description)<<"\ncover="<<escaped(campaign.cover)<<"\ndifficulty="<<escaped(campaign.difficulty)<<"\nversion="<<escaped(campaign.version)<<"\n";
- for(const auto &m:campaign.missions){out<<"\n[mission]\ntitle="<<escaped(m.title)<<"\nmap="<<escaped(m.map)<<"\nbriefing="<<escaped(m.briefing)<<"\nspeaker="<<escaped(m.speaker)<<"\ncharacter="<<escaped(m.character)<<"\nvideo="<<escaped(m.video)<<"\nvictory_video="<<escaped(m.victoryVideo)<<"\n";for(const auto &o:m.objectives)out<<"objective="<<escaped(ZMission_Encode(o))<<"\n";}
+ std::string path=campaign.root+"/campaign.ini",temp=path+".tmp";std::ofstream out(temp,std::ios::trunc);out<<"format=1\nid="<<campaign.id<<"\ntitle="<<escaped(campaign.title)<<"\nauthor="<<escaped(campaign.author)<<"\ndescription="<<escaped(campaign.description)<<"\ncover="<<escaped(campaign.cover)<<"\ndifficulty="<<escaped(campaign.difficulty)<<"\nversion="<<escaped(campaign.version)<<"\nengine_min="<<escaped(campaign.engineMin)<<"\nengine_max="<<escaped(campaign.engineMax)<<"\n";for(auto &dependency:campaign.requires)out<<"requires="<<escaped(dependency)<<"\n";
+ for(const auto &m:campaign.missions){out<<"\n[mission]\ntitle="<<escaped(m.title)<<"\nmap="<<escaped(m.map)<<"\nbriefing="<<escaped(m.briefing)<<"\nspeaker="<<escaped(m.speaker)<<"\ncharacter="<<escaped(m.character)<<"\nvideo="<<escaped(m.video)<<"\nvictory_video="<<escaped(m.victoryVideo)<<"\n";out<<"next_win="<<m.nextWin<<"\nnext_loss="<<m.nextLoss<<"\n";for(const auto &event:m.events)out<<"event="<<escaped(ZMission_EncodeEvent(event))<<"\n";for(const auto &o:m.objectives)out<<"objective="<<escaped(ZMission_Encode(o))<<"\n";}
  out.close();ZCampaign validated;if(!out||!ZCampaign_Load(temp,validated,error)){remove(temp.c_str());if(error.empty())error="Campaign could not be validated";return false;}if(!SDL_RenamePath(temp.c_str(),path.c_str())){error="Campaign could not be saved";return false;}return true;}
 void ZCampaign_Progress(const std::string &id,int &current,int &unlocked,bool save){if(!slug(id))return;std::string dir=ZAsset_Profile()+"campaign-progress";SDL_CreateDirectory(dir.c_str());std::string path=dir+"/"+id+".txt";
  if(save){std::ofstream out(path+".tmp");out<<current<<" "<<unlocked<<"\n";out.close();if(out)SDL_RenamePath((path+".tmp").c_str(),path.c_str());}
- else {current=0;unlocked=0;std::ifstream input(path);int c,u;if(input>>c>>u&&c>=0&&u>=0&&c<=128&&u<=128){current=c;unlocked=u;}}
+ else {current=0;unlocked=0;std::ifstream input(path);int c,u;if(input>>c>>u&&(c>=0||c==-2)&&u>=0&&c<=128&&u<=128){current=c;unlocked=u;}}
 }
 
 std::vector<std::string> ZCampaign_Completed(const std::string &id){
@@ -92,3 +97,17 @@ void ZCampaign_RecordWin(const std::string &id,const std::string &key,int second
  std::string dir=ZAsset_Profile()+"campaign-progress";SDL_CreateDirectory(dir.c_str());std::string path=dir+"/"+id+"-records.txt";std::ofstream out(path+".tmp");for(auto&r:records)out<<std::quoted(r.key)<<" "<<r.wins<<" "<<r.completedAt<<" "<<r.bestSeconds<<" "<<r.kills<<" "<<r.lost<<" "<<r.difficulty<<" "<<r.medal<<"\n";out.close();if(out)SDL_RenamePath((path+".tmp").c_str(),path.c_str());
 }
 std::string ZCampaign_Medal(const ZCampaignRecord&r){if(!r.wins)return "";return r.medal>=3?"Gold":r.medal==2?"Silver":"Bronze";}
+
+namespace {bool version_parts(const std::string &text,std::vector<int> &parts){if(text.empty()||text.size()>32)return false;std::istringstream input(text);std::string part;while(std::getline(input,part,'.')){if(part.empty()||part.size()>6||parts.size()==3)return false;int value=0;for(char c:part){if(c<'0'||c>'9')return false;value=value*10+c-'0';}parts.push_back(value);}if(text.back()=='.')return false;parts.resize(3);return true;}}
+int ZCampaign_CompareVersion(const std::string &a,const std::string &b){std::vector<int>x,y;if(!version_parts(a,x)||!version_parts(b,y))return -2;return x==y?0:x<y?-1:1;}
+bool ZCampaign_Branched(const ZCampaign &campaign){for(const auto &mission:campaign.missions)if(mission.nextWin!=-1||mission.nextLoss!=-1)return true;return false;}
+std::vector<std::string> ZCampaign_Compatibility(const ZCampaign &candidate,const std::vector<ZCampaign> &installed){
+ std::vector<std::string> errors;std::set<std::string> stack,done;
+ std::function<void(const ZCampaign&)> visit=[&](const ZCampaign &pack){if(stack.count(pack.id)){errors.push_back("Dependency cycle at "+pack.id);return;}if(done.count(pack.id))return;stack.insert(pack.id);
+ if(!pack.engineMin.empty()&&ZCampaign_CompareVersion(ZOD_VERSION,pack.engineMin)<0)errors.push_back(pack.title+" requires engine "+pack.engineMin+" or newer");
+ if(!pack.engineMax.empty()&&ZCampaign_CompareVersion(ZOD_VERSION,pack.engineMax)>0)errors.push_back(pack.title+" supports engine up to "+pack.engineMax);
+ if(!pack.engineMin.empty()&&!pack.engineMax.empty()&&ZCampaign_CompareVersion(pack.engineMin,pack.engineMax)>0)errors.push_back("Minimum engine version exceeds maximum");
+ for(const auto &requirement:pack.requires){auto at=requirement.find('@');std::string id=requirement.substr(0,at),minimum=at==std::string::npos?"0":requirement.substr(at+1);if(!slug(id)||ZCampaign_CompareVersion(minimum,minimum)==-2){errors.push_back("Invalid dependency: "+requirement);continue;}const ZCampaign *dependency=id==candidate.id?&candidate:nullptr;for(const auto &other:installed)if(other.id==id)dependency=id==candidate.id?&candidate:&other;if(!dependency){errors.push_back("Missing campaign: "+requirement);continue;}if(ZCampaign_CompareVersion(dependency->version,minimum)<0)errors.push_back("Update "+id+" to "+minimum+" or newer");visit(*dependency);}
+ stack.erase(pack.id);done.insert(pack.id);
+ };visit(candidate);return errors;
+}

@@ -2,7 +2,7 @@
 from pathlib import Path
 import hashlib
 
-MEDIA_SUFFIXES={'.png','.bmp','.jpg','.jpeg','.gif','.webp','.ico','.icns','.xcf','.wav','.ogg','.mp3','.mid','.midi','.xmi','.mp4','.avi','.sf2','.sf3','.ttf','.otf','.map','.iso','.bin','.cue','.rsc','.blk','.pal','.lbm','.dat','.raw','.lst','.zip','.rar','.7z','.tar','.gz','.bz2','.exe','.dll','.dylib','.so','.a','.o','.flac','.aiff','.tga','.mov','.webm'}
+MEDIA_SUFFIXES={'.zreplay','.prefab','.png','.bmp','.jpg','.jpeg','.gif','.webp','.ico','.icns','.xcf','.wav','.ogg','.mp3','.mid','.midi','.xmi','.mp4','.avi','.sf2','.sf3','.ttf','.otf','.map','.iso','.bin','.cue','.rsc','.blk','.pal','.lbm','.dat','.raw','.lst','.zip','.rar','.7z','.tar','.gz','.bz2','.exe','.dll','.dylib','.so','.a','.o','.flac','.aiff','.tga','.mov','.webm'}
 
 def forbidden(name):
     path=Path(name);lower=path.as_posix().lower()

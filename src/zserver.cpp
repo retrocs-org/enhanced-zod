@@ -1348,14 +1348,17 @@ ZObject *ZServer::CreateObject(unsigned char ot, unsigned char oid, int x, int y
 
 void ZServer::InitObjects()
 {
+    mission_object_refs.clear();
 	for(vector<map_object>::iterator i=zmap.GetObjectList().begin(); i!=zmap.GetObjectList().end(); i++)
 	{
-		if(!CheckMapObject(*i)) continue;
+		if(!CheckMapObject(*i)){mission_object_refs.push_back(-1);continue;}
+        ZObject *created=nullptr;
 
 		if(i->object_type == ROBOT_OBJECT)
-			CreateRobotGroup(i->object_id, i->x*16, i->y*16, i->owner, NULL, -1, i->health_percent);
+			created=CreateRobotGroup(i->object_id, i->x*16, i->y*16, i->owner, NULL, -1, i->health_percent);
 		else
-			CreateObject(i->object_type, i->object_id, i->x*16, i->y*16, i->owner, NULL, i->blevel, i->extra_links, i->health_percent);
+			created=CreateObject(i->object_type, i->object_id, i->x*16, i->y*16, i->owner, NULL, i->blevel, i->extra_links, i->health_percent);
+        mission_object_refs.push_back(created?created->GetRefID():-1);
 	}
 
 	//if we have a new object_list then we need a new flag list
@@ -4877,23 +4880,23 @@ void ZServer::ChangeGameSpeed(float new_speed)
 }
 
 void ZServer::ConfigureCampaignMission(){
- mission_runtime={};mission_campaign_id.clear();mission_campaign_index=-1;if(allow_remote_clients)return;
- if(const char *manifest=SDL_getenv("ZOD_EDITOR_TEST_MANIFEST")){ZCampaign test;string error;if(ZCampaign_Load(manifest,test,error)&&test.id.compare(0,12,"editor-test-")==0){for(size_t i=0;i<test.missions.size();++i){string file;if(ZCampaign_SafeAsset(test.root,test.missions[i].map,file)&&file==map_name){mission_campaign_id=test.id;mission_campaign_index=i;mission_runtime.objectives=test.missions[i].objectives;return;}}}}
+ mission_runtime={};mission_runtime.missionStarted=ztime.ztime;mission_campaign_id.clear();mission_campaign_index=-1;if(allow_remote_clients)return;
+ if(const char *manifest=SDL_getenv("ZOD_EDITOR_TEST_MANIFEST")){ZCampaign test;string error;if(ZCampaign_Load(manifest,test,error)&&test.id.compare(0,12,"editor-test-")==0){for(size_t i=0;i<test.missions.size();++i){string file;if(ZCampaign_SafeAsset(test.root,test.missions[i].map,file)&&file==map_name){mission_campaign_id=test.id;mission_campaign_index=i;mission_runtime.objectives=test.missions[i].objectives;mission_runtime.events=test.missions[i].events;return;}}}}
 
  for(size_t i=0;i<map_list.size();++i)if(map_list[i]==map_name){mission_campaign_id="original";mission_campaign_index=i;return;}
- for(const auto &campaign:ZCampaign_List()){vector<int> matches;for(size_t i=0;i<campaign.missions.size();++i){std::string path;if(ZCampaign_SafeAsset(campaign.root,campaign.missions[i].map,path)&&path==map_name)matches.push_back(i);}if(matches.empty())continue;int current=0,unlocked=0;ZCampaign_Progress(campaign.id,current,unlocked);int index=std::find(matches.begin(),matches.end(),current)!=matches.end()?current:matches[0];mission_campaign_id=campaign.id;mission_campaign_index=index;mission_runtime.objectives=campaign.missions[index].objectives;return;}
+ for(const auto &campaign:ZCampaign_List()){vector<int> matches;for(size_t i=0;i<campaign.missions.size();++i){std::string path;if(ZCampaign_SafeAsset(campaign.root,campaign.missions[i].map,path)&&path==map_name)matches.push_back(i);}if(matches.empty())continue;int current=0,unlocked=0;ZCampaign_Progress(campaign.id,current,unlocked);int index=std::find(matches.begin(),matches.end(),current)!=matches.end()?current:matches[0];mission_campaign_id=campaign.id;mission_campaign_index=index;mission_runtime.objectives=campaign.missions[index].objectives;mission_runtime.events=campaign.missions[index].events;return;}
 }
 bool ZServer::CheckCampaignObjectives(double time){
- if(mission_runtime.objectives.empty())return false;
+ if(mission_runtime.objectives.empty()&&mission_runtime.events.empty())return false;
  ZMissionWorld world;world.time=time;world.playerAlive=false;
  for(auto *obj:object_list){if(!obj||obj->IsDestroyed()||obj->GetOwner()!=RED_TEAM)continue;unsigned char type,id;obj->GetObjectID(type,id);if(type==ROBOT_OBJECT||type==VEHICLE_OBJECT||type==CANNON_OBJECT)world.playerAlive=true;}
  for(auto &zone:zmap.GetZoneInfoList())world.zoneOwners.push_back(zone.owner);
- std::map<std::tuple<int,int,int,int>,int> buildings;
- for(auto *obj:object_list){if(!obj||obj->IsDestroyed())continue;unsigned char type,id;obj->GetObjectID(type,id);if(type!=BUILDING_OBJECT)continue;int x,y;obj->GetCords(x,y);buildings[std::make_tuple(type,id,x/16,y/16)]=obj->GetOwner();}
- for(auto &base:zmap.GetObjectList()){auto found=buildings.find(std::make_tuple((int)base.object_type,(int)base.object_id,(int)base.x,(int)base.y));world.objectOwners.push_back(found==buildings.end()?-1:found->second);}
+ for(size_t i=0;i<zmap.GetObjectList().size();++i){ZObject *object=i<mission_object_refs.size()?GetObjectFromID(mission_object_refs[i],object_list):nullptr;world.objectOwners.push_back(object&&!object->IsDestroyed()?object->GetOwner():-1);int zoneIndex=-1;if(object&&!object->IsDestroyed()){int x,y;object->GetCenterCords(x,y);int index=0;for(auto &zone:zmap.GetZoneList()){if(x>=zone.x*16&&y>=zone.y*16&&x<(zone.x+zone.w)*16&&y<(zone.y+zone.h)*16)zoneIndex=index;++index;}}world.objectZones.push_back(zoneIndex);}
+ for(int index:mission_runtime.DueEvents(world)){const auto &event=mission_runtime.events[index];if(event.kind=="dialogue"){BroadCastNews(event.text.substr(0,512).c_str(),255,190,80);continue;}vector<ZObject*> spawned;for(int count=0;count<event.count;++count){int tx=event.x+(count%4)*3,ty=event.y+(count/4)*3;if(!zmap.GetPathFinder().TilePassable(tx,ty,event.type==ROBOT_OBJECT))continue;ZObject *object=event.type==ROBOT_OBJECT?CreateRobotGroup(event.id,tx*16,ty*16,event.team,&spawned):CreateObject(event.type,event.id,tx*16,ty*16,event.team,&spawned);(void)object;}for(auto *object:spawned){ols.AddObject(object);RelayNewObject(object);RelayObjectGroupInfo(object);}if(!spawned.empty())ProcessChangeObjectAmount();if(!spawned.empty())BroadCastNews(event.text.empty()?"Reinforcements arrived":event.text.substr(0,512).c_str(),255,190,80);}
+ if(mission_runtime.objectives.empty())return false;
  std::vector<std::string> messages;int result=mission_runtime.Update(world,messages);for(auto &message:messages)BroadCastNews(message.substr(0,512).c_str(),255,190,80);
  int step=std::min(mission_runtime.step,(int)mission_runtime.objectives.size()-1);auto &objective=mission_runtime.objectives[step];int remaining=-1,x=-1,y=-1;
- if(objective.kind!="capture")remaining=std::max(0,objective.seconds-(int)(time-mission_runtime.stepStarted));
+ if(objective.kind!="capture"&&objective.kind!="escort")remaining=std::max(0,objective.seconds-(int)(time-mission_runtime.stepStarted));
  if(objective.kind=="capture"&&objective.target<(int)zmap.GetZoneList().size()){auto &zone=zmap.GetZoneList()[objective.target];x=(zone.x+zone.w/2)*16;y=(zone.y+zone.h/2)*16;}
  if(objective.kind=="defend"&&objective.target<(int)zmap.GetObjectList().size()){auto &o=zmap.GetObjectList()[objective.target];x=o.x*16+16;y=o.y*16+16;}
  string packet="@objective|"+to_string(step+1)+"|"+to_string(mission_runtime.objectives.size())+"|"+to_string(remaining)+"|"+to_string(x)+"|"+to_string(y)+"|"+(result?result>0?"Mission complete":"Mission failed":objective.text.empty()?objective.kind:objective.text);BroadCastNews(packet.c_str(),255,190,80);

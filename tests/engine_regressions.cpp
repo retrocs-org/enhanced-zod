@@ -1,6 +1,7 @@
 #include "zserver.h"
 #include "zgamepad.h"
 #include "zperf.h"
+#include "zreplay.h"
 #include "zmovie.h"
 #include "zcontent.h"
 #include "zasset_import.h"
@@ -49,6 +50,15 @@ static void verify_editor_server(const std::string &map,const std::string &id);
 
 // Synthetic menu artwork keeps rendering/input tests independent of game media.
 struct ZFrontEndRegression {
+    static void authoring_tools(const string &root){
+        REQUIRE(SDL_Init(SDL_INIT_VIDEO));REQUIRE(ZVideo_SetMode(1280,800,false));ZMap::ServerInit();ZFrontEnd frontend;frontend.Show();REQUIRE(frontend.EnsureGraphics());frontend.custom_dir=root;REQUIRE(frontend.LaunchEditor({"maps/p02_bb_orig01.map"}));auto &editor=*frontend.workspace;
+        editor.templateKind=3;editor.Create(root+"/escort.map","Escort",0,64,80);REQUIRE(editor.map.GetObjectList().size()==4&&editor.map.GetZoneList().size()==3);editor.selectedObjects={2};editor.selectedObject=2;editor.prefabName="squad";editor.SavePrefab();REQUIRE(editor.prefabFiles.size()==1);editor.prefabChoice=0;editor.copiedWidth=editor.copiedHeight=4;editor.LoadPrefab();REQUIRE(editor.copiedWidth==0&&editor.copiedHeight==0);REQUIRE(editor.copiedObjects.size()==1&&editor.hasClipboard);auto count=editor.map.GetObjectList().size();editor.PasteSelection(30,30);REQUIRE(editor.map.GetObjectList().size()==count+1);editor.Undo(false);REQUIRE(editor.map.GetObjectList().size()==count);
+        editor.Remember();editor.map.GetTile(10*64+10).tile=20;editor.SmoothTerrain(10,10);REQUIRE(editor.map.GetTile(10*64+10).tile!=20);editor.tile=460;editor.anchorX=-1;editor.ConnectedTerrain(20,20,false);editor.ConnectedTerrain(25,24,false);for(int x=20;x<=25;++x)REQUIRE(ZMap::GetMapPaletteTileInfo(DESERT,editor.map.GetTile(20*64+x).tile).is_road);for(int y=20;y<=24;++y)REQUIRE(ZMap::GetMapPaletteTileInfo(DESERT,editor.map.GetTile(y*64+25).tile).is_road);
+        auto capture=[&](const char *name){frontend.Render();SDL_SetRenderTarget(ZVideo_GetRenderer(),frontend.target);auto *image=SDL_RenderReadPixels(ZVideo_GetRenderer(),nullptr);REQUIRE(image);REQUIRE(IMG_SavePNG(image,(root+"/"+name+".png").c_str()));SDL_DestroySurface(image);SDL_SetRenderTarget(ZVideo_GetRenderer(),nullptr);};
+        editor.campaignPanel=true;editor.authorCampaign.title="Tools campaign";string error;REQUIRE(ZCampaign_Create("Tools campaign",editor.authorCampaign,error));editor.AddMission();REQUIRE(editor.authorCampaign.missions[0].objectives[0].kind=="escort");capture("studio");editor.eventPanel=true;editor.eventText="time|5|0|dialogue|1|5|0|0|0|1|Hello";REQUIRE(editor.SaveCampaign());capture("events");editor.eventPanel=false;editor.metadataPanel=true;editor.compatibilityPanel=true;capture("compatibility");editor.compatibilityPanel=false;editor.metadataPanel=false;editor.campaignPanel=false;editor.prefabPanel=true;editor.Render();
+        editor.authorCampaign.missions.push_back(editor.authorCampaign.missions[0]);editor.authorCampaign.missions.push_back(editor.authorCampaign.missions[0]);editor.authorCampaign.missions[0].nextWin=2;REQUIRE(ZCampaign_Write(editor.authorCampaign,error));frontend.ScanCampaigns();int choice=-1;for(int i=0;i<(int)frontend.campaigns.size();++i)if(frontend.campaigns[i].id==editor.authorCampaign.id)choice=i;REQUIRE(choice>=0);frontend.SelectCampaign(choice);frontend.current_level=0;frontend.community_running=true;frontend.RecordCampaignResult(true,10,1,0,1);REQUIRE(frontend.progress_current==2);auto visible=frontend.CampaignVisibleMissions(&frontend.selected_campaign,2);REQUIRE(visible.size()==2&&visible[0]==0&&visible[1]==2);frontend.selected_campaign.missions[2].nextWin=-2;frontend.current_level=2;frontend.RecordCampaignResult(true,10,1,0,1);int current=0,unlocked=0;ZCampaign_Progress(frontend.selected_campaign.id,current,unlocked);REQUIRE(current==-2);REQUIRE(editor.Open("maps/p02_bb_orig01.map",root)&&editor.templateKind==0);frontend.FreeGraphics();SDL_Quit();std::cout<<"authoring-tools-ok";
+    }
+
     static ZMapWorkspace *prepare_playtest(ZFrontEnd &frontend){
         frontend.Show();REQUIRE(frontend.EnsureGraphics());frontend.custom_dir=ZAsset_Profile()+"return-test";SDL_CreateDirectory(frontend.custom_dir.c_str());REQUIRE(frontend.LaunchEditor({"maps/p02_bb_orig01.map"}));auto *workspace=frontend.workspace.get();workspace->Remember();workspace->cameraX=77;workspace->mx=workspace->pressX=1040;workspace->my=workspace->pressY=90;workspace->clicked=true;frontend.Render();ZFrontEnd::Action action;REQUIRE(frontend.PopAction(action));REQUIRE(frontend.EditorTesting());frontend.Hide();return workspace;
     }
@@ -184,7 +194,7 @@ struct ZFrontEndRegression {
         REQUIRE(!ZCampaign_ImportPack(archive,error));REQUIRE(error.find("already installed")!=string::npos);
         REQUIRE(SDL_RenamePath(campaign.root.c_str(),(root+"/author-backup").c_str()));REQUIRE(ZCampaign_ImportPack(archive,error));auto installed=ZCampaign_List();REQUIRE(installed.size()==1);string marker;REQUIRE(!ZCampaign_SafeAsset(installed[0].root,".zod-authoring",marker));
         ZCampaign_RecordWin(campaign.id,"0:one.map",45,4,0,1);auto author=campaign;author.root=root+"/author-backup";author.version="2.0";{std::ofstream manifest(author.root+"/campaign.ini",std::ios::app);}
-        string manifestPath=author.root+"/campaign.ini";auto manifestBytes=bytes(manifestPath);string text(manifestBytes.begin(),manifestBytes.end());auto version=text.find("version=1.0");REQUIRE(version!=string::npos);text.replace(version,11,"version=2.0");{std::ofstream out(manifestPath);out<<text;}REQUIRE(ZCampaign_Load(manifestPath,author,error));string updateArchive;REQUIRE(ZCampaign_Export(author,updateArchive,error));REQUIRE(ZCampaign_ImportPack(updateArchive,error,true));REQUIRE(ZCampaign_List()[0].version=="2.0");REQUIRE(ZCampaign_Records(campaign.id).size()==1);REQUIRE(ZCampaign_Uninstall(campaign.id,error));REQUIRE(ZCampaign_List().empty());REQUIRE(ZCampaign_Records(campaign.id).size()==1);
+        string manifestPath=author.root+"/campaign.ini";auto manifestBytes=bytes(manifestPath);string text(manifestBytes.begin(),manifestBytes.end());auto version=text.find("version=1.0");REQUIRE(version!=string::npos);text.replace(version,11,"version=2.0");{std::ofstream out(manifestPath);out<<text;}REQUIRE(ZCampaign_Load(manifestPath,author,error));string updateArchive;REQUIRE(ZCampaign_Export(author,updateArchive,error));REQUIRE(ZCampaign_ImportPack(updateArchive,error,true));REQUIRE(ZCampaign_List()[0].version=="2.0");auto installedManifest=bytes(ZCampaign_List()[0].root+"/campaign.ini");REQUIRE(!ZCampaign_ImportPack(archive,error,true));REQUIRE(error.find("newer")!=string::npos);REQUIRE(bytes(ZCampaign_List()[0].root+"/campaign.ini")==installedManifest);REQUIRE(ZCampaign_Records(campaign.id).size()==1);REQUIRE(ZCampaign_Uninstall(campaign.id,error));REQUIRE(ZCampaign_List().empty());REQUIRE(ZCampaign_Records(campaign.id).size()==1);
         ZMissionRuntime runtime;runtime.objectives=mission.objectives;ZMissionWorld world;world.time=10;vector<string> messages;REQUIRE(runtime.Update(world,messages)==0&&runtime.step==1);world.time=14;REQUIRE(runtime.Update(world,messages)==0);world.time=15;REQUIRE(runtime.Update(world,messages)==1);
         runtime={};runtime.objectives={{"defend","Keep factory",0,10}};world.objectOwners={1};world.time=0;REQUIRE(runtime.Update(world,messages)==0);world.objectOwners={2};REQUIRE(runtime.Update(world,messages)==-1);
         runtime={};runtime.objectives={{"capture","Capture territory",0,0}};world.zoneOwners={2};REQUIRE(runtime.Update(world,messages)==0);world.zoneOwners={1};REQUIRE(runtime.Update(world,messages)==1);
@@ -343,6 +353,15 @@ struct ZFrontEndRegression {
 // A narrowly scoped friend fixture exercises production world serialization.
 class ZServerRegression {
 public:
+    static void scripted_stress(const string &map,int ticks,int units){
+        REQUIRE(ticks>=1&&ticks<=216000&&units>=1&&units<=512);ZPerf_Enable(true);ZMap::ServerInit();auto server=std::make_unique<ZServer>();server->LoadNextMap(map);REQUIRE(server->game_on);
+        for(int i=0;i<units;++i){auto *unit=server->CreateObject(ROBOT_OBJECT,GRUNT,(2+i%28)*16,((i%2?48:26)+i/56)*16,i%2?BLUE_TEAM:RED_TEAM);REQUIRE(unit);waypoint order;order.mode=MOVE_WP;order.x=(4+i%28)*16;order.y=(38+i/56)*16;order.player_given=true;unit->GetWayPointList().push_back(order);}
+        server->mission_runtime.events={{}};server->mission_runtime.events[0].at=1;server->mission_runtime.events[0].text="Stress event";server->mission_runtime.missionStarted=0;
+        int reloads=0;for(int tick=0;tick<ticks;++tick){ZPerfScope scope("stress.tick");server->ztime.ztime=tick*.1;server->ProcessObjects();server->ProcessPathFindingResults();server->CheckCampaignObjectives(server->ztime.ztime);if(tick%20==0)SDL_Delay(1);if((tick+1)%100==0||tick==ticks-1){REQUIRE(server->SaveGame(0,0,0,server->ztime.ztime,0));REQUIRE(server->LoadSavedGame(0,0));++reloads;}}
+        REQUIRE(!server->object_list.empty());if(ticks>10)REQUIRE(server->mission_runtime.fired.size()==1&&server->mission_runtime.fired[0]);std::cout<<"stress-ok reloads="<<reloads<<" objects="<<server->object_list.size()<<"\n"<<ZPerf_Report();
+    }
+    static void script_save(const string &map){ZMap::ServerInit();auto server=std::make_unique<ZServer>();server->LoadNextMap(map);auto &runtime=server->mission_runtime;runtime.events={{}};runtime.events[0].kind="reinforce";runtime.events[0].type=ROBOT_OBJECT;runtime.events[0].x=35;runtime.events[0].y=35;runtime.events[0].at=0;runtime.missionStarted=0;auto count=server->object_list.size();server->CheckCampaignObjectives(0);REQUIRE(server->object_list.size()>count);count=server->object_list.size();REQUIRE(runtime.fired[0]);REQUIRE(server->SaveGame(0,0,0,0,0));REQUIRE(server->LoadSavedGame(0,0));server->CheckCampaignObjectives(1);REQUIRE(server->object_list.size()==count&&server->mission_runtime.fired[0]);auto old=bytes(ZSave_Path(0));string contents(old.begin(),old.end());auto trailer=contents.find("zod-ee_SCRIPT2");REQUIRE(trailer!=string::npos&&trailer>=4);old.resize(trailer-4);old[11]='4';{std::ofstream legacy(ZSave_Path(0),std::ios::binary);legacy.write(old.data(),old.size());}REQUIRE(server->LoadSavedGame(0,0));REQUIRE(server->mission_object_refs.size()==server->zmap.GetObjectList().size());std::cout<<"script-save-ok";}
+
     static void verify_editor(const string &map,const string &id){auto server=std::make_unique<ZServer>();ZMap::ServerInit();server->LoadNextMap(map);REQUIRE(server->SaveGame(0,0,0,0,0));ZSaveInfo info;REQUIRE(ZSave_ReadInfo(0,info));REQUIRE(info.campaign_id==id&&info.mission_index==0);REQUIRE(server->mission_runtime.objectives.size()==1);server->CheckCampaignObjectives(0);server->CheckCampaignObjectives(1);REQUIRE(server->mission_runtime.outcome==1);server->mission_runtime={};server->mission_runtime.objectives={{"defend","Protect fort",0,5}};for(auto *object:server->object_list){unsigned char type,kind;object->GetObjectID(type,kind);if(type==BUILDING_OBJECT&&(kind==FORT_FRONT||kind==FORT_BACK)&&object->GetOwner()==RED_TEAM)object->SetOwner(BLUE_TEAM);}server->CheckCampaignObjectives(0);REQUIRE(server->mission_runtime.outcome==-1);}
     static void movement(const string &map){
         auto server=std::make_unique<ZServer>();ZMap::ServerInit();server->LoadNextMap(map);ZObject *robot=nullptr,*vehicle=nullptr;for(auto *object:server->object_list){unsigned char type,kind;object->GetObjectID(type,kind);if(object->GetOwner()!=RED_TEAM)continue;if(type==ROBOT_OBJECT&&!robot)robot=object;if(type==VEHICLE_OBJECT&&!vehicle)vehicle=object;}REQUIRE(robot&&vehicle);
@@ -776,6 +795,12 @@ public:
 
 class ZPlayerUIRegression {
 public:
+    static void replay_feedback(const string &root){
+        REQUIRE(SDL_Init(SDL_INIT_VIDEO));REQUIRE(ZVideo_SetMode(1280,800,false));ZMap::ServerInit();
+        auto map=bytes("maps/p02_bb_orig01.map");vector<char> packet(map.size()+4);int index=0;memcpy(packet.data(),&index,4);memcpy(packet.data()+4,map.data(),map.size());ZReplayRecorder recorder;string file=root+"/play.zreplay";REQUIRE(recorder.Start(file,RED_TEAM));REQUIRE(recorder.Record(0,RESET_GAME,nullptr,0));REQUIRE(recorder.Record(0,STORE_MAP,packet.data(),packet.size()));index=-1;REQUIRE(recorder.Record(0,STORE_MAP,(char*)&index,4));REQUIRE(recorder.Finish());
+        auto player=std::make_unique<ZPlayer>();auto &p=*player;p.init_w=1280;p.init_h=800;REQUIRE(p.PlayReplay(file));p.ProcessReplay();REQUIRE(p.replay_active&&p.replay_ended&&p.replay_paused&&p.zmap.Loaded());p.NotifyBattle("Under fire",320,400,true);p.NotifyBattle("Under fire",330,410,true);REQUIRE(p.battle_notifications.size()==1);REQUIRE(p.ClickNotification(20,140));REQUIRE(p.notification_click);p.ReturnToMenu();REQUIRE(!p.replay_active&&!p.zmap.Loaded());std::cout<<"replay-feedback-ok";
+    }
+
     static void reconnect_failure(int port){
         REQUIRE(SDL_Init(SDL_INIT_VIDEO));auto player=std::make_unique<ZPlayer>();auto &p=*player;p.SetRemoteAddress("127.0.0.1");REQUIRE(!p.client_socket.Start("256.256.256.256",port));
         ZFrontEndRegression::start_deployment(p.frontend);
@@ -1149,6 +1174,15 @@ static void dial_server(const string &host,int port) {
 
 static void verify_editor_server(const string &map,const string &id){ZServerRegression::verify_editor(map,id);}
 
+static void feature_checks(const string &root){
+ REQUIRE(SDL_Init(SDL_INIT_VIDEO));ZMap::ServerInit();string error;
+ REQUIRE(ZCampaign_CompareVersion("0.6","0.6.0")==0);REQUIRE(ZCampaign_CompareVersion("1.2.0","1.10.0")<0);REQUIRE(ZCampaign_CompareVersion("bad","1")==-2);
+ ZCampaign pack;pack.id="test";pack.title="Test";pack.version="1.0";pack.engineMin="99";REQUIRE(!ZCampaign_Compatibility(pack,{}).empty());pack.engineMin="0.1";pack.requires={"base@2"};REQUIRE(!ZCampaign_Compatibility(pack,{}).empty());ZCampaign base;base.id="base";base.version="2";REQUIRE(ZCampaign_Compatibility(pack,{base}).empty());base.requires={"test@1"};REQUIRE(!ZCampaign_Compatibility(pack,{base}).empty());
+ ZMissionEvent event;REQUIRE(ZMission_ParseEvent("time|3|0|reinforce|1|5|0|8|8|2|Hello",event));REQUIRE(!ZMission_ParseEvent("time|-1|0|dialogue|1|5|0|8|8|2|bad",event));REQUIRE(ZMission_ParseEvent("time|3|0|reinforce|1|5|0|8|8|2|Hello",event));ZMissionRuntime runtime;runtime.events={event};ZMissionWorld world;world.time=10;REQUIRE(runtime.DueEvents(world).empty());world.time=13;REQUIRE(runtime.DueEvents(world).size()==1&&runtime.DueEvents(world).empty());runtime={};runtime.objectives={{"escort","Reach zone",0,2}};world.objectOwners={1};world.objectZones={1};vector<string> messages;REQUIRE(runtime.Update(world,messages)==0);world.objectZones[0]=2;REQUIRE(runtime.Update(world,messages)==1);runtime={};runtime.objectives={{"escort","Reach zone",0,2}};world.objectOwners[0]=-1;REQUIRE(runtime.Update(world,messages)==-1);
+ for(int i=0;i<4;++i){ZPrefs_ApplyPreset(i);REQUIRE(zod_access_preset==i);}ZPrefs_ResetCategory(5);REQUIRE(!zod_high_contrast&&zod_access_preset==-1);
+ auto map=bytes("maps/p02_bb_orig01.map");vector<char> payload(map.size()+4);int index=0;memcpy(payload.data(),&index,4);memcpy(payload.data()+4,map.data(),map.size());string file=root+"/test.zreplay";ZReplayRecorder recorder;REQUIRE(recorder.Start(file,1));REQUIRE(recorder.Record(0,STORE_MAP,payload.data(),payload.size()));index=-1;REQUIRE(recorder.Record(1,STORE_MAP,(char*)&index,4));REQUIRE(recorder.Finish());ZReplayTape tape;REQUIRE(tape.Load(file,error)&&tape.packets.size()==2);auto damaged=bytes(file);damaged.back()^=1;{std::ofstream out(file,std::ios::binary);out.write(damaged.data(),damaged.size());}REQUIRE(!tape.Load(file,error)&&tape.packets.size()==2);REQUIRE(!ZReplay_Allowed(SET_NAME));REQUIRE(recorder.Start(root+"/partial.zreplay",1));REQUIRE(!recorder.Finish());SDL_Quit();std::cout<<"feature-checks-ok";
+}
+
 int main(int argc, char **argv) {
 #ifdef _WIN32
     WSADATA wsa; WSAStartup(MAKEWORD(2, 2), &wsa);
@@ -1250,6 +1284,11 @@ int main(int argc, char **argv) {
         else if(std::string(argv[1]) == "local-host") { REQUIRE(argc == 3); local_match(argv[2]); }
         else if(std::string(argv[1]) == "movement"){REQUIRE(argc==3);ZServerRegression::movement(argv[2]);}
         else if(std::string(argv[1]) == "recovery"){REQUIRE(argc==3);ZServerRegression::recovery(argv[2]);}
+        else if(std::string(argv[1]) == "replay-feedback"){REQUIRE(argc==3);ZPlayerUIRegression::replay_feedback(argv[2]);}
+        else if(std::string(argv[1]) == "authoring-tools"){REQUIRE(argc==3);ZFrontEndRegression::authoring_tools(argv[2]);}
+        else if(std::string(argv[1]) == "feature-checks"){REQUIRE(argc==3);feature_checks(argv[2]);}
+        else if(std::string(argv[1]) == "script-save"){REQUIRE(argc==3);ZServerRegression::script_save(argv[2]);}
+        else if(std::string(argv[1]) == "stress"){REQUIRE(argc==5);ZServerRegression::scripted_stress(argv[2],atoi(argv[3]),atoi(argv[4]));}
         else if(std::string(argv[1]) == "save") { REQUIRE(argc == 3); ZServerRegression::roundtrip(argv[2]); }
         else if(std::string(argv[1]) == "packets") packets();
         else if(std::string(argv[1]) == "protocol") {
