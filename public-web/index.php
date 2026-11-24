@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
-require __DIR__.'/../src/service.php';
+require __DIR__.'/../web-service/php/src/service.php';
+require_once __DIR__.'/../web-service/php/src/api_catalog.php';
 security_headers();
 $path=rawurldecode(parse_url($_SERVER['REQUEST_URI'],PHP_URL_PATH)??'/');
 $method=$_SERVER['REQUEST_METHOD']??'GET';$api=str_starts_with($path,'/api/')||in_array($path,['/matches','/healthz'],true);
@@ -16,6 +17,7 @@ try {
             'POST /api/logout'=>$service->logout(),
             'GET /api/me'=>$service->requireAccount(),
             'POST /api/account/password'=>$service->changePassword(json_input()),
+            'GET /api/catalog'=>array_map(fn($entry)=>array_combine(['method','path','access','description','browsable'],$entry),api_catalog()),
             'GET /api/servers','GET /matches'=>$service->servers(),
             'POST /api/servers/heartbeat'=>$service->heartbeat(json_input()),
             'DELETE /api/servers/self'=>$service->removeServer(),
@@ -41,14 +43,14 @@ try {
         header('Location: /account?message='.rawurlencode($message),true,303);exit;
     }
     if ($method!=='GET' && $method!=='HEAD') fail(405,'Method not allowed.');
-    require __DIR__.'/../src/views.php';
+    require __DIR__.'/../web-service/php/src/views.php';
     render_page($path,$service);
 } catch(ApiError $e) {
     if ($api) json_response(['error'=>$e->getMessage()],$e->status);
     if ($method==='POST' && str_starts_with($path,'/account/')) {header('Location: /account?error='.rawurlencode($e->getMessage()),true,303);exit;}
-    http_response_code($e->status);require_once __DIR__.'/../src/views.php';render_error($e->status,$e->getMessage());
+    http_response_code($e->status);require_once __DIR__.'/../web-service/php/src/views.php';render_error($e->status,$e->getMessage());
 } catch(Throwable $e) {
     error_log('Zod web request failed: '.$e::class.' ['.$e->getCode().']');
     if ($api) json_response(['error'=>'Service temporarily unavailable. Please retry shortly.'],503);
-    http_response_code(503);require_once __DIR__.'/../src/views.php';render_error(503,'The service is temporarily unavailable. Please try again shortly.');
+    http_response_code(503);require_once __DIR__.'/../web-service/php/src/views.php';render_error(503,'The service is temporarily unavailable. Please try again shortly.');
 }

@@ -40,7 +40,7 @@ class PHPBackend(unittest.TestCase):
             subprocess.run([PHP,str(APP/'bin/server.php'),'--id',identifier,'--name',identifier,'--key-file',str(keyfile)],check=True,capture_output=True)
         env=os.environ.copy();env.update(ZOD_DEV_HTTP='1',ZOD_PUBLIC_URL=BASE,PHP_CLI_SERVER_WORKERS='4')
         cls.log=open(directory/'php.log','w+')
-        cls.process=subprocess.Popen([PHP,'-S',f'127.0.0.1:{PORT}','-t',str(APP/'public'),str(APP/'public/router.php')],env=env,stdout=cls.log,stderr=subprocess.STDOUT,start_new_session=True)
+        cls.process=subprocess.Popen([PHP,'-S',f'127.0.0.1:{PORT}','-t',str(ROOT/'public-web'),str(ROOT/'public-web/router.php')],env=env,stdout=cls.log,stderr=subprocess.STDOUT,start_new_session=True)
         for _ in range(100):
             try:
                 if request('/healthz')[0]==200:break
@@ -91,7 +91,7 @@ class PHPBackend(unittest.TestCase):
         query="UPDATE servers SET last_seen=UTC_TIMESTAMP()-INTERVAL 91 SECOND WHERE id='api-one'";sql(query)
         self.assertFalse(any(r['id']=='api-one' for r in api('/api/servers')))
     def test_03_validation_csrf_and_pages(self):
-        for page in ['/','/servers','/leaderboard','/statistics','/downloads','/account','/guide','/players/ApiCommander']:
+        for page in ['/','/network','/api','/api-browser','/servers','/leaderboard','/statistics','/downloads','/account','/guide','/players/ApiCommander']:
             status,body,headers=request(page)
             self.assertEqual(status,200,page);self.assertIn(b'<!doctype html>',body.lower());self.assertIn('frame-ancestors',headers['Content-Security-Policy'])
         self.assertEqual(request('/does-not-exist')[0],404)
@@ -106,6 +106,17 @@ class PHPBackend(unittest.TestCase):
         self.assertIn(b'Welcome back, ApiCommander',body)
         self.assertEqual(request('/account/logout',raw=b'',headers={'Content-Type':'application/x-www-form-urlencoded'})[0],200) # error redirects to visible form
         self.assertEqual(request('/api/statistics')[0],200)
+    def test_public_api_browser_catalog(self):
+        catalog=api('/api/catalog')
+        self.assertTrue(any(row['path']=='/api/servers' and row['browsable'] for row in catalog))
+        self.assertTrue(all(row['method']=='GET' and row['access']=='Public' for row in catalog if row['browsable']))
+        for row in catalog:
+            if row['browsable']: self.assertEqual(request(row['path'])[0],200)
+        status,body,_=request('/api-browser')
+        self.assertEqual(status,200);self.assertIn(b'id="api-explorer"',body)
+        self.assertIn(b'/api/results',body);self.assertIn(b'Server bearer key',body)
+        for path in ['/src/service.php','/web-service/php/src/service.php','/sql/001_initial.sql','/bin/migrate.php']:
+            status,body,_=request(path);self.assertEqual(status,404);self.assertNotIn(b'<?php',body)
     def test_04_stored_secrets_are_hashed(self):
         self.assertTrue(all(r['password_hash'].startswith('$argon2id$') for r in sql('SELECT password_hash FROM accounts')))
         self.assertEqual(sql("SELECT key_hash FROM server_keys WHERE id='api-one'")[0]['key_hash'],hashlib.sha256(self.key.encode()).hexdigest())

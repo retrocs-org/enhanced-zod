@@ -13,7 +13,7 @@ r=importlib.util.module_from_spec(SPEC);SPEC.loader.exec_module(r)
 class ReleaseTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.root=Path(self.temp.name).resolve()
-        for name,text in {'VERSION':'1.2.3\n','README.md':'zod-ee','LICENSE':'GPLv3','src/main.cpp':'source','web-service/php/public/index.php':'<?php echo "zod-ee";','docs/RELEASE-NOTES.md':'Release notes describing the features in this version.','.gitignore':'outputs/\nbuild/\nwork/\n'}.items():
+        for name,text in {'VERSION':'1.2.3\n','README.md':'zod-ee','LICENSE':'GPLv3','src/main.cpp':'source','public-web/index.php':'<?php echo "zod-ee";','docs/RELEASE-NOTES.md':'Release notes describing the features in this version.','.gitignore':'outputs/\nbuild/\nwork/\n'}.items():
             file=self.root/name;file.parent.mkdir(parents=True,exist_ok=True);file.write_text(text)
         subprocess.run(['git','init','-q',str(self.root)],check=True)
         for args in [('config','user.email','tests@example.invalid'),('config','user.name','Release tests'),('add','.'),('commit','-qm','fixture')]:subprocess.run(['git','-C',str(self.root),*args],check=True)
@@ -24,8 +24,10 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(manifest['version'],'1.2.3')
         with zipfile.ZipFile(self.out/'zod-ee-1.2.3-source.zip') as archive:
             self.assertIn('zod-ee-1.2.3/src/main.cpp',archive.namelist())
-            self.assertIn('zod-ee-1.2.3/web-service/php/public/index.php',archive.namelist())
+            self.assertIn('zod-ee-1.2.3/public-web/index.php',archive.namelist())
             self.assertFalse(any('/.git/' in n for n in archive.namelist()))
+        with zipfile.ZipFile(self.out/'zod-ee-1.2.3-web.zip') as archive:
+            self.assertIn('zod-ee-web/public-web/index.php',archive.namelist())
         self.assertFalse((self.out/'receipt-github.json').exists())
     def test_archive_tampering_fails_verification(self):
         m=self.prepare();file=self.out/next(iter(m['artifacts']));file.write_bytes(file.read_bytes()+b'changed')
@@ -132,7 +134,7 @@ class ReleaseTests(unittest.TestCase):
             with self.assertRaises(r.ReleaseError):r.selected_targets(value)
 
     def test_source_archives_exclude_game_media_and_font_binaries(self):
-        for name in ['assets/sprite.png','maps/original.map','tools/z_graphics_patches/patch.png','web-service/php/public/assets/heading.ttf']:
+        for name in ['assets/sprite.png','maps/original.map','tools/z_graphics_patches/patch.png','public-web/assets/heading.ttf']:
             file=self.root/name;file.parent.mkdir(parents=True,exist_ok=True);file.write_bytes(b'local media')
         files=r.sources(self.root);self.assertFalse(any(r.source_policy.forbidden(name) for name in files))
     def test_deleted_media_in_history_still_blocks_push(self):

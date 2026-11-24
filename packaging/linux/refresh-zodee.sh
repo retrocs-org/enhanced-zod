@@ -42,14 +42,14 @@ cleanup() {
 trap cleanup 0
 trap 'exit 1' HUP INT TERM
 git clone --quiet --depth 1 --single-branch --branch main "$REPOSITORY" "$TEMP/repository"
-SOURCE="$TEMP/repository/web-service/php"
-for file in public/index.php src/service.php src/bootstrap.php src/views.php bin/migrate.php; do
-    [ -f "$SOURCE/$file" ] || { echo "Website file missing: web-service/php/$file; site left unchanged." >&2; exit 1; }
+SOURCE="$TEMP/repository"
+for file in public-web/index.php web-service/php/src/service.php web-service/php/src/bootstrap.php web-service/php/src/views.php web-service/php/bin/migrate.php; do
+    [ -f "$SOURCE/$file" ] || { echo "Website file missing: $file; site left unchanged." >&2; exit 1; }
 done
-[ -z "$(find "$SOURCE" -type l -print)" ] || { echo "Linked application files are unsupported; site left unchanged." >&2; exit 1; }
+[ -z "$(find "$SOURCE/public-web" "$SOURCE/web-service/php" -type l -print)" ] || { echo "Linked application files are unsupported; site left unchanged." >&2; exit 1; }
 COMMIT=$(git -C "$TEMP/repository" rev-parse --verify HEAD)
 RELEASE="$PRIVATE/release-$COMMIT-${TEMP##*.}"
-find "$SOURCE" -type f -name '*.php' -exec sh -c '
+find "$SOURCE/public-web" "$SOURCE/web-service/php" -type f -name '*.php' -exec sh -c '
     marker=$1
     shift
     for file do
@@ -58,11 +58,13 @@ find "$SOURCE" -type f -name '*.php' -exec sh -c '
 ' sh "$TEMP/lint-failed" {} +
 [ ! -e "$TEMP/lint-failed" ] || { echo "PHP lint failed; site left unchanged." >&2; exit 1; }
 mkdir "$TEMP/new-app" "$TEMP/new-site"
-cp -R "$SOURCE/." "$TEMP/new-app/"
-cp -R "$SOURCE/public/." "$TEMP/new-site/"
-# The application index runs from its own directory, so ../src stays private.
+mkdir -p "$TEMP/new-app/web-service"
+cp -R "$SOURCE/web-service/php" "$TEMP/new-app/web-service/php"
+cp -R "$SOURCE/public-web" "$TEMP/new-app/public-web"
+cp -R "$SOURCE/public-web/." "$TEMP/new-site/"
+# The application index runs from its own directory, so the backend stays private.
 # Escape the configured filesystem path as a PHP literal rather than shell text.
-php -r 'echo "<?php\ndeclare(strict_types=1);\nrequire ", var_export($argv[1]."/public/index.php", true), ";\n";' "$RELEASE" > "$TEMP/new-site/index.php"
+php -r 'echo "<?php\ndeclare(strict_types=1);\nrequire ", var_export($argv[1]."/public-web/index.php", true), ";\n";' "$RELEASE" > "$TEMP/new-site/index.php"
 php -l "$TEMP/new-site/index.php" >/dev/null
 chown -R root:wwwrun "$TEMP/new-app" "$TEMP/new-site"
 find "$TEMP/new-app" "$TEMP/new-site" -type d -exec chmod 750 {} +

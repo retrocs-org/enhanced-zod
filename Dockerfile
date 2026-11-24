@@ -131,7 +131,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends libonig-dev \
  && docker-php-ext-install pdo_mysql mbstring \
  && rm -rf /var/lib/apt/lists/* \
  && php -r 'if (!defined("PASSWORD_ARGON2ID")) { fwrite(STDERR,"Argon2id support required\n"); exit(1); }'
-COPY web-service/php/ /var/www/zod/
+COPY web-service/php/ /var/www/zod/web-service/php/
+COPY public-web/ /var/www/zod/public-web/
 COPY packaging/linux/apache.conf /etc/apache2/sites-available/000-default.conf
 RUN printf 'expose_php=Off\ndisplay_errors=Off\nlog_errors=On\nmemory_limit=128M\npost_max_size=64K\nupload_max_filesize=64K\nmax_execution_time=15\n' > /usr/local/etc/php/conf.d/zod.ini
 ENV ZOD_DB_HOST=db ZOD_DB_NAME=zod ZOD_DB_USER=zod
@@ -144,6 +145,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends php-cli php-mys
  && rm -rf /var/lib/apt/lists/*
 COPY --from=webbuild /out/zod-agent /out/zod-agent
 COPY web-service/ /src/web-service/
+COPY public-web/ /src/public-web/
 COPY maps/ /src/maps/
 COPY assets/planets/ /src/assets/planets/
 COPY map_list.txt default_settings.txt /src/

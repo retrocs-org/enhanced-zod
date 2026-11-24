@@ -12,8 +12,8 @@ class Refresh(unittest.TestCase):
             path=self.bin/name;path.write_text('#!/bin/sh\n'+body+'\n');path.chmod(0o755)
         self.env=dict(os.environ,PATH=str(self.bin)+os.pathsep+os.environ['PATH'],ZODEE_DEPLOY_PARENT=str(self.parent),ZODEE_REPOSITORY=str(self.repo))
         subprocess.run(['git','init','-q','-b','main',str(self.repo)],check=True)
-        app=self.repo/'web-service/php'
-        for name,text in {'public/index.php':"<?php require __DIR__.'/../src/service.php'; echo refresh_fixture();",'public/assets/site.css':'body{}','src/service.php':"<?php function refresh_fixture(){return 'working-private-app';}",'src/bootstrap.php':'<?php','src/views.php':'<?php','bin/migrate.php':'<?php'}.items():
+        app=self.repo
+        for name,text in {'public-web/index.php':"<?php require __DIR__.'/../web-service/php/src/service.php'; echo refresh_fixture();",'public-web/assets/site.css':'body{}','web-service/php/src/service.php':"<?php function refresh_fixture(){return 'working-private-app';}",'web-service/php/src/bootstrap.php':'<?php','web-service/php/src/views.php':'<?php','web-service/php/bin/migrate.php':'<?php'}.items():
             file=app/name;file.parent.mkdir(parents=True,exist_ok=True);file.write_text(text)
         self.commit()
     def commit(self):
@@ -32,7 +32,7 @@ class Refresh(unittest.TestCase):
         (self.repo/'web-service/php/src/service.php').write_text('<?php this is invalid php ;');self.commit();self.deploy(False)
         self.assertEqual((self.site/'index.php').read_text(),'previous')
     def test_missing_entry_keeps_site(self):
-        self.site.mkdir();(self.site/'index.php').write_text('previous');(self.repo/'web-service/php/public/index.php').unlink();self.commit();self.deploy(False)
+        self.site.mkdir();(self.site/'index.php').write_text('previous');(self.repo/'public-web/index.php').unlink();self.commit();self.deploy(False)
         self.assertEqual((self.site/'index.php').read_text(),'previous')
     def test_switch_failure_restores_previous(self):
         self.deploy();previous=(self.site/'index.php').read_text();self.deploy(False,FAIL_SITE_MOVE='1')

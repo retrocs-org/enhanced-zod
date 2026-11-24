@@ -9,10 +9,12 @@ service, domain or deployment dependency.
 
 ## Website
 
-`php/public/` is the document root; `php/src/`, `php/sql/` and `php/bin/` must
+`public-web/` is the document root; `web-service/php/src/`, `web-service/php/sql/` and `web-service/php/bin/` must
 remain outside the public root.
 
 * **Overview:** project introduction, real game imagery and live network totals.
+* **Network services:** integrated service overview, live counts, server directory and developer links.
+* **API browser:** same-origin public GET explorer, JSON response viewer and authentication reference.
 * **Servers:** searchable public directory, lobby state, addresses and join tickets.
 * **Leaderboard:** all-time unranked wins, matches, units destroyed and captures.
 * **Statistics:** network totals, map popularity, average duration and recent battles.
@@ -58,11 +60,11 @@ For local development, after creating a disposable database:
 
 ```sh
 ZOD_DEV_HTTP=1 ZOD_PUBLIC_URL=http://127.0.0.1:8088 \
-  php -S 127.0.0.1:8088 -t web-service/php/public web-service/php/public/router.php
+  php -S 127.0.0.1:8088 -t public-web public-web/router.php
 ```
 
 PHP's built-in web server is for development, not deployment. Configure Apache's
-document root to `web-service/php/public`; `packaging/linux/apache.conf` is the
+document root to `public-web`; `packaging/linux/apache.conf` is the
 container vhost. `packaging/linux/nginx.conf.example` is the HTTPS reverse-proxy
 example. The proxy must **overwrite** `X-Real-IP`; trust only its actual IP/CIDR,
 never all callers. Forward `Authorization` to PHP (the Apache example does this).
@@ -175,7 +177,7 @@ python3 packaging/linux/package.py --engine build/zod-ee \
 ```
 
 The package includes engine runtime libraries, the Go agent, and the PHP website
-source under `website/`. Host that website with PHP/MariaDB separately; there is
+source under `public-web/` with its private backend under `web-service/php/`. Host that website with PHP/MariaDB separately; there is
 no longer a Go `zod-web` executable.
 
 ## Joining and statistics
@@ -293,3 +295,33 @@ Before deploying a source checkout, run `python3 tools/bootstrap_fonts.py` from
 the repository root to populate the ignored, licensed UI font dependencies.
 The website illustration is project-authored SVG; no original game screenshot
 or other game media is committed with the website.
+
+## Deploying the repository website
+
+The PHP front controller is `public-web/index.php`. Set the Apache document root
+to `public-web/`; preserve the sibling `web-service/php/` directory for private
+application code, migrations and CLI administration. Copying only the public
+folder is not a complete application deployment.
+
+On sth-ts-web003, use the repository refresh script (as root). It stages both
+folders, lints PHP, keeps backend files outside the public document root, and
+restores the previous site if switching fails:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/retrocs-org/zodee/main/packaging/linux/refresh-zodee.sh -o /srv/www/vhosts/refresh-zodee.sh
+sh -n /srv/www/vhosts/refresh-zodee.sh
+sh /srv/www/vhosts/refresh-zodee.sh
+```
+
+The live root remains `/srv/www/vhosts/zodee.retrocs.org`. Apache must route
+non-file requests through `/index.php` using `FallbackResource /index.php`, and
+forward the Authorization header as shown in `packaging/linux/apache.conf`.
+Keep database secrets outside the document root; set `ZOD_DB_HOST` to
+`sth-ts-dbs001.kladhest.se` and `ZOD_PUBLIC_URL` to `https://zodee.retrocs.org`.
+Existing credentials and databases are not replaced by refreshes. Run schema
+migrations separately with the configured database credentials.
+
+The network overview is `/network`, and the integrated API browser is
+`/api-browser` (`/api` is an alias). `/api/catalog` exposes the same endpoint
+reference as JSON. The browser runs only public GET endpoints, without cookies
+or bearer keys. Account and operator actions retain their existing authentication.

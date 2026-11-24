@@ -10,6 +10,6 @@ def bootstrap(root=ROOT):
         data=urllib.request.urlopen(entry['url'],timeout=60).read()
         if hashlib.sha256(data).hexdigest()!=entry['sha256']:raise ValueError('Font checksum mismatch: '+name)
         target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(data)
-    target=root/'web-service/php/public/assets/heading.ttf';target.parent.mkdir(parents=True,exist_ok=True)
+    target=root/'public-web/assets/heading.ttf';target.parent.mkdir(parents=True,exist_ok=True)
     if not target.exists():shutil.copy2(root/'assets/frontend/fonts/Rajdhani-SemiBold.ttf',target)
 if __name__=='__main__':bootstrap()

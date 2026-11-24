@@ -22,7 +22,7 @@ if (dialog) {
       feedback.textContent = 'Requesting your join ticket…'; copy.textContent = 'Copy command ↗';
       dialog.showModal(); button.disabled = true;
       try {
-        const response = await fetch('/api/tickets', {signal:currentRequest.signal,method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({Server:button.dataset.id})});
+        const response = await fetch('/api/tickets', {signal:currentRequest.signal,method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({server:button.dataset.id})});
         const data = await response.json();
         if (currentRequest !== request || !dialog.open) return;
         if (!response.ok) { signIn.hidden = response.status !== 401; throw new Error(data.error || 'Could not issue a ticket.'); }
@@ -41,3 +41,40 @@ if (dialog) {
   dialog.querySelector('.close-dialog').addEventListener('click',()=>dialog.close());
   dialog.addEventListener('close',()=>{request?.abort();request=null;ticket=null;code.textContent='';lastJoinButton?.focus();});
 }
+
+// Public GET explorer. Endpoint values are fixed by the PHP catalog.
+const explorer = document.querySelector('#api-explorer');
+if (explorer) {
+  const endpoint = explorer.querySelector('#api-endpoint');
+  const output = document.querySelector('#api-output');
+  const status = document.querySelector('#api-status');
+  const raw = document.querySelector('#api-raw');
+  const button = explorer.querySelector('button');
+  const allowed = new Set(Array.from(endpoint.options, option => option.value));
+  endpoint.addEventListener('change', () => {raw.href = endpoint.value;});
+  explorer.addEventListener('submit', async event => {
+    event.preventDefault();
+    const path = endpoint.value;
+    if (!allowed.has(path) || !path.startsWith('/') || path.startsWith('//')) return;
+    button.disabled = true; status.textContent = 'Requesting ' + path + '…';
+    output.textContent = ''; const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch(path, {method:'GET', credentials:'omit', cache:'no-store', redirect:'error', headers:{Accept:'application/json'}, signal:controller.signal});
+      const body = await response.text();
+      if (!response.headers.get('content-type')?.includes('application/json')) throw new Error('The endpoint did not return JSON.');
+      output.textContent = JSON.stringify(JSON.parse(body), null, 2);
+      status.textContent = 'GET ' + path + ' · HTTP ' + response.status;
+    } catch (error) {
+      status.textContent = error.name === 'AbortError' ? 'Request timed out. Please retry.' : 'Request failed. ' + error.message;
+      output.textContent = 'No JSON response available.';
+    } finally {clearTimeout(timeout);button.disabled = false;}
+  });
+}
+const navigationToggle = document.querySelector('.nav-toggle');
+const mainNavigation = document.querySelector('#main-nav');
+if (navigationToggle && mainNavigation) navigationToggle.addEventListener('click', () => {
+  const expanded = navigationToggle.getAttribute('aria-expanded') === 'true';
+  navigationToggle.setAttribute('aria-expanded', String(!expanded));
+  mainNavigation.classList.toggle('is-open', !expanded);
+});

@@ -105,7 +105,7 @@ assets/videos/*
 *.xcf
 /zod-ee
 /zod-ee.exe
-/web-service/php/public/assets/battlefield.png
+/public-web/assets/battlefield.png
 /.my.cnf
 
 # Python test/tool bytecode
