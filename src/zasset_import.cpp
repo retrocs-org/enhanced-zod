@@ -66,7 +66,7 @@ bool ZAsset_ExportDiagnostics(std::string &path,const std::string &phase) {
 #ifndef ZOD_VERSION
 #define ZOD_VERSION "development"
 #endif
-    out<<"zod-ee diagnostics v1\nEngine: "<<ZOD_VERSION<<"\nSDL: "<<SDL_GetVersion()<<"\nPlatform: "<<SDL_GetPlatform()<<"\n";
+    out<<"zod-enhanced diagnostics v1\nEngine: "<<ZOD_VERSION<<"\nSDL: "<<SDL_GetVersion()<<"\nPlatform: "<<SDL_GetPlatform()<<"\n";
     auto *renderer=ZVideo_GetRenderer();const char *name=renderer?SDL_GetRendererName(renderer):nullptr;
     out<<"Renderer: "<<(name?name:"not initialized")<<"\n";
     int w=0,h=0;if(renderer)SDL_GetRenderOutputSize(renderer,&w,&h);out<<"Output pixels: "<<w<<" x "<<h<<"\n";

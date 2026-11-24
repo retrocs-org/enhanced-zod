@@ -8,11 +8,11 @@ def smoke(package,binary):
     if not binary.is_file() or package not in binary.parents:raise RuntimeError('Smoke-test binary must be inside its runtime package')
     env={k:v for k,v in os.environ.items() if k not in {'DYLD_LIBRARY_PATH','DYLD_FALLBACK_LIBRARY_PATH','LD_LIBRARY_PATH','PYTHONPATH'} and not k.startswith('ZOD_')}
     if platform.system()=='Windows':env['PATH']=str(package)+os.pathsep+str(Path(env.get('SystemRoot','C:/Windows'))/'System32')
-    with tempfile.TemporaryDirectory(prefix='zod-ee-smoke-') as directory:
+    with tempfile.TemporaryDirectory(prefix='zod-enhanced-smoke-') as directory:
         env['ZOD_PROFILE_DIR']=str(Path(directory)/'profile')
         env['ZOD_CAMPAIGN_DIR']=str(Path(directory)/'campaigns')
         result=subprocess.run([str(binary),'--version'],cwd=directory,env=env,text=True,capture_output=True,timeout=30)
-        if result.returncode or 'zod-ee' not in result.stdout:raise RuntimeError('Packaged runtime failed its isolated version/loader smoke test: '+result.stderr[-1000:])
+        if result.returncode or 'zod-enhanced' not in result.stdout:raise RuntimeError('Packaged runtime failed its isolated version/loader smoke test: '+result.stderr[-1000:])
         content=subprocess.run([str(binary),'--check-content'],cwd=directory,env=env,text=True,capture_output=True,timeout=30)
         if content.returncode!=2 or 'Original levels: 0/1' not in content.stdout:raise RuntimeError('Fresh package must request imported game content, independently of developer/user files')
         report=subprocess.run([str(binary),'--diagnostics'],cwd=directory,env=env,text=True,capture_output=True,timeout=30)

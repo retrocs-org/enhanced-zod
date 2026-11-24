@@ -76,7 +76,7 @@ class EngineRegressions(unittest.TestCase):
             self.assertIn('menu-navigation-ok',result)
 
     def test_separate_campaigns_progress_safe_paths_and_independent_audio_sliders(self):
-        with tempfile.TemporaryDirectory(prefix='zod-ee-campaign-') as directory:
+        with tempfile.TemporaryDirectory(prefix='zod-enhanced-campaign-') as directory:
             env=self.environment(directory);env['ZOD_PROFILE_DIR']=directory
             result=subprocess.check_output([DRIVER,'campaign-audio',directory],cwd=WORKSPACE,env=env,text=True)
             self.assertIn('campaign-audio-ok',result)
@@ -109,12 +109,12 @@ class EngineRegressions(unittest.TestCase):
                 self.assertIn({"replay-feedback":"replay-feedback-ok","authoring-tools":"authoring-tools-ok","feature-checks":"feature-checks-ok","script-save":"script-save-ok","stress":"stress-ok"}[mode],result)
 
     def test_objective_hud_packets_and_summary_return_before_continue(self):
-        with tempfile.TemporaryDirectory(prefix='zod-ee-objective-ui-') as directory:
+        with tempfile.TemporaryDirectory(prefix='zod-enhanced-objective-ui-') as directory:
             result=subprocess.check_output([DRIVER,'objectives-summary'],cwd=WORKSPACE,env=self.environment(directory),text=True)
             self.assertIn('objectives-summary-ok',result)
 
     def test_playtest_return_terrain_tools_records_and_retry(self):
-        with tempfile.TemporaryDirectory(prefix='zod-ee-enhance-') as directory:
+        with tempfile.TemporaryDirectory(prefix='zod-enhanced-enhance-') as directory:
             result=subprocess.check_output([DRIVER,'enhancements',directory],cwd=WORKSPACE,env=self.environment(directory),text=True)
             self.assertIn('enhancements-ok',result)
 
@@ -122,7 +122,7 @@ class EngineRegressions(unittest.TestCase):
         import shutil
         ffmpeg=shutil.which('ffmpeg')
         if not ffmpeg:self.skipTest('FFmpeg not installed on this runner')
-        with tempfile.TemporaryDirectory(prefix='zod-ee-movie-') as directory:
+        with tempfile.TemporaryDirectory(prefix='zod-enhanced-movie-') as directory:
             movie=pathlib.Path(directory)/'fixture.mp4'
             subprocess.run([ffmpeg,'-nostdin','-v','error','-f','lavfi','-i','color=c=blue:s=160x100:r=30','-f','lavfi','-i','sine=frequency=440:sample_rate=48000','-t','0.5','-c:v','mpeg4','-c:a','aac',str(movie)],check=True,timeout=15)
             movie.with_suffix('.srt').write_text('1\n00:00:00,000 --> 00:00:00,400\nTest subtitle\n\n')
@@ -131,23 +131,23 @@ class EngineRegressions(unittest.TestCase):
             self.assertIn('movie-ok',result.stdout)
 
     def test_campaign_continue_reads_unlocks_before_any_map_is_loaded(self):
-        with tempfile.TemporaryDirectory(prefix='zod-ee-resume-') as directory:
+        with tempfile.TemporaryDirectory(prefix='zod-enhanced-resume-') as directory:
             result=subprocess.check_output([DRIVER,'campaign-menu-resume'],cwd=WORKSPACE,env=self.environment(directory),text=True)
             self.assertIn('campaign-menu-resume-ok',result)
 
     def test_objective_server_config_and_save_roundtrip(self):
-        with tempfile.TemporaryDirectory(prefix='zod-ee-objectives-') as directory:
+        with tempfile.TemporaryDirectory(prefix='zod-enhanced-objectives-') as directory:
             result=subprocess.check_output([DRIVER,'objective-server'],cwd=WORKSPACE,env=self.environment(directory),text=True)
             self.assertIn('objective-server-ok',result)
 
     def test_campaign_pack_roundtrip_validation_objectives_and_category_defaults(self):
-        with tempfile.TemporaryDirectory(prefix='zod-ee-content-') as directory:
+        with tempfile.TemporaryDirectory(prefix='zod-enhanced-content-') as directory:
             result=subprocess.check_output([DRIVER,'content-polish',directory],cwd=WORKSPACE,env=self.environment(directory),text=True)
             self.assertIn('content-polish-ok',result)
 
     def test_standard_deflated_campaign_zip_is_accepted(self):
         import zipfile
-        with tempfile.TemporaryDirectory(prefix='zod-ee-deflate-') as directory:
+        with tempfile.TemporaryDirectory(prefix='zod-enhanced-deflate-') as directory:
             archive=pathlib.Path(directory)/'campaign.zip'
             with zipfile.ZipFile(archive,'w',compression=zipfile.ZIP_DEFLATED) as pack:
                 pack.writestr('example/campaign.ini','format=1\nid=example\ntitle=Example\n[mission]\nmap=one.map\n')
@@ -158,7 +158,7 @@ class EngineRegressions(unittest.TestCase):
 
     def test_campaign_zip_rejects_traversal_and_duplicate_entries(self):
         import zipfile
-        with tempfile.TemporaryDirectory(prefix='zod-ee-pack-') as directory:
+        with tempfile.TemporaryDirectory(prefix='zod-enhanced-pack-') as directory:
             for entries in [[('../escape.txt','bad')],[('campaign.ini','bad'),('Campaign.ini','duplicate')],[('/absolute.txt','bad')]]:
                 archive=pathlib.Path(directory)/'bad.zip'
                 with zipfile.ZipFile(archive,'w',compression=zipfile.ZIP_DEFLATED) as pack:
@@ -175,7 +175,7 @@ class EngineRegressions(unittest.TestCase):
             self.assertEqual(image.read_bytes()[:8],b'\x89PNG\r\n\x1a\n')
 
     def test_failed_deployment_can_retry_reconnection(self):
-        with tempfile.TemporaryDirectory(prefix='zod-ee-retry-') as directory, socket.socket() as unavailable:
+        with tempfile.TemporaryDirectory(prefix='zod-enhanced-retry-') as directory, socket.socket() as unavailable:
             unavailable.bind(('127.0.0.1', 0))
             result=subprocess.check_output([DRIVER,'reconnect-failure',str(unavailable.getsockname()[1])],cwd=WORKSPACE,env=self.environment(directory),text=True,timeout=20)
             self.assertIn('reconnect-failure-ok',result)
@@ -233,7 +233,7 @@ class EngineRegressions(unittest.TestCase):
             self.assertEqual(imported.read_bytes(),before)
 
     def test_recovery_accessibility_save_previews_and_settings_back(self):
-        with tempfile.TemporaryDirectory(prefix='zod-ee-polish-') as directory:
+        with tempfile.TemporaryDirectory(prefix='zod-enhanced-polish-') as directory:
             result=subprocess.check_output([DRIVER,'polish',directory],cwd=WORKSPACE,env=self.environment(directory),text=True,timeout=20)
             self.assertIn('polish-ok',result)
             for name in ['save-browser','editor-help','accessibility','campaign-polish','settings-2','settings-3','settings-4','editor-bindings','object-palette']:

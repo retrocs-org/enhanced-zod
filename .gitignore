@@ -103,6 +103,8 @@ assets/videos/*
 *.bin
 *.cue
 *.xcf
+/zod-enhanced
+/zod-enhanced.exe
 /zod-ee
 /zod-ee.exe
 /public-web/assets/battlefield.png

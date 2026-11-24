@@ -1,5 +1,5 @@
 # The engine itself, built as libmain.so (the name SDLActivity loads by default).
-# The CI workflow copies the repo's src/ tree to ./zod-ee next to this file.
+# The CI workflow copies the repo's src/ tree to ./zod-enhanced next to this file.
 cmake_minimum_required(VERSION 3.16)
 project(zodapp CXX)
 

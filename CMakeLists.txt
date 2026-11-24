@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(zod-ee CXX)
+project(zod-enhanced CXX)
 
 # Pin to C++14: the code is pre-C++11, and on Windows `using namespace std`
 # (C++17's std::byte) clashes with <windows.h>'s `byte` type ("reference to
@@ -70,7 +70,7 @@ set(ZOD_ENGINE_SRCS ${ZOD_SRCS})
 list(REMOVE_ITEM ZOD_ENGINE_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
 add_library(zod_engine OBJECT ${ZOD_ENGINE_SRCS})
 add_executable(zod src/main.cpp)
-set_target_properties(zod PROPERTIES OUTPUT_NAME "zod-ee")
+set_target_properties(zod PROPERTIES OUTPUT_NAME "zod-enhanced")
 target_link_libraries(zod PRIVATE zod_engine)
 
 # Functional tests (pathfinding etc.) - links only the pathfinding sources +
@@ -201,11 +201,12 @@ if(ZOD_FETCH_SOUNDFONT AND NOT ZOD_HAVE_SOUNDFONT)
   endif()
 endif()
 
-# --- macOS: self-contained zod-ee.app -------------------------------------------
+# --- macOS: self-contained zod-enhanced.app -------------------------------------------
 # Off by default so plain `cmake --install` (Homebrew formula, CI) keeps the
 # bin/ + share/zod layout. packaging/macos/build-app.sh turns it on, then runs
 # the `app` target (bundle the SDL3 dylibs + code-sign) and optionally `dmg`.
-option(ZOD_MACOS_APP "macOS: build a self-contained zod-ee.app bundle" OFF)
+option(ZOD_MACOS_APP "macOS: build a self-contained zod-enhanced.app bundle" OFF)
+# Retain the platform identity so renamed app upgrades keep existing permissions.
 set(ZOD_BUNDLE_ID "org.retrocs.zod-ee" CACHE STRING "macOS bundle identifier")
 if(ZOD_BUNDLE_ID STREQUAL "org.zodengine.zod" OR ZOD_BUNDLE_ID STREQUAL "org.openzee.OpenZEE")
   set(ZOD_BUNDLE_ID "org.retrocs.zod-ee" CACHE STRING "macOS bundle identifier" FORCE)
@@ -233,14 +234,14 @@ if(APPLE AND ZOD_MACOS_APP)
 
   set_target_properties(zod PROPERTIES
     MACOSX_BUNDLE TRUE
-    OUTPUT_NAME "zod-ee"
+    OUTPUT_NAME "zod-enhanced"
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/packaging/macos/Info.plist.in"
-    MACOSX_BUNDLE_BUNDLE_NAME "zod-ee"
+    MACOSX_BUNDLE_BUNDLE_NAME "zod-enhanced"
     MACOSX_BUNDLE_GUI_IDENTIFIER "${ZOD_BUNDLE_ID}"
     MACOSX_BUNDLE_ICON_FILE "Zod.icns"
     MACOSX_BUNDLE_SHORT_VERSION_STRING "${ZOD_SHORT_VERSION}"
     MACOSX_BUNDLE_BUNDLE_VERSION "${ZOD_SHORT_VERSION}"
-    MACOSX_BUNDLE_LONG_VERSION_STRING "zod-ee ${ZOD_VERSION}"
+    MACOSX_BUNDLE_LONG_VERSION_STRING "zod-enhanced ${ZOD_VERSION}"
     MACOSX_BUNDLE_COPYRIGHT "GPLv3. Zod Engine by Michael Bok / Nighsoft; SDL3 port by fenio.")
 
   # game data lives in Contents/Resources (main.cpp looks there first)
@@ -248,14 +249,14 @@ if(APPLE AND ZOD_MACOS_APP)
   add_custom_command(TARGET zod POST_BUILD
     COMMAND ${CMAKE_COMMAND} "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}" "-DDESTINATION=${ZOD_RES}"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/packaging/macos/copy-resources.cmake"
-    COMMENT "Copying game data into zod-ee.app")
+    COMMENT "Copying game data into zod-enhanced.app")
 
   # App packaging must refresh data even when the binary did not relink.
   add_custom_target(macos-resources
     COMMAND ${CMAKE_COMMAND} "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}" "-DDESTINATION=${ZOD_RES}"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/packaging/macos/copy-resources.cmake"
     DEPENDS zod
-    COMMENT "Refreshing zod-ee.app resources and removing imported bitmaps"
+    COMMENT "Refreshing zod-enhanced.app resources and removing imported bitmaps"
     VERBATIM)
 
   # the map editor rides along inside the bundle, next to the game binary
@@ -264,7 +265,7 @@ if(APPLE AND ZOD_MACOS_APP)
     add_custom_command(TARGET zod POST_BUILD
       COMMAND ${CMAKE_COMMAND} -E copy "$<TARGET_FILE:zod_map_editor>"
               "$<TARGET_BUNDLE_CONTENT_DIR:zod>/MacOS/zod_map_editor"
-      COMMENT "Copying the map editor into zod-ee.app")
+      COMMENT "Copying the map editor into zod-enhanced.app")
   endif()
 
   add_custom_target(asset-importer
@@ -276,14 +277,14 @@ if(APPLE AND ZOD_MACOS_APP)
   add_custom_target(app
     COMMAND /bin/bash "${CMAKE_CURRENT_SOURCE_DIR}/packaging/macos/bundle-dylibs.sh" "$<TARGET_BUNDLE_DIR:zod>"
     DEPENDS asset-importer
-    COMMENT "Bundling SDL3 libraries into zod-ee.app and code-signing it"
+    COMMENT "Bundling SDL3 libraries into zod-enhanced.app and code-signing it"
     VERBATIM)
 
   add_custom_target(dmg
     COMMAND /bin/sh "${CMAKE_CURRENT_SOURCE_DIR}/packaging/macos/make-dmg.sh"
-            "$<TARGET_BUNDLE_DIR:zod>" "${CMAKE_CURRENT_BINARY_DIR}/zod-ee-${ZOD_VERSION}-macOS-arm64.dmg"
+            "$<TARGET_BUNDLE_DIR:zod>" "${CMAKE_CURRENT_BINARY_DIR}/zod-enhanced-${ZOD_VERSION}-macOS-arm64.dmg"
     DEPENDS app
-    COMMENT "Creating the zod-ee disk image"
+    COMMENT "Creating the zod-enhanced disk image"
     VERBATIM)
 endif()
 

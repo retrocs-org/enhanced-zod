@@ -138,7 +138,7 @@ single transaction: earlier successful files remain after an error.
 The manifest is `assets/original-z/manifest.json`. Original files are under
 `original-z/files/`; decoded sprites, pictures, sounds, music and videos are
 under `original-z/converted/`. Runtime media is installed into `sounds/`,
-`videos/`, and the mapped graphics paths. Rebuild `zod-ee.app` after importing to
+`videos/`, and the mapped graphics paths. Rebuild `zod-enhanced.app` after importing to
 include media in its bundled Resources. An already-built app has its own copy
 of the assets and is not modified by this command.
 
@@ -302,5 +302,5 @@ renderer, window/output dimensions, display scale, import health and up to 16
 recent fixed error codes. They omit personal paths, credentials, account data,
 raw logs and raw error messages. Nothing is uploaded.
 
-For headless troubleshooting, run `zod-ee --check-content` (exit 0 means startup
-checks pass; exit 2 means imports are needed) or `zod-ee --diagnostics`.
+For headless troubleshooting, run `zod-enhanced --check-content` (exit 0 means startup
+checks pass; exit 2 means imports are needed) or `zod-enhanced --diagnostics`.

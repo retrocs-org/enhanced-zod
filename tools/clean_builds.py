@@ -15,7 +15,7 @@ BUILD_DIRS = (
 ROOT_OUTPUTS = (
     'CMakeCache.txt', 'CMakeFiles', 'cmake_install.cmake', 'CTestTestfile.cmake',
     'Testing', 'compile_commands.json', 'install_manifest.txt', 'Zod.app',
-    'zod-ee', 'zod-ee.exe', 'zod', 'zod.exe', 'zod_map_editor', 'zod_map_editor.exe',
+    'zod-enhanced', 'zod-enhanced.exe', 'zod-ee', 'zod-ee.exe', 'zod', 'zod.exe', 'zod_map_editor', 'zod_map_editor.exe',
     'zod_engine_regressions', 'zod_engine_regressions.exe',
     'orchestrator/orchestrator', 'orchestrator/orchestrator.exe',
     'zod_diag.log', 'zod_path.log',

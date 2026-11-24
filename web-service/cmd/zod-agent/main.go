@@ -15,7 +15,7 @@ func main() {
 	var c agent.Config
 	var keyfile string
 	flag.StringVar(&c.Mode, "mode", "private", "public or private")
-	flag.StringVar(&c.Engine, "engine", "/app/build/zod-ee", "engine executable")
+	flag.StringVar(&c.Engine, "engine", "/app/build/zod-enhanced", "engine executable")
 	flag.StringVar(&c.Data, "data", "/app", "game data directory")
 	flag.StringVar(&c.Map, "map", "maps/p02_bb_orig01.map", "map path relative to data")
 	flag.StringVar(&c.State, "state", "/var/lib/zod", "private writable state directory")

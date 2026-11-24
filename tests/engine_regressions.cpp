@@ -229,14 +229,14 @@ struct ZFrontEndRegression {
         frontend.SelectCampaign(0);frontend.OpenHistoryBriefing(0);REQUIRE(frontend.screen==ZFrontEnd::SCR_BRIEFING&&frontend.history_briefing);ZFrontEnd::Action pending;REQUIRE(!frontend.PopAction(pending));
         zod_scenes=false;frontend.StartLevel(0,false);ZFrontEnd::Action action;REQUIRE(frontend.PopAction(action));REQUIRE(action.type==ZFrontEnd::FE_START_CAMPAIGN_MAP);
         REQUIRE(frontend.CommunityBattle());frontend.RecordCampaignResult(false);REQUIRE(ZCampaign_Completed(campaign.id).empty());frontend.RecordCampaignResult(true);
-        REQUIRE(ZCampaign_Completed(campaign.id)==vector<string>({"0:one.map"}));REQUIRE(ZCampaign_Completed("original").empty());
-        REQUIRE(frontend.CampaignVisibleMissions(&frontend.campaigns[0],0)==vector<int>({0,1}));frontend.ContinueCommunity();
+        REQUIRE(!loaded.missions[0].uid.empty());REQUIRE(ZCampaign_Completed(campaign.id)==vector<string>({"uid:"+loaded.missions[0].uid}));REQUIRE(ZCampaign_Completed("original").empty());
+        REQUIRE(frontend.CampaignVisibleMissions(&frontend.campaigns[0],1)==vector<int>({0,1}));frontend.ContinueCommunity();
         REQUIRE(frontend.PopAction(action)&&action.type==ZFrontEnd::FE_START_CAMPAIGN_MAP&&action.value==1);
         frontend.RecordCampaignResult(false);frontend.ContinueCommunity();REQUIRE(frontend.PopAction(action)&&action.value==1);
         frontend.RecordCampaignResult(true);frontend.ContinueCommunity();REQUIRE(frontend.screen==ZFrontEnd::SCR_CAMPAIGNS);
         int current,unlocked;ZCampaign_Progress(campaign.id,current,unlocked);REQUIRE(current==1&&unlocked==1);REQUIRE(ZCampaign_Completed(campaign.id).size()==2);
         auto originalVisible=frontend.CampaignVisibleMissions(nullptr,2);REQUIRE(originalVisible==vector<int>({0,1,2}));
-        ZCampaign many=campaign;many.missions.resize(10,mission);REQUIRE(frontend.CampaignVisibleMissions(&many,4)==vector<int>({0,1,2,3,4}));
+        ZCampaign many=loaded;many.missions.resize(10,mission);for(size_t i=2;i<many.missions.size();++i)many.missions[i].uid="extra-"+to_string(i);REQUIRE(frontend.CampaignVisibleMissions(&many,4)==vector<int>({0,1,4}));
         frontend.SelectCampaign(-1);REQUIRE(frontend.selected_campaign.id.empty());REQUIRE(frontend.levels.size()==originals.size());
         REQUIRE(frontend.levels[0].file==originals[0].file);
         frontend.screen=ZFrontEnd::SCR_LOADING;frontend.ResumeSavedCampaign(campaign.root+"/one.map",campaign.id,0);REQUIRE(frontend.CommunityBattle()&&frontend.current_level==0&&frontend.Loading());frontend.ResumeSavedCampaign(campaign.root+"/one.map",campaign.id,1);REQUIRE(frontend.current_level==1);frontend.ResumeSavedCampaign(originals[0].file);REQUIRE(!frontend.CommunityBattle()&&frontend.selected_campaign.id.empty()&&frontend.current_level==0);

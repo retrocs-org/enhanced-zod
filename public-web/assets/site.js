@@ -5,8 +5,8 @@ let lastJoinButton = null, ticket = null, request = null;
 function commandFor(platform) {
   if (!ticket) return '';
   return platform === 'windows'
-    ? `$env:ZOD_JOIN_TICKET = '${ticket.token}'; $env:ZOD_PORT = '${ticket.port}'; .\\zod-ee.exe -c ${ticket.host}`
-    : `ZOD_JOIN_TICKET=${ticket.token} ZOD_PORT=${ticket.port} ./zod-ee -c ${ticket.host}`;
+    ? `$env:ZOD_JOIN_TICKET = '${ticket.token}'; $env:ZOD_PORT = '${ticket.port}'; .\\zod-enhanced.exe -c ${ticket.host}`
+    : `ZOD_JOIN_TICKET=${ticket.token} ZOD_PORT=${ticket.port} ./zod-enhanced -c ${ticket.host}`;
 }
 if (dialog) {
   const feedback = dialog.querySelector('#join-feedback');

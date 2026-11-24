@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 define('ZODEE_INTERNAL', true);
-if (PHP_VERSION_ID < 80400) { http_response_code(503); exit('zod-ee requires PHP 8.4 or newer. Check the PHP version configured for this vhost.'); }
+if (PHP_VERSION_ID < 80400) { http_response_code(503); exit('zod-enhanced requires PHP 8.4 or newer. Check the PHP version configured for this vhost.'); }
 require __DIR__.'/_app/src/service.php';
 require_once __DIR__.'/_app/src/api_catalog.php';
 security_headers();

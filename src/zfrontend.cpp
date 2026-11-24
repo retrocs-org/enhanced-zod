@@ -1543,7 +1543,7 @@ void ZFrontEnd::DrawDiscText(const string &value,float x,float y,SDL_Color colou
 void ZFrontEnd::RenderCommandMain(bool interactive)
 {
     DimScreen(235);
-    DrawLabel(font_led,48,"zod-ee",72,40,C_AMBER);
+    DrawLabel(font_led,48,"zod-enhanced",72,40,C_AMBER);
     DrawLabel(font_ui,22,"ZOD ENGINE ENHANCED",74,105,C_STEEL_DIM);
     DrawLabel(font_ui,22,"CAMPAIGN & PRIVATE PLAY  /  OFFLINE READY",1208,66,C_STEEL,2);
     FillRect(72,148,1136,2,C_STEEL_DIM,100);
@@ -1593,7 +1593,7 @@ void ZFrontEnd::RenderCommandMain(bool interactive)
         else if(campaign)StartLevel(progress_current,true);else {ScanCampaigns();screen=SCR_CAMPAIGNS;}
     }
     if(Button("Quit",72,714,150,46,interactive)) { screen_before_quit=SCR_MAIN;screen=SCR_QUIT;Sound(snd_click); }
-    DrawLabel(font_ui_medium,18,"zod-ee / "+string(ZOD_VERSION),258,727,C_STEEL_DIM);
+    DrawLabel(font_ui_medium,18,"zod-enhanced / "+string(ZOD_VERSION),258,727,C_STEEL_DIM);
     if(Button("Import disc",868,714,160,46,interactive)) { screen=SCR_IMPORT;Sound(snd_click); }
     if(Button("Options",1048,714,160,46,interactive)) { screen=SCR_SETTINGS;Sound(snd_click); }
 }
@@ -2090,7 +2090,7 @@ void ZFrontEnd::RenderQuit()
 
 	const float PX = 440, PY = 300, PW = 400, PH = 190;
 	DrawPanel(PX, PY, PW, PH);
-	DrawLabel(font_ui, 34, "Quit zod-ee?", PX + PW * 0.5f, PY + 36, C_STEEL_HI, 1);
+	DrawLabel(font_ui, 34, "Quit zod-enhanced?", PX + PW * 0.5f, PY + 36, C_STEEL_HI, 1);
 
 	if(Button("Stay", PX + 40, PY + PH - 76, 140, 50) || kb_back)
 	{
@@ -2632,7 +2632,7 @@ void ZFrontEnd::RenderImport()
     const float x=220,y=120,w=840,h=560;
     DrawPanel(x,y,w,h);
     DrawLabel(font_ui,28,"IMPORT GAME CONTENT",x+32,y+28,C_AMBER);
-    DrawLabel(font_ui_medium,20,"Bring your original media into zod-ee. Works entirely offline.",x+32,y+78,C_STEEL);
+    DrawLabel(font_ui_medium,20,"Bring your original media into zod-enhanced. Works entirely offline.",x+32,y+78,C_STEEL);
     std::string filename=asset_import.source;
     const size_t slash=filename.find_last_of("/\\");if(slash!=std::string::npos)filename=filename.substr(slash+1);
     if(filename.size()>65)filename=filename.substr(0,62)+"...";

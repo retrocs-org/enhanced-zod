@@ -73,10 +73,10 @@ RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DZOD_VERSION="${ZOD_VERSION}
 #     which the kernel hard-codes, so it must stay where ldd reports it
 #   - a writable /tmp (1777) for the orchestrator's status sockets + match logs
 RUN set -eu; mkdir -p /rootfs/applibs /rootfs/tmp; chmod 1777 /rootfs/tmp; \
-    ldd /src/build/zod-ee | awk '/=> \//{print $3}' | sort -u | while IFS= read -r lib; do \
+    ldd /src/build/zod-enhanced | awk '/=> \//{print $3}' | sort -u | while IFS= read -r lib; do \
       [ -f "$lib" ] && cp -L "$lib" /rootfs/applibs/; \
     done; \
-    interp=$(ldd /src/build/zod-ee | awk '/ld-linux|ld\.so/{print $1; exit}'); \
+    interp=$(ldd /src/build/zod-enhanced | awk '/ld-linux|ld\.so/{print $1; exit}'); \
     mkdir -p "/rootfs$(dirname "$interp")"; cp -L "$interp" "/rootfs$interp"
 
 # --- Stage 3: runtime --------------------------------------------------------
@@ -85,7 +85,7 @@ FROM scratch AS runtime
 COPY --from=cppbuild /rootfs/ /
 WORKDIR /app
 COPY --from=gobuild  /out/orchestrator  /app/orchestrator
-COPY --from=cppbuild /src/build/zod-ee      /app/build/zod-ee
+COPY --from=cppbuild /src/build/zod-enhanced      /app/build/zod-enhanced
 # Game data the dedicated server actually reads (verified via strace): all of
 # maps/ plus the planet tileinfo. The ~90 MB of client graphics under assets/
 # are never opened by `zod -d`, so they're left out.
@@ -98,7 +98,7 @@ COPY map_list.txt default_settings.txt /app/
 # LD_LIBRARY_PATH points the ELF loader at our flat lib dir (no ld.so.cache here).
 ENV LD_LIBRARY_PATH=/applibs \
     ZOD_DIR=/app \
-    ZOD_BIN=/app/build/zod-ee \
+    ZOD_BIN=/app/build/zod-enhanced \
     ORCH_ADDR=:8080 \
     ADVERTISE_HOST=127.0.0.1 \
     EMPTY_EXIT_SECS=300 \
@@ -150,7 +150,7 @@ COPY maps/ /src/maps/
 COPY assets/planets/ /src/assets/planets/
 COPY map_list.txt default_settings.txt /src/
 RUN cmake --build build --target zod_engine_regressions --parallel ${JOBS} \
- && web-service/tests/run-local.sh /out/zod-agent /src/build/zod-ee /src/build/zod_engine_regressions
+ && web-service/tests/run-local.sh /out/zod-agent /src/build/zod-enhanced /src/build/zod_engine_regressions
 
 # Preserve the existing orchestrator image as the default target.
 FROM runtime AS default

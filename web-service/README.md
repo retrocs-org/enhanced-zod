@@ -1,4 +1,4 @@
-# zod-ee website, PHP API and MariaDB
+# zod-enhanced website, PHP API and MariaDB
 
 The central Zod service is **PHP + MariaDB**. The earlier Go/JSON hub has been
 replaced. The small Go **dedicated-server agent** remains a separate client of
@@ -168,11 +168,11 @@ video/audio device in `-d` mode and requires no X server, Wayland session or GPU
 
 ```sh
 # Private: no listing, no cloud dependency, guests can play.
-./build-web/zod-agent --mode private --engine "$PWD/build/zod-ee" \
+./build-web/zod-agent --mode private --engine "$PWD/build/zod-enhanced" \
   --data "$PWD" --state "$PWD/build-private-state"
 
 # Public: approved key, listing and required cloud authentication.
-./build-web/zod-agent --mode public --engine "$PWD/build/zod-ee" \
+./build-web/zod-agent --mode public --engine "$PWD/build/zod-enhanced" \
   --data "$PWD" --state "$PWD/build-public-state" \
   --hub https://YOUR-ZOD-WEBSITE --id europe-1 --key-file /private/zod-server-key
 ```
@@ -198,7 +198,7 @@ target builds the private-by-default server; `web-runtime` builds PHP only.
 Linux server packaging:
 
 ```sh
-python3 packaging/linux/package.py --engine build/zod-ee \
+python3 packaging/linux/package.py --engine build/zod-enhanced \
   --agent build-web/zod-agent --out build/zod-server-linux.tar.gz
 ```
 
@@ -297,7 +297,7 @@ Configure an **isolated empty MariaDB database**, migrate it, then run:
 ```sh
 python3 web-service/tests/php_api.py
 python3 web-service/tests/integration.py php "$PWD/build-web/zod-agent" \
-  "$PWD/build/zod-ee" "$PWD/build/zod_engine_regressions" "$PWD"
+  "$PWD/build/zod-enhanced" "$PWD/build/zod_engine_regressions" "$PWD"
 go -C web-service test -race ./...
 ```
 
@@ -420,5 +420,5 @@ installed config files need no changes: absent `ZOD_CLEAN_URLS` defaults to
 front-controller URLs. For dedicated servers, use the hub URL
 `https://zodee.retrocs.org/index.php` until clean API URLs are routed by Apache.
 
-The zod-ee website uses a Z-inspired industrial interface with beveled metal panels inspired by the game menus. It contains no gameplay
+The zod-enhanced website uses a Z-inspired industrial interface with beveled metal panels inspired by the game menus. It contains no gameplay
 illustrations or simulated screenshots.

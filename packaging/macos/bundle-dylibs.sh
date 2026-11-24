@@ -1,7 +1,7 @@
 #!/bin/bash
-# bundle-dylibs.sh <path/to/zod-ee.app>
+# bundle-dylibs.sh <path/to/zod-enhanced.app>
 #
-# Make zod-ee.app self-contained: copy every non-system dylib the game links
+# Make zod-enhanced.app self-contained: copy every non-system dylib the game links
 # (SDL3, SDL3_image, SDL3_mixer, SDL3_ttf and whatever Homebrew pulled in for
 # them - freetype, libpng, codecs ...) into Contents/Frameworks, point all load
 # commands at @executable_path/../Frameworks, then code-sign the bundle.
@@ -14,7 +14,7 @@
 # Written for the stock macOS bash 3.2 (no associative arrays).
 set -euo pipefail
 
-APP="${1:?usage: bundle-dylibs.sh path/to/zod-ee.app}"
+APP="${1:?usage: bundle-dylibs.sh path/to/zod-enhanced.app}"
 APP="$(cd "$APP" && pwd -P)"
 CONTENTS="$APP/Contents"
 FW="$CONTENTS/Frameworks"
@@ -170,4 +170,4 @@ done
 codesign "${SIGN_OPTS[@]}" "$APP"
 codesign --verify --strict --verbose=1 "$APP"
 
-echo "zod-ee.app is self-contained: $APP"
+echo "zod-enhanced.app is self-contained: $APP"

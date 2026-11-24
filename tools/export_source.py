@@ -24,7 +24,7 @@ def export(root,destination):
             subprocess.run(['git','-C',str(destination),'remote','add',name,release.destination(config,service)['push_url']],check=True)
     subprocess.run(['git','-C',str(destination),'config','core.hooksPath','.githooks'],check=True)
     subprocess.run(['git','-C',str(destination),'add','--all'],check=True)
-    subprocess.run(['git','-C',str(destination),'commit','-qm','Import zod-ee source without original game media'],check=True)
+    subprocess.run(['git','-C',str(destination),'commit','-qm','Import zod-enhanced source without original game media'],check=True)
     print('Source-only export:',destination)
     print('Review and push with: python3 '+str(destination/'scripts/release.py')+' source --to gitlab,github --dry-run')
     return destination

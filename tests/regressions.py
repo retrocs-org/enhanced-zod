@@ -39,7 +39,7 @@ class Regressions(unittest.TestCase):
             for flag in ['--version','-v']:
                 result=subprocess.run([str(pathlib.Path(GAME).resolve()),flag],cwd=folder,env=env,capture_output=True,text=True,timeout=3)
                 self.assertEqual(result.returncode,0,result.stderr)
-                self.assertIn('zod-ee',result.stdout)
+                self.assertIn('zod-enhanced',result.stdout)
             self.assertFalse(list(pathlib.Path(folder).iterdir()))
 
     def test_maps(self):

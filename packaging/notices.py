@@ -29,11 +29,11 @@ def inventory(package, destination, sources=()):
     for path in sorted(package.rglob('*')):
         if not path.is_file() or path.is_symlink() or destination.resolve() in path.parents:continue
         # The app executable is sealed after this resource inventory; its final hash is in release provenance.
-        if package.suffix=='.app' and path==package/'Contents/MacOS/zod-ee':continue
+        if package.suffix=='.app' and path==package/'Contents/MacOS/zod-enhanced':continue
         if path.suffix.lower() not in {'.dylib','.dll','.exe','.so'} and '.so.' not in path.name and not os.access(path,os.X_OK):continue
         components.append({'type':'file','name':path.relative_to(package).as_posix(),'hashes':[{'alg':'SHA-256','content':hashlib.sha256(path.read_bytes()).hexdigest()}]})
-    (destination/'bom.cdx.json').write_text(json.dumps({'bomFormat':'CycloneDX','specVersion':'1.5','version':1,'metadata':{'component':{'type':'application','name':'zod-ee'}},'components':components},indent=2)+'\n')
-    (destination/'THIRD-PARTY-NOTICES.txt').write_text('zod-ee bundled dependencies\n\nzod-ee is GPL-3.0; see the root LICENSE. Bundled libraries and media tools\nretain their own licenses. The final macOS main executable hash is recorded\nin release provenance because app sealing occurs after this inventory. License texts collected from the native build\ninstallation are in licenses/. bom.cdx.json inventories actual bundled\nexecutables/libraries with SHA-256 hashes. System libraries are not bundled.\nThe collected license corpus can include transitive build dependencies.\n\nBuild dependency files:\n'+''.join('  '+name+'\n' for name in sorted(set(origins)))+'\nReview the inventory and matching source offers before public distribution.\n',encoding='utf-8')
+    (destination/'bom.cdx.json').write_text(json.dumps({'bomFormat':'CycloneDX','specVersion':'1.5','version':1,'metadata':{'component':{'type':'application','name':'zod-enhanced'}},'components':components},indent=2)+'\n')
+    (destination/'THIRD-PARTY-NOTICES.txt').write_text('zod-enhanced bundled dependencies\n\nzod-enhanced is GPL-3.0; see the root LICENSE. Bundled libraries and media tools\nretain their own licenses. The final macOS main executable hash is recorded\nin release provenance because app sealing occurs after this inventory. License texts collected from the native build\ninstallation are in licenses/. bom.cdx.json inventories actual bundled\nexecutables/libraries with SHA-256 hashes. System libraries are not bundled.\nThe collected license corpus can include transitive build dependencies.\n\nBuild dependency files:\n'+''.join('  '+name+'\n' for name in sorted(set(origins)))+'\nReview the inventory and matching source offers before public distribution.\n',encoding='utf-8')
     if not texts:raise RuntimeError('No dependency license texts found; provide native dependency source paths')
     return len(components),len(texts)
 

@@ -1,6 +1,10 @@
-# zod-ee
+# zod-enhanced
 
 **Zod Engine Enhanced**
+
+Project name: **zod-enhanced**. Existing profiles, imported media and saved games
+retain their current locations and formats. The website and repository URLs
+remain at their existing addresses.
 
 Website: https://zodee.retrocs.org · [GitHub](https://github.com/retrocs-org/zodee)
 
@@ -42,7 +46,7 @@ Run these commands from the repository root. For a self-contained macOS app:
 
 ```sh
 ./packaging/macos/build-app.sh
-open build-app/zod-ee.app
+open build-app/zod-enhanced.app
 ```
 
 To remove generated builds, packaged outputs, importer build environments and
@@ -88,7 +92,7 @@ With the shared Windows tools installed under `$HOME/Development/tools/windows`:
 
 This uses the shared MinGW toolchain and pinned SDL3 SDK and produces
 `build-windows/dist/zod-windows-x86_64.zip`. Extract the entire ZIP on Windows
-and run `zod-ee.exe`; its DLLs, maps and assets must stay together. The package also
+and run `zod-enhanced.exe`; its DLLs, maps and assets must stay together. The package also
 includes `zod_mapgen.exe`. Private local cutscene videos are excluded because
 video playback currently uses macOS AVFoundation.
 
@@ -132,7 +136,7 @@ Then:
 ```sh
 cmake -S . -B build
 cmake --build build -j
-./build/zod-ee            # opens the importer or main menu
+./build/zod-enhanced            # opens the importer or main menu
 ```
 
 Plain CMake builds do not automatically bundle the standalone import tools.
@@ -225,10 +229,10 @@ To choose local hosting immediately, set `ZOD_ORCHESTRATOR=local` before launch:
 
 ```powershell
 $env:ZOD_ORCHESTRATOR = "local"
-.\zod-ee.exe
+.\zod-enhanced.exe
 ```
 
-On macOS/Linux use `ZOD_ORCHESTRATOR=local ./build/zod-ee`. An explicit
+On macOS/Linux use `ZOD_ORCHESTRATOR=local ./build/zod-enhanced`. An explicit
 `ZOD_ORCHESTRATOR=host:port` continues to use only that configured service.
 
 ### Find and join a LAN game
@@ -327,7 +331,7 @@ every seed is a different map:
 
 ```sh
 ./build/zod_mapgen -e 2 -s 7 -o maps/random.map
-./build/zod-ee -m maps/random.map -t red -b blue -b green -n Player -r 800x600 -w
+./build/zod-enhanced -m maps/random.map -t red -b blue -b green -n Player -r 800x600 -w
 ```
 
 | Flag | Meaning |
@@ -461,10 +465,10 @@ The advanced legacy editor remains available as `zod_map_editor`:
 ./build/zod_map_editor maps/p02_bb_orig01.map          # edit an existing map
 ./build/zod_map_editor mymap.map                       # new 80x80 desert map
 ./build/zod_map_editor -n -f mymap.map -d 100x120 -p jungle -m "My Map"
-./build/zod-ee -m "$PWD/mymap.map" -w                      # play it
+./build/zod-enhanced -m "$PWD/mymap.map" -w                      # play it
 ```
 
-In `zod-ee.app` it is at `zod-ee.app/Contents/MacOS/zod_map_editor`. It finds the
+In `zod-enhanced.app` it is at `zod-enhanced.app/Contents/MacOS/zod_map_editor`. It finds the
 game data on its own, so it can be started from any folder; map paths are
 relative to where you start it.
 
@@ -510,12 +514,12 @@ Seeking inside a MIDI means synthesising everything before the target (about
 new MIDI that starts at the wanted bar with the tempo, instruments and
 controllers already set, and a worker thread in `src/zaudio.cpp` swaps it in.
 
-### Building zod-ee.app (Apple Silicon)
+### Building zod-enhanced.app (Apple Silicon)
 
 ```sh
-./packaging/macos/build-app.sh          # -> build-app/zod-ee.app
-./packaging/macos/build-app.sh --dmg    # also build-app/Zod-<version>-macOS-arm64.dmg
-open build-app/zod-ee.app
+./packaging/macos/build-app.sh          # -> build-app/zod-enhanced.app
+./packaging/macos/build-app.sh --dmg    # also build-app/zod-enhanced-<version>-macOS-arm64.dmg
+open build-app/zod-enhanced.app
 ```
 
 The script installs the Homebrew dependencies if needed and configures with
@@ -573,9 +577,9 @@ GPLv3 — see [`LICENSE`](LICENSE). The Zod Engine is © its original authors
 
 ### Releases and packaging
 
-The staged zod-ee release tooling prepares versioned native packages, source
+The staged zod-enhanced release tooling prepares versioned native packages, source
 and website archives, build provenance and SHA-256 manifests. Publication is an
-explicit separate action. See [Releasing zod-ee](docs/RELEASING.md).
+explicit separate action. See [Releasing zod-enhanced](docs/RELEASING.md).
 
 The editor also provides searchable object thumbnails, Select/Move and copy/paste,
 a brush outline, minimap navigation, autosave recovery and clickable validation.

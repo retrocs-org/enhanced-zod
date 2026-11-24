@@ -1,8 +1,8 @@
-# Releasing zod-ee
+# Releasing zod-enhanced
 
 The staged release process is adapted from the supplied Beam68 project: plan,
 build, check, prepare, verify, then explicitly publish. Amiga-specific packaging
-is replaced with native zod-ee app, Windows runtime and Linux server packages.
+is replaced with native zod-enhanced app, Windows runtime and Linux server packages.
 Source code and the optional website are packaged together in the source archive;
 the website also has a separate deployment archive. Imported original game media
 and local credentials must stay out of distributable packages.
@@ -18,9 +18,9 @@ python3 tools/release.py plan
 # macOS: installs missing Homebrew dependencies and bundles the importer/tools
 ./packaging/macos/build-app.sh
 build-importer-venv/bin/python tools/release.py check --build-dir build-app \
-  --binary build-app/zod-ee.app/Contents/MacOS/zod-ee
+  --binary build-app/zod-enhanced.app/Contents/MacOS/zod-enhanced
 python3 tools/release.py prepare --allow-dirty \
-  --artifact macos-arm64=build-app/zod-ee.app \
+  --artifact macos-arm64=build-app/zod-enhanced.app \
   --output outputs/release-preview
 python3 tools/release.py verify --output outputs/release-preview
 ```
@@ -35,8 +35,8 @@ records build hashes without asserting that tests passed.
 source tree. Preparation uses a fresh output directory and installs the completed
 release atomically; it never replaces an earlier release directory. It creates:
 
-- `zod-ee-VERSION-source.zip` and `zod-ee-VERSION-web.zip`;
-- supplied platform packages, with versioned zod-ee names;
+- `zod-enhanced-VERSION-source.zip` and `zod-enhanced-VERSION-web.zip`;
+- supplied platform packages, with versioned zod-enhanced names;
 - individual `.sha256` files and `SHA256SUMS`;
 - `release-manifest.json`, `RELEASE-NOTES.md` and website `downloads.json`.
 
@@ -121,7 +121,7 @@ Developer ID Application identity before building. For an explicitly requested
 notarization, use a locally configured notarytool keychain profile:
 
 ```sh
-NOTARY_KEYCHAIN_PROFILE=zod-ee bash packaging/macos/notarize.sh build-app/zod-ee.app
+NOTARY_KEYCHAIN_PROFILE=zod-enhanced bash packaging/macos/notarize.sh build-app/zod-enhanced.app
 ```
 
 This submits the signed app to Apple, waits for acceptance, staples the ticket
@@ -145,8 +145,8 @@ is the default profile and points to:
 ```sh
 python3 scripts/release.py plan
 python3 scripts/release.py build
-python3 scripts/release.py check --binary build-app/zod-ee.app/Contents/MacOS/zod-ee
-python3 scripts/release.py prepare --artifact macos-arm64=build-app/zod-ee.app
+python3 scripts/release.py check --binary build-app/zod-enhanced.app/Contents/MacOS/zod-enhanced
+python3 scripts/release.py prepare --artifact macos-arm64=build-app/zod-enhanced.app
 python3 scripts/release.py status
 
 # After reviewing and committing the source:
@@ -182,7 +182,7 @@ CLI environment, and never stored in manifests or command arguments. Plan/build
 and source pushes do not query 1Password. Keep actual tokens out of configuration.
 Existing save/profile paths and `ZOD_*` environment variables retain compatibility;
 delivered apps, primary executables, release archives and website branding use
-`zod-ee`. Upstream credits remain intact.
+`zod-enhanced`. Upstream credits remain intact.
 
 ## Source content boundary
 

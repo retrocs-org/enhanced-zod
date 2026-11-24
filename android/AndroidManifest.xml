@@ -11,14 +11,14 @@
 
     <application
         android:allowBackup="true"
-        android:label="zod-ee"
+        android:label="zod-enhanced"
         android:icon="@mipmap/ic_launcher"
         android:hardwareAccelerated="true"><!-- #86: launcher icon (red bot face). Resources in android/res are copied over the SDL template's defaults in the APK workflow. -->
 
         <!-- RTS: lock to landscape; SDLActivity does the rest -->
         <activity
             android:name="io.github.fenio.zod.ZodActivity"
-            android:label="zod-ee"
+            android:label="zod-enhanced"
             android:screenOrientation="landscape"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|uiMode"
             android:exported="true"

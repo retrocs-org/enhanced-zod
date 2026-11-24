@@ -27,7 +27,7 @@ go build -o orchestrator .
 
 ```sh
 ZOD_DIR=/path/to/zod \
-ZOD_BIN=/path/to/zod/build/zod-ee \
+ZOD_BIN=/path/to/zod/build/zod-enhanced \
 ADVERTISE_HOST=your.public.host \
 ORCH_ADDR=:8080 \
 ./orchestrator
@@ -36,7 +36,7 @@ ORCH_ADDR=:8080 \
 | Env var | Default | Meaning |
 |---|---|---|
 | `ZOD_DIR` | `.` | Working dir for spawned servers; must contain `maps/`. |
-| `ZOD_BIN` | `$ZOD_DIR/build/zod-ee` | Path to the `zod` binary. |
+| `ZOD_BIN` | `$ZOD_DIR/build/zod-enhanced` | Path to the `zod` binary. |
 | `ADVERTISE_HOST` | `127.0.0.1` | Host returned to clients (this machine's public address). |
 | `ORCH_ADDR` | `:8080` | Address the HTTP API binds to. |
 | `EMPTY_EXIT_SECS` | `300` | A match whose server sits empty this long self-exits and is reaped. |
@@ -88,7 +88,7 @@ image for the host's arch; for the other arch (or both) use buildx, e.g.
 `--platform linux/amd64,linux/arm64`.
 
 The same `ZOD_DIR`/`ZOD_BIN`/`ADVERTISE_HOST`/`ORCH_ADDR`/`EMPTY_EXIT_SECS`
-env vars apply; the image presets `ZOD_DIR=/app`, `ZOD_BIN=/app/build/zod-ee`.
+env vars apply; the image presets `ZOD_DIR=/app`, `ZOD_BIN=/app/build/zod-enhanced`.
 
 **Debugging:** the scratch image has no shell, so `docker exec` won't give you a
 prompt. Use `docker logs <container>` for the orchestrator output, and pull a

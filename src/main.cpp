@@ -148,7 +148,7 @@ int main(int argc, char **argv)
     if(argc==2&&string(argv[1])=="--diagnostics"){SDL_Init(0);chdir_to_data_dir();string path;bool ok=ZAsset_ExportDiagnostics(path,"idle");if(ok)printf("%s\n",path.c_str());SDL_Quit();return ok?0:1;}
     if(argc==3&&string(argv[1])=="--verify-campaign-pack"){SDL_Init(0);chdir_to_data_dir();ZMap::ServerInit();string report,error;bool ok=ZCampaign_CheckPortable(argv[2],report,error);printf("%s\n",report.c_str());SDL_Quit();return ok?0:1;}
     if(argc==3&&string(argv[1])=="--import-levels"){SDL_Init(0);string message;bool ok=ZAsset_ImportLevels(argv[2],message);printf("%s\n",message.c_str());SDL_Quit();return ok?0:1;}
-    if(argc==2&&(string(argv[1])=="--version"||string(argv[1])=="-v")){printf("zod-ee %s — Zod Engine Enhanced\nBased on Zod Engine by Michael Bok / Nighsoft.\n",ZOD_VERSION);return 0;}
+    if(argc==2&&(string(argv[1])=="--version"||string(argv[1])=="-v")){printf("zod-enhanced %s — Zod Engine Enhanced\nBased on Zod Engine by Michael Bok / Nighsoft.\n",ZOD_VERSION);return 0;}
 #ifdef __ANDROID__
 	//make the engine's printf/stderr diagnostics visible in logcat
 	AndroidRedirectStdioToLogcat();
@@ -201,7 +201,7 @@ int main(int argc, char **argv)
 
 	SDL_Thread *server_thread;
 
-	printf("Welcome to zod-ee (%s)\n", ZOD_VERSION);
+	printf("Welcome to zod-enhanced (%s)\n", ZOD_VERSION);
 
 	//optional pathfinding debug log (ZOD_PATHLOG); init before
 	//the server / pathfinding threads exist

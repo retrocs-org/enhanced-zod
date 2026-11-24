@@ -34,7 +34,7 @@ existing Zod installation (recommended, including its terrain metadata) or its
 maps folder. The equivalent command is:
 
 ```sh
-build-app/zod-ee.app/Contents/MacOS/zod-ee --import-levels /path/to/previous/installation
+build-app/zod-enhanced.app/Contents/MacOS/zod-enhanced --import-levels /path/to/previous/installation
 ```
 
 Levels and compatible terrain metadata are copied to the user's profile under

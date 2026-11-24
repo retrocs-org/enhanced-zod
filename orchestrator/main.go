@@ -8,7 +8,7 @@
 // later.
 //
 // Build:  go build -o orchestrator .
-// Run:    ZOD_DIR=/path/to/zod ZOD_BIN=/path/to/zod/build/zod-ee ./orchestrator
+// Run:    ZOD_DIR=/path/to/zod ZOD_BIN=/path/to/zod/build/zod-enhanced ./orchestrator
 //
 // HTTP/JSON API:
 //

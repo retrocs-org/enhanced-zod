@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""zod-ee release preparation, provenance, verification and explicit publication.
+"""zod-enhanced release preparation, provenance, verification and explicit publication.
 
 Adapted to this project's platforms from the staged workflow demonstrated by
 Beam68. No source push, tag creation or publication happens implicitly.
@@ -62,7 +62,7 @@ def sources(root):
     for name in sorted(set(filter(None, listing))):
         relative=Path(name)
         if source_policy.forbidden(name): continue
-        if any(part in SKIP or part.startswith('build-') or part=='build' for part in relative.parts): continue
+        if any(part in SKIP for part in relative.parts) or any(part.startswith('build-') or part=='build' for part in relative.parts[:-1]): continue
         if relative.name in {'.gitkeep','.DS_Store','BUILD-PROVENANCE.json','RELEASE-BUILD.json'} or relative.suffix.lower() in {'.pyc','.log','.iso','.cue','.bin'}: continue
         if name.startswith(('assets/original-z/','assets/videos/')) and relative.name!='README.md': raise ReleaseError('Imported game media cannot be released: '+name)
         if private(relative): raise ReleaseError('Private/local configuration cannot be packaged: '+name)
@@ -138,16 +138,16 @@ def _prepare(root,out,artifacts,allow_dirty=False,notes=None):
     need(notes.is_file() and len(notes.read_text().strip())>30,'Add reviewable release notes first')
     v=record['version'];out.mkdir(parents=True)
     names=[]
-    source=out/f'zod-ee-{v}-source.zip'
+    source=out/f'zod-enhanced-{v}-source.zip'
     with zipfile.ZipFile(source,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=9) as archive:
-        for name in record['files']: add_file(archive,root/name,'zod-ee-'+v+'/'+name)
-        archive.writestr('zod-ee-'+v+'/BUILD-PROVENANCE.json',encoded(record))
+        for name in record['files']: add_file(archive,root/name,'zod-enhanced-'+v+'/'+name)
+        archive.writestr('zod-enhanced-'+v+'/BUILD-PROVENANCE.json',encoded(record))
     names.append(source.name)
-    website=out/f'zod-ee-{v}-web.zip'
+    website=out/f'zod-enhanced-{v}-web.zip'
     with zipfile.ZipFile(website,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=9) as archive:
-        add_file(archive,root/'LICENSE','zod-ee-web/LICENSE')
+        add_file(archive,root/'LICENSE','zod-enhanced-web/LICENSE')
         for name in record['files']:
-            if name.startswith(('web-service/','public-web/')): add_file(archive,root/name,'zod-ee-web/'+name)
+            if name.startswith(('web-service/','public-web/')): add_file(archive,root/name,'zod-enhanced-web/'+name)
     names.append(website.name)
     platforms={}
     for label, raw in artifacts:
@@ -155,14 +155,14 @@ def _prepare(root,out,artifacts,allow_dirty=False,notes=None):
         path=Path(raw);path=path if path.is_absolute() else root/path
         need(path.exists() and not path.is_symlink(),'Runtime artifact missing or linked')
         if path.is_dir():
-            name=f'zod-ee-{v}-{label}.zip';archive_tree(path,out/name,path.name)
+            name=f'zod-enhanced-{v}-{label}.zip';archive_tree(path,out/name,path.name)
         else:
             suffix='.tar.gz' if path.name.endswith('.tar.gz') else path.suffix
             need(suffix in {'.zip','.dmg','.tar.gz'},'Use a complete runtime package, not a bare executable')
-            name=f'zod-ee-{v}-{label}{suffix}';shutil.copyfile(path,out/name)
+            name=f'zod-enhanced-{v}-{label}{suffix}';shutil.copyfile(path,out/name)
         need(label not in platforms,'Duplicate runtime platform')
         platforms[label]=name;names.append(name)
-    manifest={'schema':1,'project':'zod-ee','version':v,'tag':'v'+v,'source':record,'platforms':platforms,'artifacts':{},'runtime_provenance':{}}
+    manifest={'schema':1,'project':'zod-enhanced','version':v,'tag':'v'+v,'source':record,'platforms':platforms,'artifacts':{},'runtime_provenance':{}}
     for label,raw in artifacts:
         artifact=Path(raw);artifact=artifact if artifact.is_absolute() else root/artifact
         evidence=None
@@ -231,7 +231,7 @@ def downloads(manifest):
     return entries
 
 def verify(root,out,current=True):
-    manifest=json.loads((out/'release-manifest.json').read_text());need(manifest.get('project')=='zod-ee' and manifest.get('schema')==1,'Unsupported release manifest')
+    manifest=json.loads((out/'release-manifest.json').read_text());need(manifest.get('project') in {'zod-enhanced','zod-ee'} and manifest.get('schema')==1,'Unsupported release manifest')
     need(fingerprint(manifest['source']['files'])==manifest['source']['source_sha256'],'Source manifest is inconsistent')
     for name,expected in manifest['artifacts'].items():
         need(Path(name).name==name,'Unsafe artifact filename');path=out/name
@@ -284,7 +284,7 @@ def push_source(root,config,targets,confirmed=False,dry_run=False):
         if not name:continue
         relative=Path(name)
         need(not source_policy.forbidden(name), 'Imported media is tracked: '+name)
-        need(not private(relative) and not any(part in SKIP or part.startswith('build-') or part=='build' for part in relative.parts), 'Private/generated file is tracked: '+name)
+        need(not private(relative) and not any(part in SKIP for part in relative.parts) and not any(part.startswith('build-') or part=='build' for part in relative.parts[:-1]), 'Private/generated file is tracked: '+name)
     branch=config.get('source_branch','main');need(isinstance(branch,str) and re.fullmatch(r'[A-Za-z0-9_./-]+',branch) and not branch.startswith('-'),'Invalid source branch')
     subprocess.run(['git','check-ref-format','--branch',branch],check=True,capture_output=True)
     remotes={service:destination(config,service) for service in targets};refspec=sha+':refs/heads/'+branch
@@ -297,7 +297,7 @@ def push_source(root,config,targets,confirmed=False,dry_run=False):
         subprocess.run(['git','-C',str(root),'push','--no-follow-tags','--',remote['push_url'],refspec],check=True)
         head=git(root,'ls-remote','--heads','--',remote['push_url'],'refs/heads/'+branch)
         need(head and head.split()[0]==sha,'Remote branch verification failed: '+service)
-        atomic(root/'outputs/source'/('receipt-'+service+'.json'),encoded({'project':'zod-ee','commit':sha,'branch':branch,'repository':remote['url'],'verified':True}))
+        atomic(root/'outputs/source'/('receipt-'+service+'.json'),encoded({'project':'zod-enhanced','commit':sha,'branch':branch,'repository':remote['url'],'verified':True}))
         print(service+': source branch verified',flush=True)
     return {'commit':sha,'branch':branch,'uploaded':True,'targets':list(remotes)}
 
@@ -312,11 +312,11 @@ def publish(root,out,config,target,confirmed,draft=True):
     names=[*manifest['artifacts'],*(n+'.sha256' for n in manifest['artifacts']),'SHA256SUMS','release-manifest.json','RELEASE-NOTES.md','downloads.json']
     if target=='github':
         need(shutil.which('gh'),'Install/authenticate GitHub CLI for publication')
-        subprocess.run(['gh','release','create',tag,'--repo',repo,'--target',manifest['source']['commit'],'--title','zod-ee '+manifest['version'],'--notes-file',str(out/'RELEASE-NOTES.md'),*(['--draft'] if draft else []),*[str(out/n) for n in names]],check=True,env=env)
+        subprocess.run(['gh','release','create',tag,'--repo',repo,'--target',manifest['source']['commit'],'--title','zod-enhanced '+manifest['version'],'--notes-file',str(out/'RELEASE-NOTES.md'),*(['--draft'] if draft else []),*[str(out/n) for n in names]],check=True,env=env)
     else:
         need(shutil.which('glab'),'Install/authenticate GitLab CLI for publication')
-        subprocess.run(['glab','release','create',tag,'--repo',repo,'--ref',manifest['source']['commit'],'--name','zod-ee '+manifest['version'],'--notes-file',str(out/'RELEASE-NOTES.md'),*[str(out/n) for n in names]],check=True,env=env)
-    atomic(out/('receipt-'+target+'.json'),encoded({'project':'zod-ee','version':manifest['version'],'repository':repo,'tag':tag,'manifest_sha256':digest(out/'release-manifest.json'),'draft':draft if target=='github' else False}))
+        subprocess.run(['glab','release','create',tag,'--repo',repo,'--ref',manifest['source']['commit'],'--name','zod-enhanced '+manifest['version'],'--notes-file',str(out/'RELEASE-NOTES.md'),*[str(out/n) for n in names]],check=True,env=env)
+    atomic(out/('receipt-'+target+'.json'),encoded({'project':'zod-enhanced','version':manifest['version'],'repository':repo,'tag':tag,'manifest_sha256':digest(out/'release-manifest.json'),'draft':draft if target=='github' else False}))
 
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
@@ -327,7 +327,7 @@ def main(argv=None):
     parser.add_argument('--target',choices=['github','gitlab'],default='github');parser.add_argument('--confirm-publish',action='store_true');parser.add_argument('--confirm-push',action='store_true');parser.add_argument('--public',action='store_true')
     args=parser.parse_args(argv);root=ROOT;config=configured(args.config);build=args.build_dir if args.build_dir.is_absolute() else root/args.build_dir;out=output_dir(root,args.output)
     if args.command=='plan':
-        print(json.dumps({'project':'zod-ee','version':version(root),'build_dir':str(build),'output':str(out),'artifacts':args.artifact,'source_push':False,'publication':False,'targets':{k:destination(config,k)['url'] if config.get(k) or config.get(k+'_repo') else 'not configured' for k in ('gitlab','github')}},indent=2));return
+        print(json.dumps({'project':'zod-enhanced','version':version(root),'build_dir':str(build),'output':str(out),'artifacts':args.artifact,'source_push':False,'publication':False,'targets':{k:destination(config,k)['url'] if config.get(k) or config.get(k+'_repo') else 'not configured' for k in ('gitlab','github')}},indent=2));return
     if args.command=='build':
         if sys.platform=='darwin':
             importer=root/'build-importer-venv/bin/python3'

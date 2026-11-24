@@ -1,4 +1,4 @@
-# zod-ee 0.6.0
+# zod-enhanced 0.6.0
 
 Zod Engine Enhanced is a community fork of fenio/zod and the original
 Zod Engine by Michael Bok / Nighsoft.

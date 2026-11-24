@@ -845,7 +845,7 @@ void ZPlayer::InitSDL()
 	//shows the generic "exec" icon. Set the Dock icon directly via Cocoa.
 	MacSetDockIcon(ZSDL_DataPath("assets/icon_mac.png").c_str());
 #endif
-	ZVideo_SetCaption("zod-ee " ZOD_VERSION);
+	ZVideo_SetCaption("zod-enhanced " ZOD_VERSION);
 	atexit(ZSDL_Quit);//SDL_Quit);
 
 	// Mouse mode and render smoothing come from ~/.zod_prefs (editable in

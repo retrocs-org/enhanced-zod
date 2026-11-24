@@ -8,7 +8,7 @@ p=argparse.ArgumentParser();p.add_argument('--engine',required=True,type=pathlib
 if platform.system()!='Linux':p.error('Run this packager on Linux against a native Linux engine')
 arch={'aarch64':'arm64','x86_64':'x86_64'}.get(platform.machine(),platform.machine())
 with tempfile.TemporaryDirectory(prefix='zod-package-') as temporary:
- dest=pathlib.Path(temporary)/('zod-ee-server-linux-'+arch);dest.mkdir();lib=dest/'lib';lib.mkdir()
+ dest=pathlib.Path(temporary)/('zod-enhanced-server-linux-'+arch);dest.mkdir();lib=dest/'lib';lib.mkdir()
  closure=subprocess.check_output(['ldd',str(args.engine.resolve())],env={**os.environ,'LC_ALL':'C'},text=True)
  if 'not found' in closure:raise RuntimeError('Missing runtime dependency:\n'+closure)
  libraries=set(re.findall(r'(/[^\s()]+)',closure));loader=None
@@ -18,17 +18,17 @@ with tempfile.TemporaryDirectory(prefix='zod-package-') as temporary:
   shutil.copy2(source,lib/source.name,follow_symlinks=True)
   if 'ld-linux' in source.name or source.name.startswith('ld-musl'):loader=source.name
  if not loader:raise RuntimeError('Could not identify ELF loader')
- shutil.copy2(args.engine,dest/'zod-ee-bin');shutil.copy2(args.agent,dest/'zod-agent')
+ shutil.copy2(args.engine,dest/'zod-enhanced-bin');shutil.copy2(args.agent,dest/'zod-agent')
  copy_runtime(args.root,dest,website=True)
  shutil.copy2(args.root/'web-service/README.md',dest/'CLOUD-README.md')
- (dest/'zod-ee').write_text('#!/bin/sh\nset -eu\nroot=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec "$root/lib/'+loader+'" --library-path "$root/lib" "$root/zod-ee-bin" "$@"\n')
+ (dest/'zod-enhanced').write_text('#!/bin/sh\nset -eu\nroot=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)\nexec "$root/lib/'+loader+'" --library-path "$root/lib" "$root/zod-enhanced-bin" "$@"\n')
  (dest/'start-server').write_text('''#!/bin/sh
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 state=${XDG_STATE_HOME:-"$HOME/.local/state"}/zod-server
-exec "$root/zod-agent" --engine "$root/zod-ee" --data "$root" --state "$state" "$@"
+exec "$root/zod-agent" --engine "$root/zod-enhanced" --data "$root" --state "$state" "$@"
 ''')
- (dest/'README.txt').write_text('''zod-ee Linux headless server
+ (dest/'README.txt').write_text('''zod-enhanced Linux headless server
 
 Private server (guests welcome; no website needed):
   ./start-server
@@ -49,11 +49,11 @@ PHP/MariaDB account service, deployment and current limitations. It does not use
   if relative and not relative.startswith('#'):
    imported=dest/'assets'/relative
    if imported.is_file():imported.unlink()
- for name in ['zod-ee','start-server','zod-ee-bin','zod-agent']:
+ for name in ['zod-enhanced','start-server','zod-enhanced-bin','zod-agent']:
   path=dest/name
   if path.exists():path.chmod(0o755)
  inventory(dest,dest/"ThirdParty",[pathlib.Path(p) for p in libraries])
- subprocess.run([sys.executable,str(args.root/"tools/package_smoke.py"),"--package",str(dest),"--binary","zod-ee"],check=True)
+ subprocess.run([sys.executable,str(args.root/"tools/package_smoke.py"),"--package",str(dest),"--binary","zod-enhanced"],check=True)
  args.out.parent.mkdir(parents=True,exist_ok=True)
  with tarfile.open(args.out,'w:gz') as archive:archive.add(dest,arcname=dest.name)
  print(args.out)

@@ -13,7 +13,7 @@ r=importlib.util.module_from_spec(SPEC);SPEC.loader.exec_module(r)
 class ReleaseTests(unittest.TestCase):
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup);self.root=Path(self.temp.name).resolve()
-        for name,text in {'VERSION':'1.2.3\n','README.md':'zod-ee','LICENSE':'GPLv3','src/main.cpp':'source','public-web/index.php':'<?php echo "zod-ee";','docs/RELEASE-NOTES.md':'Release notes describing the features in this version.','.gitignore':'outputs/\nbuild/\nwork/\n'}.items():
+        for name,text in {'VERSION':'1.2.3\n','README.md':'zod-enhanced','LICENSE':'GPLv3','src/main.cpp':'source','packaging/macos/build-app.sh':'#!/bin/sh\nexit 0\n','public-web/index.php':'<?php echo "zod-enhanced";','docs/RELEASE-NOTES.md':'Release notes describing the features in this version.','.gitignore':'outputs/\nbuild/\nwork/\n'}.items():
             file=self.root/name;file.parent.mkdir(parents=True,exist_ok=True);file.write_text(text)
         subprocess.run(['git','init','-q',str(self.root)],check=True)
         for args in [('config','user.email','tests@example.invalid'),('config','user.name','Release tests'),('add','.'),('commit','-qm','fixture')]:subprocess.run(['git','-C',str(self.root),*args],check=True)
@@ -22,13 +22,18 @@ class ReleaseTests(unittest.TestCase):
     def test_prepare_source_and_website_with_checksums(self):
         manifest=self.prepare();r.verify(self.root,self.out)
         self.assertEqual(manifest['version'],'1.2.3')
-        with zipfile.ZipFile(self.out/'zod-ee-1.2.3-source.zip') as archive:
-            self.assertIn('zod-ee-1.2.3/src/main.cpp',archive.namelist())
-            self.assertIn('zod-ee-1.2.3/public-web/index.php',archive.namelist())
+        with zipfile.ZipFile(self.out/'zod-enhanced-1.2.3-source.zip') as archive:
+            self.assertIn('zod-enhanced-1.2.3/src/main.cpp',archive.namelist())
+            self.assertIn('zod-enhanced-1.2.3/packaging/macos/build-app.sh',archive.namelist())
+            self.assertIn('zod-enhanced-1.2.3/public-web/index.php',archive.namelist())
             self.assertFalse(any('/.git/' in n for n in archive.namelist()))
-        with zipfile.ZipFile(self.out/'zod-ee-1.2.3-web.zip') as archive:
-            self.assertIn('zod-ee-web/public-web/index.php',archive.namelist())
+        with zipfile.ZipFile(self.out/'zod-enhanced-1.2.3-web.zip') as archive:
+            self.assertIn('zod-enhanced-web/public-web/index.php',archive.namelist())
         self.assertFalse((self.out/'receipt-github.json').exists())
+    def test_previous_project_name_remains_verifiable(self):
+        manifest=self.prepare();manifest['project']='zod-ee'
+        (self.out/'release-manifest.json').write_text(json.dumps(manifest))
+        self.assertEqual(r.verify(self.root,self.out)['project'],'zod-ee')
     def test_archive_tampering_fails_verification(self):
         m=self.prepare();file=self.out/next(iter(m['artifacts']));file.write_bytes(file.read_bytes()+b'changed')
         with self.assertRaises(r.ReleaseError):r.verify(self.root,self.out)
@@ -54,7 +59,7 @@ class ReleaseTests(unittest.TestCase):
         self.prepare();(self.out/'RELEASE-NOTES.md').write_text('changed')
         with self.assertRaises(r.ReleaseError):r.verify(self.root,self.out)
     def test_runtime_requires_fresh_binary_provenance(self):
-        binary=self.root/'build/zod-ee.app/Contents/MacOS/zod-ee';binary.parent.mkdir(parents=True);binary.write_bytes(b'binary')
+        binary=self.root/'build/zod-enhanced.app/Contents/MacOS/zod-enhanced';binary.parent.mkdir(parents=True);binary.write_bytes(b'binary')
         r.record_build(self.root,self.root/'build',[binary],True)
         self.prepare([('macos-arm64',binary.parents[2])]);r.verify(self.root,self.out)
         evidence=json.loads((self.out/'release-manifest.json').read_text())
@@ -69,7 +74,7 @@ class ReleaseTests(unittest.TestCase):
         with self.assertRaises(r.ReleaseError):self.prepare([('wrong-platform','missing')])
         self.assertFalse(self.out.exists())
     def test_runtime_must_contain_verified_binary(self):
-        binary=self.root/'build/zod-ee';binary.parent.mkdir();binary.write_bytes(b'verified')
+        binary=self.root/'build/zod-enhanced';binary.parent.mkdir();binary.write_bytes(b'verified')
         runtime=self.root/'build/runtime';runtime.mkdir();(runtime/'zod').write_bytes(b'old binary')
         r.record_build(self.root,self.root/'build',[binary],True)
         with self.assertRaises(r.ReleaseError):self.prepare([('linux-x86_64',runtime)])

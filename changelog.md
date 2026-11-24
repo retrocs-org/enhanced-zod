@@ -1,12 +1,12 @@
 # Changelog
 
-Changes in zod-ee — Zod Engine Enhanced are recorded here. This is a working-tree
+Changes in zod-enhanced — Zod Engine Enhanced are recorded here. This is a working-tree
 changelog, not an announcement of a published release. The SDL3 foundation comes
 from fenio/zod; the original Zod Engine is by Michael Bok / Nighsoft.
 
 ## Unreleased
 
-- Project renamed to **zod-ee — Zod Engine Enhanced**. Existing profiles,
+- Project renamed to **zod-enhanced — Zod Engine Enhanced**. Existing profiles,
   protocol identifiers and command-line target names remain compatible.
 
 ### Fixed
@@ -191,7 +191,7 @@ See [Asset Import](docs/Asset-Import.md) for usage and verification tools,
   ownership and are separate from the engine source license.
 - **Zod Engine:** the GPLv3 open-source remake by Michael Bok / Nighsoft.
 - **fenio/zod:** the upstream SDL3 modernization on which this fork builds.
-- **zod-ee — Zod Engine Enhanced:** this repository's gameplay, hosting, website and
+- **zod-enhanced — Zod Engine Enhanced:** this repository's gameplay, hosting, website and
   disc-import work. No endorsement by the original rights holders is implied.
 
 Further acknowledgments and asset/font credits are in [README.md](README.md#credits)

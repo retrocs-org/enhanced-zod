@@ -265,7 +265,7 @@ static void fit_screen_to_window()
 
 static void set_title()
 {
-	string title = "zod-ee Map Editor - " + filename;
+	string title = "zod-enhanced Map Editor - " + filename;
 	if(changes_made) title += " *";
 	ZVideo_SetCaption(title.c_str());
 }
@@ -501,7 +501,7 @@ int main(int argc, char **argv)
 				{
 					//first close with unsaved work only warns
 					quit_armed = true;
-					ZVideo_SetCaption("zod-ee Map Editor - UNSAVED CHANGES: press S to save, or close again to discard");
+					ZVideo_SetCaption("zod-enhanced Map Editor - UNSAVED CHANGES: press S to save, or close again to discard");
 					break;
 				}
 				return 0;
@@ -674,7 +674,7 @@ void init_main_objects()
 
 void display_proper_init(char *exec_command)
 {
-	printf("Welcome to the zod-ee Map Editor\n\n");
+	printf("Welcome to the zod-enhanced Map Editor\n\n");
 	
 	printf("========================================================\n");
 	printf("Command list...\n");
@@ -931,7 +931,7 @@ void process_button_pressed(int c)
 			if(!edit_map.Write(filename.c_str()))
 			{
 				printf("could not save '%s'\n", filename.c_str());
-				ZVideo_SetCaption(("zod-ee Map Editor - COULD NOT SAVE " + filename).c_str());
+				ZVideo_SetCaption(("zod-enhanced Map Editor - COULD NOT SAVE " + filename).c_str());
 				break;
 			}
 			printf("saved '%s'\n", filename.c_str());

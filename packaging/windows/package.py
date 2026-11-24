@@ -19,7 +19,7 @@ def main():
     if destination.exists():
         shutil.rmtree(destination)
     destination.mkdir(parents=True)
-    subprocess.run(['python3', str(args.tools / 'bundle-mingw-dlls.py'), str(build / 'zod-ee.exe'),
+    subprocess.run(['python3', str(args.tools / 'bundle-mingw-dlls.py'), str(build / 'zod-enhanced.exe'),
                     str(build / 'zod_mapgen.exe'), '--dest', str(destination), '--search-dir', str(sdk / 'bin')], check=True)
     # Cutscenes currently use AVFoundation on macOS. Avoid packaging private
     # local video files or OS metadata in the Windows distribution.
@@ -43,8 +43,8 @@ def main():
             if notice.is_file():
                 shutil.copy2(notice, runtime_licenses / notice.name)
     (destination / 'READ_ME_FIRST.txt').write_text(
-        'zod-ee — Zod Engine Enhanced for Windows x64\n\nExtract the entire ZIP, then run zod-ee.exe.\n'
-        'Keep the DLLs, assets and maps beside zod-ee.exe.\n'
+        'zod-enhanced — Zod Engine Enhanced for Windows x64\n\nExtract the entire ZIP, then run zod-enhanced.exe.\n'
+        'Keep the DLLs, assets and maps beside zod-enhanced.exe.\n'
         'Use Alt+Enter to switch between fullscreen and windowed mode.\n'
         'Original cutscene video playback is currently available on macOS only.\n')
     (destination / 'build-info.json').write_text(json.dumps({
