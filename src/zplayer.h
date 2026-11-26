@@ -376,7 +376,10 @@ class ZPlayer : public ZClient
 		static void test_event(ZPlayer *p, char *data, int size, int dummy);
 		static void connect_event(ZPlayer *p, char *data, int size, int dummy);
 		static void disconnect_event(ZPlayer *p, char *data, int size, int dummy);
-		static void cloud_notice_event(ZPlayer*,char*,int,int);
+		static void moderation_feedback_event(ZPlayer*,char*,int,int);
+    static void state_sync_event(ZPlayer*,char*,int,int);
+    unsigned long long sync_last_sequence=0;int sync_strikes=0;std::vector<std::string> sync_history;std::string sync_reported_hash;
+    static void cloud_notice_event(ZPlayer*,char*,int,int);
         static void map_fingerprint_event(ZPlayer*,char*,int,int);
 		static void store_map_event(ZPlayer *p, char *data, int size, int dummy);
 		static void add_new_object_event(ZPlayer *p, char *data, int size, int dummy);

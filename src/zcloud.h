@@ -5,6 +5,7 @@
 #include <set>
 #include <vector>
 #include "zmp_async.h"
+struct ZModerationFeedback {bool ok=false;std::string command,status;};
 struct ZCloudClaim { int peer=-1; std::string account,name,grant,error; };
 struct ZCloudPeer { double connected=0; bool requested=false; std::string account,grant,ticket; };
 struct ZCloudBan {long long expires=0;std::string reason;};

@@ -93,3 +93,21 @@ func TestFailedUpdatedProcessRollsBack(t *testing.T) {
 		t.Fatal("failed updated process retained")
 	}
 }
+
+func TestRuntimeStatusOmitsPrivatePaths(t *testing.T) {
+	c := Config{State: t.TempDir()}
+	s := runtimeState{Staged: &runtimeRelease{Path: "/secret/runtime", BuildID: "next-build"}, Previous: &runtimeRelease{Path: "/secret/previous", Version: "old", SHA256: strings.Repeat("a", 64)}, Outcome: "Staged", OutcomeAt: 1700000000}
+	if e := saveRuntime(c, s); e != nil {
+		t.Fatal(e)
+	}
+	a := &Agent{cfg: c}
+	report := a.runtimeReport(engineStatus{BuildID: "running-build"})
+	if report["running"] != "running-build" || report["staged"] != "next-build" || strings.Contains(report["previous"], "/secret") {
+		t.Fatal("incorrect or private status", report)
+	}
+	a.runtimeOutcome("Running; readiness verified")
+	current, _ := readRuntime(c)
+	if current.Staged == nil || current.Outcome != "Running; readiness verified" {
+		t.Fatal("outcome lost runtime metadata")
+	}
+}

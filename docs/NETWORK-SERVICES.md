@@ -637,3 +637,75 @@ zod-agent --state /var/lib/zod --rollback-engine
 
 Keep the state directory and its private permissions. Database/website upgrades
 are a separate deployment step and require their own backup/rollback plan.
+
+## Build identity, sync checks and action feedback
+
+`zod-enhanced --build-info` returns a JSON identity containing the semantic version,
+Git commit, source-content fingerprint, configuration, compiler and platform.
+The identity is refreshed before each build, including incremental builds; changed
+source produces a different fingerprint even before commit. Settings > About / build information, the main menu, title,
+startup logs and exported diagnostics show the build ID. On macOS, the bundle's
+numeric build number maps to the commit count and `ZodBuildID` stores the full ID.
+Use the full ID or `--build-info` when identifying a development build.
+
+Every five seconds, synchronized clients compare a digest of authoritative
+object identity/type/ownership/health and territory ownership. TCP ordering places
+the check after the matching updates. Movement interpolation, local effects and
+animals are excluded. Three consecutive mismatches on the same map create a
+bounded local `diagnostics/desync-*.txt` report with build/map IDs and recent hashes.
+Reconnect to resynchronize; the detector does not kick players or claim to be an
+anti-cheat system. The server console shows reported check/mismatch counts.
+
+The in-game player panel offers 15-minute, one-hour, one-day and seven-day bans.
+Actions show pending, applied, rejected or expired delivery feedback. Unknown
+outcomes (for example an interrupted portal response) are labelled unconfirmed
+rather than implying rejection; consult portal history before repeating an action.
+Current permissions are checked on submission and execution. Pending controls
+recover after a bounded timeout instead of remaining disabled indefinitely.
+
+## Portable presets and update visibility
+
+Server administrators can open **Download or preview/import presets** from the
+console. Download a named JSON preset, then upload or paste it on another host.
+Preview checks engine requirements, setting bounds and the installed maps' SHA-256
+checksums. Missing maps block import; matching content can have a different host
+path. Import saves a named preset, warns before replacing an existing name and
+leaves the active match unchanged. Applying it still happens at a lobby boundary.
+Documents contain no accounts, host credentials or private filesystem paths.
+
+The console reports the running build, staged build, retained rollback version,
+last update outcome and UTC timestamp from the agent's private runtime state.
+These remain host-reported and are marked stale with the health report. Stage,
+activation, readiness, rejection and rollback update the outcome. Local runtime
+changes are serialized and state files replaced atomically. If a staging process
+is interrupted while holding `.state-lock`, verify no runtime-change process is
+still active before removing that directory and retrying.
+
+## Repeatable server soak checks
+
+Run this from an authored source checkout with native regression tools built:
+
+```sh
+python3 tools/server_soak.py \
+  --engine /absolute/path/to/zod-enhanced \
+  --driver /absolute/path/to/zod_engine_regressions \
+  --agent /absolute/path/to/zod-agent \
+  --rounds 100 --ticks 200 --units 64 --public-cycles 2 \
+  --output outputs/soak-run
+```
+
+The tool runs repeated map rotations in one engine process, records warm/peak/final
+resident memory and sampled tick timing, then optionally repeats the isolated
+MariaDB/portal/agent/client scenario. That includes approval, native checksum
+observation, moderation delivery feedback, host restart and maintenance, revoked
+permissions and service outages. It writes `report.json` and per-stage logs; a
+failure or excess warm-up memory growth returns a nonzero status. Use
+`--max-growth-mib` and `--timeout` to set explicit limits. Test media is authored
+synthetic content; databases are disposable and never use production credentials.
+Accelerated simulation is useful regression coverage, not proof of a days-long
+production endurance run or a graphics/audio benchmark.
+
+First-time multiplayer users see a keyboard/controller-accessible native guide for
+asset import, browser approval, private/LAN guests and friends/invitations. It can
+be reopened from Settings > Media. Completing it is remembered per profile;
+a read-only profile still permits entering multiplayer for the current session.

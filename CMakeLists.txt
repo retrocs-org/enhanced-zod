@@ -84,7 +84,13 @@ message(STATUS "zod version: ${ZOD_VERSION}")
 # Share identical engine objects between the game, editor and headless tests.
 set(ZOD_ENGINE_SRCS ${ZOD_SRCS})
 list(REMOVE_ITEM ZOD_ENGINE_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
+add_custom_target(zod_build_metadata
+ COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/build_metadata.py" --root "${CMAKE_CURRENT_SOURCE_DIR}" --output "${CMAKE_CURRENT_BINARY_DIR}/generated" --config "$<CONFIG>" --compiler "${CMAKE_CXX_COMPILER_ID}-${CMAKE_CXX_COMPILER_VERSION}" --platform "${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}" --version "${ZOD_VERSION}"
+ BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/generated/zbuild_metadata.h" "${CMAKE_CURRENT_BINARY_DIR}/generated/BUILD-IDENTITY.json"
+ VERBATIM)
 add_library(zod_engine OBJECT ${ZOD_ENGINE_SRCS})
+add_dependencies(zod_engine zod_build_metadata)
+target_include_directories(zod_engine PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_link_libraries(zod_engine PUBLIC CURL::libcurl)
 add_executable(zod src/main.cpp)
 set_target_properties(zod PROPERTIES OUTPUT_NAME "zod-enhanced")
@@ -105,6 +111,7 @@ if(WIN32)
 endif()
 find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
+  add_test(NAME zod_build_identity COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/build_metadata_test.py")
   add_test(NAME zod_regressions COMMAND "${Python3_EXECUTABLE}"
     "${CMAKE_CURRENT_SOURCE_DIR}/tests/regressions.py" "$<TARGET_FILE:zod>"
     "$<TARGET_FILE:zod_runtime_driver>" "${CMAKE_CURRENT_SOURCE_DIR}/maps/p02_bb_orig01.map")
@@ -296,6 +303,7 @@ if(APPLE AND ZOD_MACOS_APP)
     COMMENT "Bundling the offline disc importer and media converters"
     VERBATIM)
   add_custom_target(app
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/build_metadata.py" --root "${CMAKE_CURRENT_SOURCE_DIR}" --output "${CMAKE_CURRENT_BINARY_DIR}/generated" --config "$<CONFIG>" --compiler "${CMAKE_CXX_COMPILER_ID}-${CMAKE_CXX_COMPILER_VERSION}" --platform "${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}" --version "${ZOD_VERSION}" --plist "$<TARGET_BUNDLE_CONTENT_DIR:zod>/Info.plist" --stamp-only
     COMMAND /bin/bash "${CMAKE_CURRENT_SOURCE_DIR}/packaging/macos/bundle-dylibs.sh" "$<TARGET_BUNDLE_DIR:zod>"
     DEPENDS asset-importer
     COMMENT "Bundling SDL3 libraries into zod-enhanced.app and code-signing it"

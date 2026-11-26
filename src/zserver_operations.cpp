@@ -40,7 +40,17 @@ std::string ZServer::NextCloudMap(){
  auto current=std::find(maps.begin(),maps.end(),map_name);return current==maps.end()||++current==maps.end()?maps.front():*current;
 }
 void ZServer::ApplyCloudOperations(){
- bool moderationDone;if(cloud_moderation_task.Poll(moderationDone))BroadCastNews(moderationDone?"Moderation request recorded.":"Moderation request failed; check current permissions and portal availability.",255,190,80);
+ ZModerationFeedback feedback;if(cloud_moderation_task.Poll(feedback)){
+  if(!feedback.ok){SendModerationFeedback(moderation_peer,"unconfirmed: check portal history; service or role changed");moderation_command.clear();}
+  else {if(!feedback.command.empty())moderation_command=feedback.command;SendModerationFeedback(moderation_peer,feedback.status);if(feedback.status!="pending")moderation_command.clear();}
+  moderation_next=current_time()+1;
+ }
+ if(!moderation_command.empty()&&!cloud_moderation_task.Pending()&&current_time()>=moderation_next){
+  if(current_time()>moderation_until){SendModerationFeedback(moderation_peer,"expired: delivery not confirmed");moderation_command.clear();}
+  else {auto command=moderation_command,actor=moderation_actor;std::string secret=getenv("ZOD_CLOUD_AGENT_SECRET")?getenv("ZOD_CLOUD_AGENT_SECRET"):"";int port=getenv("ZOD_CLOUD_AGENT_PORT")?atoi(getenv("ZOD_CLOUD_AGENT_PORT")):0;
+   cloud_moderation_task.Start([command,actor,secret,port](){ZModerationFeedback result;auto r=ZHttp_Post("127.0.0.1",port,"/moderation-status","{\"Secret\":"+ZCloud_JSON(secret)+",\"Actor\":"+ZCloud_JSON(actor)+",\"Command\":"+ZCloud_JSON(command)+"}");result.ok=r.ok&&r.status==200;result.status=r.body;while(!result.status.empty()&&(result.status.back()=='\n'||result.status.back()=='\r'))result.status.pop_back();if(result.status!="pending"&&result.status!="applied"&&result.status!="rejected"&&result.status!="expired")result.ok=false;return result;});
+  }
+ }
  double now=current_time();
  if(cloud_roles.valid&&now<cloud_roles_until&&cloud_roles.maintenanceAt>0){
   if(cloud_maintenance_notice!=cloud_roles.maintenanceAt){cloud_maintenance_notice=cloud_roles.maintenanceAt;BroadCastNews(("Scheduled maintenance: "+cloud_roles.maintenanceReason+". This round may finish; reconnect after maintenance.").c_str(),255,190,80);}
@@ -71,15 +81,18 @@ void ZServer::ApplyCloudOperations(){
  }
 }
 
+void ZServer::SendModerationFeedback(int peer,const std::string &state){for(size_t i=0;i<player_info.size();++i)if(player_info[i].p_id==peer)server_socket.SendMessage(i,MODERATION_FEEDBACK,state.c_str(),state.size()+1);}
 void ZServer::cloud_moderate_event(ZServer *p,char *data,int size,int player){
- if(!p->cloud_required||!p->CloudAuthorized(player)||size<10||size>180||!data||p->cloud_moderation_task.Pending())return;
- auto actor=p->cloud_peers.find(p->player_info[player].p_id);if(actor==p->cloud_peers.end()||p->CloudRank(actor->second.account)<1)return;
- int target,minutes;memcpy(&target,data,4);memcpy(&minutes,data+4,4);if(minutes<0||minutes>10080||data[size-1]!=0||memchr(data+8,0,size-9))return;
- std::string reason(data+8,size-9);if(reason.empty()||reason.size()>160)return;for(unsigned char c:reason)if(c<32||c==127)return;
- auto peer=p->cloud_peers.find(target);if(peer==p->cloud_peers.end()||peer->second.account.empty()||p->CloudRank(actor->second.account)<=p->CloudRank(peer->second.account))return;
+ if(!p->cloud_required||!p->CloudAuthorized(player)||!data)return;int caller=p->player_info[player].p_id;
+ auto reject=[&](const char *reason){p->SendModerationFeedback(caller,std::string("rejected: ")+reason);};
+ if(size<10||size>180){reject("invalid request");return;}if(p->cloud_moderation_task.Pending()||!p->moderation_command.empty()){reject("another action is awaiting delivery");return;}
+ auto actor=p->cloud_peers.find(caller);if(actor==p->cloud_peers.end()||p->CloudRank(actor->second.account)<1){reject("current staff role required");return;}
+ int target,minutes;memcpy(&target,data,4);memcpy(&minutes,data+4,4);if(minutes<0||minutes>10080||data[size-1]!=0||memchr(data+8,0,size-9)){reject("invalid duration or reason");return;}
+ std::string reason(data+8,size-9);if(reason.empty()||reason.size()>160){reject("reason required");return;}for(unsigned char c:reason)if(c<32||c==127){reject("invalid reason");return;}
+ auto peer=p->cloud_peers.find(target);if(peer==p->cloud_peers.end()||peer->second.account.empty()||p->CloudRank(actor->second.account)<=p->CloudRank(peer->second.account)){reject("target unavailable or equal/higher role");return;}
  std::string body="{\"Secret\":"+ZCloud_JSON(getenv("ZOD_CLOUD_AGENT_SECRET")?getenv("ZOD_CLOUD_AGENT_SECRET"):"")+",\"actor\":"+ZCloud_JSON(actor->second.account)+",\"target\":"+ZCloud_JSON(peer->second.account)+",\"action\":"+ZCloud_JSON(minutes?"ban":"kick")+",\"minutes\":"+std::to_string(minutes?minutes:60)+",\"reason\":"+ZCloud_JSON(reason)+"}";
- int port=getenv("ZOD_CLOUD_AGENT_PORT")?atoi(getenv("ZOD_CLOUD_AGENT_PORT")):0;
- p->cloud_moderation_task.Start([body,port](){auto r=ZHttp_Post("127.0.0.1",port,"/moderate",body);return r.ok&&r.status==204;});
+ int port=getenv("ZOD_CLOUD_AGENT_PORT")?atoi(getenv("ZOD_CLOUD_AGENT_PORT")):0;p->moderation_peer=caller;p->moderation_actor=actor->second.account;p->moderation_until=current_time()+65;p->SendModerationFeedback(caller,"pending: checking permission and delivery");
+ p->cloud_moderation_task.Start([body,port](){ZModerationFeedback result;auto r=ZHttp_Post("127.0.0.1",port,"/moderate",body);result.command=r.body;while(!result.command.empty()&&(result.command.back()=='\n'||result.command.back()=='\r'))result.command.pop_back();result.ok=r.ok&&r.status==200&&!result.command.empty()&&result.command.size()<=18&&result.command.find_first_not_of("0123456789")==std::string::npos;result.status="pending";return result;});
 }
 
 std::string ZServer::MapFingerprint(){if(!zmap.Loaded())return "";if(map_fingerprint.empty()){char *bytes=nullptr;int size=0;zmap.GetMapData(bytes,size);map_fingerprint=ZSHA256(bytes,size);}return map_fingerprint;}

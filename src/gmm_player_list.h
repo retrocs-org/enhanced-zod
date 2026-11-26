@@ -9,9 +9,10 @@ public:
 	GMMPlayerList(bool staff=false);
 
 	void Process();
+    void SetFeedback(const string &status);
 private:
 	GMMWList player_list;
-    bool staff=false;int selected=-1;GMMWTextEntry reason;GMMWButton kick,ban;GMMWLabel help;
+    bool staff=false;int selected=-1;GMMWTextEntry reason;Uint64 moderation_sent_at=0;bool moderation_pending=false;int duration_index=1;GMMWButton duration,kick,ban;GMMWLabel help;
 	GMMWLabel players_on_label;
 	GMMWLabel players_onnum_label;
 

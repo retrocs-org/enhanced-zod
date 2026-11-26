@@ -48,7 +48,12 @@ class ZServer : public ZCore
         int CloudRank(const std::string &account);void ApplyCloudOperations();
     std::string MapFingerprint();std::string map_fingerprint;
     static void cloud_moderate_event(ZServer*,char*,int,int);
-    ZMPAsync<bool> cloud_moderation_task;std::string NextCloudMap();
+    ZMPAsync<ZModerationFeedback> cloud_moderation_task;
+    int moderation_peer=-1;std::string moderation_actor,moderation_command;double moderation_next=0,moderation_until=0;
+    void SendModerationFeedback(int peer,const std::string &state);
+    void CheckStateSync();static void state_sync_reply_event(ZServer*,char*,int,int);
+    double sync_next=0;unsigned long long sync_sequence=0,sync_checks=0,sync_mismatches=0;std::string sync_hash;std::map<int,unsigned long long> sync_replied;
+    std::string NextCloudMap();
         ZCloudRoles cloud_settings;std::string cloud_round="boot";long long cloud_applied_revision=0;
         double cloud_voting_until=0,cloud_boot=0,cloud_tick_ms=0,cloud_ack_after=0;
         ZMPAsync<bool> cloud_ack_task;std::vector<std::string> cloud_ack_batch;

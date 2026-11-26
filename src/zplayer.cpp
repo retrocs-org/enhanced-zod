@@ -1,5 +1,6 @@
 #include "zmovie.h"
 #include "zplayer.h"
+#include "zbuild.h"
 #include "zmenu_theme.h"
 static double MenuRenderScale();
 #include "zhighscore.h"
@@ -365,7 +366,7 @@ bool ZPlayer::PollHostedJoin()
             lobby->SetError(retry ? "Reconnecting: attempt "+to_string(reconnect_attempt)+"/3 failed. Leave to cancel." : error);
         return false;
     }
-    expected_map_hash.clear();map_download_error.clear();cloud_join_ticket=std::move(result.ticket);cloud_server_role=0;cloud_portal_id=result.portalId;
+    sync_last_sequence=0;sync_strikes=0;sync_history.clear();sync_reported_hash.clear();expected_map_hash.clear();map_download_error.clear();cloud_join_ticket=std::move(result.ticket);cloud_server_role=0;cloud_portal_id=result.portalId;
     bool resumed=reconnecting;reconnecting=false;
     hosted_remote_session=true;
     hosted_setup_available=false;
@@ -860,7 +861,7 @@ void ZPlayer::InitSDL()
 	//shows the generic "exec" icon. Set the Dock icon directly via Cocoa.
 	MacSetDockIcon(ZSDL_DataPath("assets/icon_mac.png").c_str());
 #endif
-	ZVideo_SetCaption("zod-enhanced " ZOD_VERSION);
+	ZVideo_SetCaption(("zod-enhanced "+ZBuild_ID()).c_str());printf("Client engine build: %s\n",ZBuild_ID().c_str());fflush(stdout);
 	atexit(ZSDL_Quit);//SDL_Quit);
 
 	// Mouse mode and render smoothing come from ~/.zod_prefs (editable in

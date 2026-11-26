@@ -252,7 +252,7 @@ class EngineRegressions(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='zod-enhanced-polish-') as directory:
             result=subprocess.check_output([DRIVER,'polish',directory],cwd=WORKSPACE,env=self.environment(directory),text=True,timeout=20)
             self.assertIn('polish-ok',result)
-            for name in ['save-browser','editor-help','accessibility','campaign-polish','settings-2','settings-3','settings-4','editor-bindings','object-palette']:
+            for name in ['build-info','multiplayer-guide','moderation-feedback','save-browser','editor-help','accessibility','campaign-polish','settings-2','settings-3','settings-4','editor-bindings','object-palette']:
                 self.assertEqual((pathlib.Path(directory)/(name+'.png')).read_bytes()[:8],b'\x89PNG\r\n\x1a\n')
 
     def test_scaled_battle_menu_resume(self):

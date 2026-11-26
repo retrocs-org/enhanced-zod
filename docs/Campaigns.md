@@ -369,3 +369,18 @@ export; graph warnings allow intentional looping/optional branches. The editor's
 **Export + check** also imports the generated pack into an isolated workspace and
 checks its portability. Optional original cinematics remain external imported
 assets; briefing fallbacks still work.
+
+## Playtest coverage report
+
+Campaign Studio > **Test report** lists coverage for the current saved mission
+content. Editor playtests record starts, briefing transitions, victories, defeats
+and resulting mission/end branches. Intro/victory video entries record playback
+attempts, not proof that the viewer watched a complete clip. No normal campaign
+progress or public statistics are changed by this report.
+
+Coverage is keyed by stable mission UID and a fingerprint of the map, briefing,
+objectives, scripts, branch targets and referenced media content. Changed content
+requires another test. Testing an unsaved map snapshot does not mark an older saved
+map as tested. Records live in the authored project's `.playtest-report`, are
+excluded from exported campaign packs, and can be exported as readable text into
+the profile's diagnostics directory. Imported campaigns remain read-only.

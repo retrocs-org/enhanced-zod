@@ -1,4 +1,5 @@
 #include "zplayer.h"
+#include "gmm_player_list.h"
 #include "packet_io.h"
 #include "zprefs.h"
 #include "zpath_debug.h"
@@ -26,6 +27,8 @@ void ZPlayer::SetupEHandler()
     ehandler.AddFunction(TCP_EVENT,CLOUD_REQUIRED,cloud_required_event);
     ehandler.AddFunction(TCP_EVENT, CLOUD_SERVER_ROLE, cloud_server_role_event);
     ehandler.AddFunction(TCP_EVENT,CLOUD_NOTICE,cloud_notice_event);
+    ehandler.AddFunction(TCP_EVENT,MODERATION_FEEDBACK,moderation_feedback_event);
+    ehandler.AddFunction(TCP_EVENT,STATE_SYNC_CHECK,state_sync_event);
     ehandler.AddFunction(TCP_EVENT,CLOUD_RESULT,cloud_result_event);
 	ehandler.AddFunction(TCP_EVENT, RETURN_TO_MENU, return_to_menu_event);	//#136
 	ehandler.AddFunction(TCP_EVENT, RESET_GAME, reset_game_event);
@@ -863,6 +866,7 @@ void ZPlayer::disconnect_event(ZPlayer *p, char *data, int size, int dummy)
 	p->ProcessDisconnect();
 }
 
+void ZPlayer::moderation_feedback_event(ZPlayer *p,char *data,int size,int){if(!data||size<2||size>180||data[size-1]!=0||memchr(data,0,size-1))return;std::string state(data,size-1);for(auto *menu:p->gui_menu_list)if(auto *panel=dynamic_cast<GMMPlayerList*>(menu))panel->SetFeedback(state);p->AddNewsEntry("Moderation: "+state);}
 void ZPlayer::cloud_notice_event(ZPlayer *p,char *data,int size,int){if(!data||size<2||size>256||data[size-1]!=0||memchr(data,0,size-1))return;std::string text(data,size-1);for(unsigned char c:text)if(c<32||c==127)return;p->cloud_disconnect_reason=text;p->AddNewsEntry(text);}
 void ZPlayer::map_fingerprint_event(ZPlayer *p,char *data,int size,int){if(size!=65||!data||data[64]!=0)return;std::string hash(data,64);if(hash.find_first_not_of("0123456789abcdef")==std::string::npos)p->expected_map_hash=hash;}
 void ZPlayer::store_map_event(ZPlayer *p, char *data, int size, int dummy)

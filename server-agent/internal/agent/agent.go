@@ -210,6 +210,7 @@ func (a *Agent) runOnce(ctx context.Context) error {
 	mux.HandleFunc("/roles", a.Roles)
 	mux.HandleFunc("/ack", a.Ack)
 	mux.HandleFunc("/moderate", a.Moderate)
+	mux.HandleFunc("/moderation-status", a.ModerationStatus)
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 2 * time.Second, ReadTimeout: 3 * time.Second, WriteTimeout: 7 * time.Second, MaxHeaderBytes: 4096}
 	defer srv.Close()
 	go srv.Serve(listener)
@@ -284,6 +285,7 @@ func (a *Agent) runOnce(ctx context.Context) error {
 					return errors.New("updated engine did not report ready within 15 seconds")
 				}
 				a.runtimeTrial = false
+				a.runtimeOutcome("Running; readiness verified")
 				log.Print("Updated engine reported ready")
 			}
 		case <-healthTicker.C:

@@ -10,6 +10,16 @@ are retained below; new website changes belong in that separate log.
 
 ## Unreleased
 
+### Build identity and multiplayer reliability
+
+- Identify builds by commit, source fingerprint, compiler/configuration and platform; expose JSON build info and macOS bundle build metadata.
+- Add a repeatable same-process rotation/memory soak runner with optional isolated public-server cycles and JSON evidence.
+- Compare authoritative replicated world state at ordered TCP boundaries; save bounded local diagnostics for persistent mismatches.
+- Show native moderation delivery feedback, selectable ban durations and bounded pending-state recovery.
+- Track campaign editor playtest starts, briefings, outcomes and branches against mission-content fingerprints, with an exportable report.
+- Guide new multiplayer users through assets, cloud approval, private play and friends; allow reopening the guide from settings.
+
+
 ### Multiplayer reliability and operations
 
 - Fix maintenance/status broadcasts addressing a negative client index; guard socket send/access methods against invalid indices.

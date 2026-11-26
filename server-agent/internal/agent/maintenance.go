@@ -24,8 +24,13 @@ type runtimeRelease struct {
 	Path    string `json:"path"`
 	SHA256  string `json:"sha256"`
 	Version string `json:"version"`
+	BuildID string `json:"build_id,omitempty"`
 }
-type runtimeState struct{ Current, Previous, Staged *runtimeRelease }
+type runtimeState struct {
+	Current, Previous, Staged *runtimeRelease
+	Outcome                   string
+	OutcomeAt                 int64
+}
 
 func runtimePath(c Config) string { return filepath.Join(c.State, "runtime", "state.json") }
 func readRuntime(c Config) (runtimeState, error) {
@@ -49,10 +54,22 @@ func saveRuntime(c Config, s runtimeState) error {
 	if e != nil {
 		return e
 	}
-	if e = os.WriteFile(p+".tmp", b, 0600); e != nil {
+	f, e := os.CreateTemp(filepath.Dir(p), ".state-*")
+	if e != nil {
 		return e
 	}
-	return os.Rename(p+".tmp", p)
+	defer os.Remove(f.Name())
+	if _, e = f.Write(b); e == nil {
+		e = f.Sync()
+	}
+	closed := f.Close()
+	if e != nil {
+		return e
+	}
+	if closed != nil {
+		return closed
+	}
+	return os.Rename(f.Name(), p)
 }
 func verifyRuntime(r *runtimeRelease) error {
 	if r == nil {
@@ -146,6 +163,11 @@ func cacheRuntime(source, path, expected string) error {
 
 // Staging is a local operator action. Cloud users cannot supply binaries or shell commands.
 func StageRuntime(ctx context.Context, c Config, source, expected string) error {
+	unlock, lockError := lockRuntime(c)
+	if lockError != nil {
+		return lockError
+	}
+	defer unlock()
 	if len(expected) != 64 {
 		return errors.New("--sha256 must contain the trusted release SHA-256")
 	}
@@ -184,10 +206,18 @@ func StageRuntime(ctx context.Context, c Config, source, expected string) error 
 	if e != nil {
 		return e
 	}
+	r.BuildID = runtimeBuildID(ctx, path, c)
 	state.Staged = r
+	state.Outcome = "Staged; awaiting scheduled restart"
+	state.OutcomeAt = time.Now().Unix()
 	return saveRuntime(c, state)
 }
 func RollbackRuntime(c Config) error {
+	unlock, lockError := lockRuntime(c)
+	if lockError != nil {
+		return lockError
+	}
+	defer unlock()
 	s, e := readRuntime(c)
 	if e != nil {
 		return e
@@ -197,9 +227,16 @@ func RollbackRuntime(c Config) error {
 	}
 	s.Current, s.Previous = s.Previous, s.Current
 	s.Staged = nil
+	s.Outcome = "Manual rollback selected"
+	s.OutcomeAt = time.Now().Unix()
 	return saveRuntime(c, s)
 }
 func (a *Agent) activateRuntime(ctx context.Context, activate bool) error {
+	unlock, lockError := lockRuntime(a.cfg)
+	if lockError != nil {
+		return lockError
+	}
+	defer unlock()
 	s, e := readRuntime(a.cfg)
 	if e != nil {
 		return e
@@ -230,9 +267,12 @@ func (a *Agent) activateRuntime(ctx context.Context, activate bool) error {
 			if e = cacheRuntime(a.cfg.Engine, path, checksum); e != nil {
 				return e
 			}
-			s.Current = &runtimeRelease{Path: path, SHA256: checksum}
+			version, _ := inspectRuntime(ctx, a.cfg.Engine, a.cfg)
+			s.Current = &runtimeRelease{Path: path, SHA256: checksum, Version: version, BuildID: runtimeBuildID(ctx, a.cfg.Engine, a.cfg)}
 		}
 		s.Previous, s.Current, s.Staged = s.Current, s.Staged, nil
+		s.Outcome = "Activated; checking readiness"
+		s.OutcomeAt = time.Now().Unix()
 		if e = saveRuntime(a.cfg, s); e != nil {
 			return e
 		}
@@ -258,6 +298,7 @@ func (a *Agent) Run(ctx context.Context) error {
 		}
 		if errors.Is(e, restartEngine) {
 			if err := a.activateRuntime(ctx, true); err != nil {
+				a.runtimeOutcome("Update rejected; previous engine retained")
 				log.Printf("Staged update rejected; keeping current engine: %v", err)
 			}
 			continue
@@ -269,9 +310,7 @@ func (a *Agent) Run(ctx context.Context) error {
 				if err = RollbackRuntime(a.cfg); err == nil {
 					if err = a.activateRuntime(ctx, false); err == nil {
 						a.runtimeTrial = false
-						s, _ = readRuntime(a.cfg)
-						s.Previous = nil
-						if err = saveRuntime(a.cfg, s); err != nil {
+						if err = a.markRuntimeRolledBack(); err != nil {
 							return err
 						}
 						log.Print("Updated engine failed startup; restored previous verified engine")
@@ -296,9 +335,39 @@ func (a *Agent) Moderate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "denied", 401)
 		return
 	}
-	if e := a.request(r.Context(), "POST", "/api/server/moderate", map[string]any{"actor": in.Actor, "target": in.Target, "action": in.Action, "reason": in.Reason, "minutes": in.Minutes}, nil); e != nil {
+	var result struct{ Command string }
+	if e := a.request(r.Context(), "POST", "/api/server/moderate", map[string]any{"actor": in.Actor, "target": in.Target, "action": in.Action, "reason": in.Reason, "minutes": in.Minutes}, &result); e != nil {
 		http.Error(w, "moderation unavailable", 503)
 		return
 	}
-	w.WriteHeader(204)
+	if result.Command == "" {
+		http.Error(w, "missing command", 502)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain")
+	fmt.Fprintln(w, result.Command)
+}
+
+func (a *Agent) ModerationStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "POST required", 405)
+		return
+	}
+	var in struct{ Secret, Actor, Command string }
+	if json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&in) != nil || subtle.ConstantTimeCompare([]byte(in.Secret), []byte(a.secret)) != 1 {
+		http.Error(w, "denied", 401)
+		return
+	}
+	var result struct{ Status string }
+	if e := a.request(r.Context(), "POST", "/api/server/moderation-status", map[string]string{"actor": in.Actor, "command": in.Command}, &result); e != nil {
+		http.Error(w, "status unavailable", 503)
+		return
+	}
+	switch result.Status {
+	case "pending", "applied", "rejected", "expired":
+		w.Header().Set("Content-Type", "text/plain")
+		fmt.Fprintln(w, result.Status)
+	default:
+		http.Error(w, "invalid status", 502)
+	}
 }

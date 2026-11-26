@@ -292,7 +292,7 @@ enum tcp_event
     CLOUD_REQUIRED, CLOUD_TICKET, CLOUD_RESULT,
     SET_LPLAYER_SYNC, // map/world transfer state: 0 receiving, 1 sent
     CLOUD_SERVER_ROLE, // private role to this client: 0 player, 1 admin, 2 owner
-    CLOUD_MODERATE, MAP_FINGERPRINT, CLOUD_NOTICE,
+    CLOUD_MODERATE, MAP_FINGERPRINT, CLOUD_NOTICE, MODERATION_FEEDBACK, STATE_SYNC_CHECK, STATE_SYNC_REPLY,
 	MAX_TCP_EVENTS
 };
 

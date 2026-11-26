@@ -54,6 +54,7 @@ void ZServer::SetupEHandler()
 	ehandler.AddFunction(TCP_EVENT, RESET_MAP, reset_map_event);
 	ehandler.AddFunction(TCP_EVENT, REQUEST_VERSION, request_version_event);
     ehandler.AddFunction(TCP_EVENT,CLOUD_MODERATE,cloud_moderate_event);
+    ehandler.AddFunction(TCP_EVENT,STATE_SYNC_REPLY,state_sync_reply_event);
 	ehandler.AddFunction(TCP_EVENT, CONTINUE_AFTER_END, continue_after_end_event);	//#120
 
 	ehandler.AddFunction(OTHER_EVENT, CONNECT_EVENT, connect_event);

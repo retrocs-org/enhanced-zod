@@ -449,4 +449,28 @@ class PHPBackend(unittest.TestCase):
         self.assertEqual(request('/match-history?id='+str(history[0]['id']))[0],200)
         api('/api/matches?before=oops',expected=400)
 
+    def test_13_portable_presets_update_status_and_moderation_feedback(self):
+        sql('DELETE FROM rate_limits');owner_id=sql("SELECT account_id FROM server_owners WHERE server_id='ops-server'")[0]['account_id'];session='8'*64
+        sql("INSERT INTO sessions(token_hash,account_id,expires_at) VALUES('"+hashlib.sha256(session.encode()).hexdigest()+"','"+owner_id+"',UTC_TIMESTAMP()+INTERVAL 1 HOUR)")
+        key='0'*64;health=api('/api/server-console?server=ops-server',token=session)['health']['data']
+        for i,m in enumerate(health['maps']):m['sha256']=hashlib.sha256(str(i).encode()).hexdigest()
+        health['build_id']='0.7.0+test.123';health['runtime']={'running':'0.7.0+running','staged':'0.7.0+next','previous':'0.7.0+old','outcome':'Staged','outcome_at':'2026-11-26T12:00:00Z','path':'/private/runtime'}
+        api('/api/server/health',{'snapshot':health},key)
+        doc=api('/api/server-preset?server=ops-server&name=Practice',token=session);self.assertEqual(doc['schema'],1);self.assertNotIn('maps/',json.dumps(doc));self.assertNotIn('/private',json.dumps(doc))
+        preview=api('/api/server-preset/preview',{'server':'ops-server','document':doc},session);self.assertTrue(preview['compatible']);doc['name']='Imported practice'
+        self.assertTrue(api('/api/server-preset/import',{'server':'ops-server','document':doc},session)['saved'])
+        bad=json.loads(json.dumps(doc));bad['settings']['rotation'][0]['sha256']='f'*64;self.assertFalse(api('/api/server-preset/preview',{'server':'ops-server','document':bad},session)['compatible']);api('/api/server-preset/import',{'server':'ops-server','document':bad},session,expected=409)
+        bad['settings']['rotation'][0]['file']='../escape.map';api('/api/server-preset/preview',{'server':'ops-server','document':bad},session,expected=400)
+        status,body,headers=request('/server-presets?server=ops-server',token=session);self.assertEqual(status,200);csrf=re.search(rb'name="csrf" value="([a-f0-9]+)"',body).group(1).decode()
+        request_body=urllib.parse.urlencode({'csrf':csrf,'server':'ops-server','document':json.dumps(doc),'action':'preview'}).encode();status,body,_=request('/server-presets',token=session,raw=request_body,headers={'Content-Type':'application/x-www-form-urlencoded','Cookie':'zod_csrf='+csrf});self.assertEqual(status,200);self.assertIn(b'Import named preset',body)
+        boundary='ZodPresetBoundary';parts=[]
+        for field,value in {'csrf':csrf,'server':'ops-server','action':'preview'}.items():parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{field}"\r\n\r\n{value}\r\n'.encode())
+        parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="preset_file"; filename="practice.json"\r\nContent-Type: application/json\r\n\r\n'.encode()+json.dumps(doc).encode()+f'\r\n--{boundary}--\r\n'.encode())
+        self.assertEqual(request('/server-presets',token=session,raw=b''.join(parts),headers={'Content-Type':'multipart/form-data; boundary='+boundary,'Cookie':'zod_csrf='+csrf})[0],200)
+        console=api('/api/server-console?server=ops-server',token=session);self.assertEqual(console['health']['data']['runtime']['staged'],'0.7.0+next');self.assertNotIn('path',console['health']['data']['runtime'])
+        moderator=api('/api/login',{'username':'OpsModerator','password':'server operations test password'})['session'];actor=api('/api/me',token=moderator)['id'];target=sql("SELECT id FROM accounts WHERE username='OpsPlayer'")[0]['id']
+        cmd=api('/api/server/moderate',{'actor':actor,'target':target,'action':'kick','reason':'Feedback test','minutes':60},key)['command'];self.assertTrue(cmd)
+        self.assertEqual(api('/api/server/moderation-status',{'actor':actor,'command':cmd},key)['status'],'pending');api('/api/server/control/ack',{'results':[{'id':cmd,'applied':True}]},key);self.assertEqual(api('/api/server/moderation-status',{'actor':actor,'command':cmd},key)['status'],'applied')
+        api('/api/server-preset?server=ops-server&name=Practice',token=moderator,expected=403)
+
 if __name__=='__main__':unittest.main()

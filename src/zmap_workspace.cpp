@@ -1,4 +1,5 @@
 #include "zmap_workspace.h"
+#include "zplaytest.h"
 #include "zmenu_theme.h"
 #include "zprefs.h"
 #include "zasset_import.h"
@@ -334,6 +335,7 @@ void ZMapWorkspace::AddMission(){
 }
 void ZMapWorkspace::RenderCampaignStudio(){
     modalLayer=1;
+    if(testReportPanel){RenderPlaytestReport();return;}
     if(eventPanel){RenderEvents();return;}
     if(timelinePanel){RenderTimeline();return;}
     if(compatibilityPanel){Rect(180,180,920,530,{24,32,39,255});Text("CAMPAIGN COMPATIBILITY",208,202,28,amber);Text("Minimum engine version",208,254,20);Field(authorCampaign.engineMin,43,208,286,864);Text("Maximum engine version (optional)",208,346,20);Field(authorCampaign.engineMax,44,208,378,864);Text("Required packs: id@minimum-version, separated by commas",208,438,20);Field(dependencyText,45,208,470,864,70);Text("Missing packs, version mismatches and cycles block installation.",208,570,18);if(Button("Save requirements",208,638,400,true)&&SaveCampaign()){compatibilityPanel=false;editField=-1;}if(Button("Back",772,638,300)){compatibilityPanel=false;editField=-1;}return;}
@@ -347,6 +349,7 @@ Rect(150,150,980,600,{24,32,39,255});Text("CAMPAIGN STUDIO",176,170,28,amber);Te
         for(const auto &project:projects){string marker;if(row<4&&ZCampaign_SafeAsset(project.root,".zod-authoring",marker)){if(Button("Edit project: "+project.title,176,402+row*54,928)){AdoptCampaign(project);campaignMission=0;editField=-1;}++row;}}
         if(!row)Text("Share the resulting campaign folder to distribute your campaign.",176,442,22);
     } else {
+        if(Button("Test report",674,168,164)){testReportPanel=true;testReportScroll=0;}
         if(Button("Undo",850,168,116))UndoCampaign(false);if(Button("Redo",978,168,126))UndoCampaign(true);
         if(Button("Add current map",176,278,210,true))AddMission();
         if(Button("Save",404,278,100)){editField=-1;SaveCampaign();}if(Button("Test run",514,278,110,true))StageCampaignTest();
@@ -438,10 +441,10 @@ void ZMapWorkspace::PasteSelection(int x,int y){
 void ZMapWorkspace::ChangeProperties(int kind,int delta){if(selectedObjects.empty())return;Remember();for(int index:selectedObjects){auto&o=map.GetObjectList()[index];if(kind==0)o.owner=(o.owner+1)%5;if(kind==1)o.health_percent=max(1,min(100,(int)o.health_percent+delta));if(kind==2&&o.object_type==BUILDING_OBJECT)o.blevel=max(0,min(5,(int)o.blevel+delta));}}
 
 namespace {void remove_editor_tree(const string &root){int count=0;char **entries=SDL_GlobDirectory(root.c_str(),"*",0,&count);for(int i=0;entries&&i<count;++i){string file=root+"/"+entries[i];SDL_PathInfo info;if(SDL_GetPathInfo(file.c_str(),&info)&&info.type==SDL_PATHTYPE_DIRECTORY)remove_editor_tree(file);else SDL_RemovePath(file.c_str());}SDL_free(entries);SDL_RemovePath((root+"/.zod-authoring").c_str());SDL_RemovePath(root.c_str());}}
-void ZMapWorkspace::FinishCampaignTest(){if(testCampaign.root.empty())return;remove_editor_tree(testCampaign.root);testCampaign={};SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(),"ZOD_EDITOR_TEST_MANIFEST");}
+void ZMapWorkspace::FinishCampaignTest(){if(testCampaign.root.empty())return;remove_editor_tree(testCampaign.root);testCampaign={};SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(),"ZOD_EDITOR_TEST_MANIFEST");SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(),"ZOD_EDITOR_TEST_SOURCE");}
 bool ZMapWorkspace::StageCampaignTest(){
  if(authorCampaign.missions.empty()||campaignMission<0||campaignMission>=(int)authorCampaign.missions.size()){message="Add and select a mission before testing";return false;}
- FinishCampaignTest();string error;if(!ZCampaign_Create("Editor test "+to_string(SDL_GetTicksNS()),testCampaign,error)){message=error;return false;}
+ if(!SaveCampaign())return false;FinishCampaignTest();string error;if(!ZCampaign_Create("Editor test "+to_string(SDL_GetTicksNS()),testCampaign,error)){message=error;return false;}
  string hidden=ZCampaign_Root()+"/."+testCampaign.id;
  if(!SDL_RenamePath(testCampaign.root.c_str(),hidden.c_str())){FinishCampaignTest();message="Could not isolate test campaign";return false;}testCampaign.root=hidden;
  testCampaign.title=authorCampaign.title+" / Playtest";testCampaign.author=authorCampaign.author;testCampaign.description=authorCampaign.description;testCampaign.missions=authorCampaign.missions;
@@ -450,6 +453,7 @@ bool ZMapWorkspace::StageCampaignTest(){
   for(string *video:{&mission.video,&mission.victoryVideo})if(!video->empty()&&video->compare(0,9,"original:")!=0){if(!ZCampaign_SafeAsset(authorCampaign.root,*video,source)){message="Missing test video: "+*video;FinishCampaignTest();return false;}string relative="video-"+to_string(i)+(video==&mission.video?"-intro.mp4":"-victory.mp4");if(!SDL_CopyFile(source.c_str(),(hidden+"/"+relative).c_str())){message="Could not snapshot test video";FinishCampaignTest();return false;}string subtitle=video->substr(0,video->find_last_of('.'))+".srt",sidecar;if(ZCampaign_SafeAsset(authorCampaign.root,subtitle,sidecar))SDL_CopyFile(sidecar.c_str(),(hidden+"/"+relative.substr(0,relative.find_last_of('.'))+".srt").c_str());*video=relative;}
  }
  if(!ZCampaign_Write(testCampaign,error)){message=error;FinishCampaignTest();return false;}issues=ZContent_ValidateCampaign(testCampaign,true);if(ZContent_HasErrors(issues)){FinishCampaignTest();issueScroll=0;validationPanel=true;campaignPanel=false;message="Resolve campaign validation errors before testing";return false;}
+ SDL_SetEnvironmentVariable(SDL_GetEnvironment(),"ZOD_EDITOR_TEST_SOURCE",(authorCampaign.root+"/campaign.ini").c_str(),true);
  SDL_SetEnvironmentVariable(SDL_GetEnvironment(),"ZOD_EDITOR_TEST_MANIFEST",(hidden+"/campaign.ini").c_str(),true);
  playPath=hidden+"/"+testCampaign.missions[campaignMission].map;closed=true;message="Campaign playtest: no records or campaign progress will be saved";return true;
 }
@@ -516,4 +520,13 @@ void ZMapWorkspace::RenderHistory(){
  if(Button("Undo last edit",328,550,220)&&!undo.empty())Undo(false);
  if(Button("Redo",560,550,160)&&!redo.empty())Undo(true);
  if(Button("Close",732,550,220))historyPanel=false;
+}
+
+void ZMapWorkspace::RenderPlaytestReport(){
+ Rect(150,150,980,600,{24,32,39,255});Text("CAMPAIGN PLAYTEST COVERAGE",176,172,28,amber);Text("Saved content only. Changes require another test; video entries are attempts.",176,218,18);
+ auto records=ZPlaytest_Read(authorCampaign);int count=authorCampaign.missions.size();testReportScroll=max(0,min(testReportScroll,max(0,count-8)));
+ for(int row=0;row<8&&row+testReportScroll<count;++row){int index=row+testReportScroll;auto &m=authorCampaign.missions[index];auto key=ZPlaytest_Fingerprint(authorCampaign,index);string status;for(auto &record:records)if(record.uid==m.uid&&record.fingerprint==key){if(!status.empty())status+=" / ";status+=record.event;if(record.next!="-")status+=" -> "+record.next;}if(status.empty())status="Not tested for current content";Text((to_string(index+1)+". "+m.title).substr(0,50),176,260+row*46,20,amber);Text(status.substr(0,105),176,284+row*46,15);}
+ if(Button("Earlier",176,654,160))testReportScroll=max(0,testReportScroll-8);if(Button("Later",348,654,160))testReportScroll=min(max(0,count-8),testReportScroll+8);
+ if(Button("Export text report",532,654,300)){string folder=ZAsset_Profile()+"diagnostics";SDL_CreateDirectory(folder.c_str());auto path=folder+"/playtest-"+authorCampaign.id+".txt";std::ofstream out(path);out<<ZPlaytest_Report(authorCampaign);out.close();message=out?"Playtest report saved in profile diagnostics":"Could not save playtest report";}
+ if(Button("Back",920,654,184))testReportPanel=false;
 }

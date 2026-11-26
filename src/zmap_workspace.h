@@ -63,6 +63,7 @@ private:
     void RenderFileTools();void RenderCampaignStudio();void Field(std::string &value,int id,float x,float y,float w,int height=38);
     std::string *Editing();std::string UniqueMapPath(const std::string &name);
     void AddMission();bool SaveCampaign();
+    bool testReportPanel=false;int testReportScroll=0;void RenderPlaytestReport();
     bool clicked=false,down=false,painting=false,dirty=false,refresh=true,grid=false,browser=false,closed=false;
     int zoneX=-1,zoneY=-1;
     Snapshot Capture();void Restore(const Snapshot &state);void Remember();void Undo(bool forward);

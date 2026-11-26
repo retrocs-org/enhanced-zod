@@ -99,7 +99,7 @@ int ZClient::ProcessMapDownload(char *data, int size)
 		if(map_data && map_data_size > 0)
 		{
 			// Verify the complete transfer before parsing any map objects.
-            if(!expected_map_hash.empty()&&ZSHA256(map_data,map_data_size)!=expected_map_hash){map_download_error="Map checksum mismatch. Reconnect to download a fresh map; ask the host to check its map if this repeats.";free(map_data);map_data=nullptr;map_data_size=0;expected_map_hash.clear();return -1;}
+            loaded_map_hash=ZSHA256(map_data,map_data_size);if(!expected_map_hash.empty()&&loaded_map_hash!=expected_map_hash){map_download_error="Map checksum mismatch. Reconnect to download a fresh map; ask the host to check its map if this repeats.";free(map_data);map_data=nullptr;map_data_size=0;expected_map_hash.clear();return -1;}
             expected_map_hash.clear();
             //load map
 			printf("map_data_size:%d\n", map_data_size);

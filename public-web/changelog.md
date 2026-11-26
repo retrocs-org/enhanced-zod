@@ -1,3 +1,11 @@
+## Reliability tools and sharing (unreleased)
+
+- Preview, upload/import and download portable named server presets, matching installed maps by SHA-256 and enforcing role/engine compatibility.
+- Show running, staged and rollback builds with the last managed update outcome and timestamp in the server console.
+- Surface authoritative-state check/mismatch counters and the host build identity with health freshness.
+- Add scoped native moderation delivery-status polling; do not label uncertain outcomes as successful delivery.
+- Update website/agent/engine together. These additions use the existing schema 007; no new migration is required.
+
 ## Match history and maintenance (unreleased)
 
 - Add detailed, paginated public match history with teams, participants and privacy-aware identities; link profiles, server consoles and statistics to results.

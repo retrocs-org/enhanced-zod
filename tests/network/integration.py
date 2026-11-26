@@ -145,6 +145,7 @@ with tempfile.TemporaryDirectory(prefix='zod-cloud-') as tmp:
    api(base,'/api/server-console',{'server':'test','action':'configure','settings':settings},session)
    bob.send('REQUEST_PLAYER_ID');bob_id=struct.unpack('=i',bob.until('GIVE_PLAYER_ID')[0])[0]
    alice.send('CLOUD_MODERATE',struct.pack('=ii',bob_id,0)+b'Integration native moderation\0')
+   assert alice.until('MODERATION_FEEDBACK')[0].startswith(b'pending'),'native feedback did not show pending'
    bob.s.settimeout(12)
    try:
     while bob.s.recv(65536):pass
@@ -153,6 +154,11 @@ with tempfile.TemporaryDirectory(prefix='zod-cloud-') as tmp:
    def delivered():
     commands=api(base,'/api/server-console?server=test',token=session)['commands'];return commands and commands[0]['status']=='applied'
    wait(delivered,15)
+   feedback_deadline=time.monotonic()+10
+   while time.monotonic()<feedback_deadline:
+    if alice.until('MODERATION_FEEDBACK')[0].startswith(b'applied'):break
+   else:raise AssertionError('native feedback did not confirm delivery')
+   wait(lambda:api(base,'/api/server-console?server=test',token=session)['health']['data'].get('sync_checks',0)>0,15)
    # A fresh public host enrolls through the actual agent CLI, without an operator-created key.
    reset_limits();device_state=root/'device-host';device_log=root/'device-host.log';device_port=port()
    device_args=[AGENT,'--mode','public','--engine',ENGINE,'--data',DATA,'--port',str(device_port),'--state',str(device_state),'--hub',base,'--id','device-host','--name','Browser-owned host']

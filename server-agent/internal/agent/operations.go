@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
@@ -18,6 +19,7 @@ import (
 type engineStatus struct {
 	Players, Started, Capacity int
 	Map, Version, Round        string
+	BuildID                    string `json:"build_id"`
 	Maps                       []string
 	Roster                     []map[string]string
 	Intermission               bool
@@ -26,6 +28,8 @@ type engineStatus struct {
 	Uptime                     float64
 	RoleAge                    float64 `json:"role_age"`
 	NextMap                    string  `json:"next_map"`
+	SyncChecks                 int64   `json:"sync_checks"`
+	SyncMismatches             int64   `json:"sync_mismatches"`
 	AppliedRevision            int64   `json:"applied_revision"`
 }
 
@@ -66,6 +70,9 @@ func (a *Agent) publishHealth(ctx context.Context) {
 		cache := a.catalog[path]
 		stamp := fmt.Sprintf("%d:%d", info.ModTime().UnixNano(), info.Size())
 		if cache == nil || cache["stamp"] != stamp {
+			if info.Size() > 16*1024*1024 {
+				continue
+			}
 			call, cancel := context.WithTimeout(ctx, 2*time.Second)
 			cmd := exec.CommandContext(call, a.cfg.Engine, "--map-info", full)
 			cmd.Dir = a.cfg.Data
@@ -81,7 +88,12 @@ func (a *Agent) publishHealth(ctx context.Context) {
 			if json.Unmarshal(data, &preview) != nil || preview.Width < 1 || preview.Height < 1 {
 				continue
 			}
-			cache = map[string]any{"map": path, "title": filepath.Base(path), "width": preview.Width, "height": preview.Height, "forts": preview.Forts, "zones": preview.Zones, "stamp": stamp}
+			bytes, readError := os.ReadFile(full)
+			if readError != nil || len(bytes) > 16*1024*1024 {
+				continue
+			}
+			sum := sha256.Sum256(bytes)
+			cache = map[string]any{"sha256": hex.EncodeToString(sum[:]), "map": path, "title": filepath.Base(path), "width": preview.Width, "height": preview.Height, "forts": preview.Forts, "zones": preview.Zones, "stamp": stamp}
 			a.catalog[path] = cache
 		}
 		copy := map[string]any{}
@@ -103,7 +115,7 @@ func (a *Agent) publishHealth(ctx context.Context) {
 	if roster == nil {
 		roster = []map[string]string{}
 	}
-	snapshot := map[string]any{"maps": maps, "roster": roster, "round": status.Round, "intermission": status.Intermission, "vote_remaining": status.VoteRemaining, "tick_ms": status.TickMS, "uptime": status.Uptime, "role_age": status.RoleAge, "next_map": status.NextMap, "outbox": pending, "cloud_ok": time.Now().Unix()-a.lastRoleSuccess.Load() < 15, "applied_revision": status.AppliedRevision}
+	snapshot := map[string]any{"sync_checks": status.SyncChecks, "sync_mismatches": status.SyncMismatches, "build_id": status.BuildID, "engine_version": status.Version, "runtime": a.runtimeReport(status), "maps": maps, "roster": roster, "round": status.Round, "intermission": status.Intermission, "vote_remaining": status.VoteRemaining, "tick_ms": status.TickMS, "uptime": status.Uptime, "role_age": status.RoleAge, "next_map": status.NextMap, "outbox": pending, "cloud_ok": time.Now().Unix()-a.lastRoleSuccess.Load() < 15, "applied_revision": status.AppliedRevision}
 	// Keep telemetry below the portal's normal request bound.
 	for {
 		data, _ := json.Marshal(snapshot)

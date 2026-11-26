@@ -7,6 +7,10 @@
 #include "zcontent.h"
 #include "zmenu_theme.h"
 #include "zfrontend.h"
+#include "zbuild.h"
+#include "zplaytest.h"
+#include "zportal.h"
+#include <fstream>
 #include "zreplay.h"
 #include "zmpclient.h"
 #include "zvideo.h"
@@ -554,6 +558,8 @@ bool ZFrontEnd::PopAction(Action &out)
 	if(actions.empty()) return false;
 	out = actions.front();
 	actions.erase(actions.begin());
+    if(out.type==FE_OPEN_MULTIPLAYER){std::ifstream seen(ZAsset_Profile()+"multiplayer-guide-seen");if(!seen&&!guide_completed_session){guide_return=screen;screen=SCR_MULTIPLAYER_GUIDE;multiplayer_guide_step=0;return false;}}
+
     if(out.type==FE_START_MAP||out.type==FE_START_CAMPAIGN_MAP||out.type==FE_START_MAP_FILE||out.type==FE_LOAD_SAVE){deployment_action=out;has_deployment_retry=true;deployment_failed=false;}
 	//anything but a campaign level (custom map, save, multiplayer...) is not a
 	//level whose cutscenes we should show
@@ -599,7 +605,7 @@ void ZFrontEnd::PlayLevelResult(bool won)
 {
     if(community_running && current_level>=0 && current_level<(int)selected_campaign.missions.size()) {
         const auto &video=selected_campaign.missions[current_level].victoryVideo;
-        if(won&&!video.empty()) {if(video.compare(0,9,"original:")==0)ZMovie_PlayClip(video.substr(9));else {string file;if(ZCampaign_SafeAsset(selected_campaign.root,video,file)){ZAudio_PauseMusic(true);ZMovie_Play(file);ZAudio_PauseMusic(false);}}}return;
+        if(won&&!video.empty()) {if(editor_testing)ZPlaytest_Event(selected_campaign,current_level,"victory-video-attempt");if(video.compare(0,9,"original:")==0)ZMovie_PlayClip(video.substr(9));else {string file;if(ZCampaign_SafeAsset(selected_campaign.root,video,file)){ZAudio_PauseMusic(true);ZMovie_Play(file);ZAudio_PauseMusic(false);}}}return;
     }
 
 	int index = current_level;
@@ -1261,6 +1267,7 @@ void ZFrontEnd::StartLevel(int index, bool via_briefing)
         else {
             const auto &mission=selected_campaign.missions[index];
             if(!mission.video.empty()) {
+                if(editor_testing)ZPlaytest_Event(selected_campaign,index,"intro-video-attempt");
                 if(mission.video.compare(0,9,"original:")==0)ZMovie_PlayClip(mission.video.substr(9));
                 else {string file;if(ZCampaign_SafeAsset(selected_campaign.root,mission.video,file)){ZAudio_PauseMusic(true);ZMovie_Play(file);ZAudio_PauseMusic(false);SDL_FlushEvents(SDL_EVENT_KEY_DOWN,SDL_EVENT_KEY_UP);SDL_FlushEvents(SDL_EVENT_MOUSE_BUTTON_DOWN,SDL_EVENT_MOUSE_WHEEL);}}
             }
@@ -1268,12 +1275,14 @@ void ZFrontEnd::StartLevel(int index, bool via_briefing)
             for(int i=0;i<MAX_ROBOT_TYPES;++i)if(robot_type_string[i]==mission.character)campaign_portrait.SetRobotID(i);
             campaign_portrait.SetTeam(RED_TEAM);campaign_portrait.SetCords(0,0);campaign_portrait.SetOverMap(false);campaign_portrait.SetTerrainType((planet_type)levels[index].planet);campaign_portrait.SetDoRandomAnims(!zod_reduced_motion);campaign_portrait.StartAnim(UNIT_REPORTING1_ANIM,false);
         }
+        if(editor_testing)ZPlaytest_Event(selected_campaign,index,"briefing");
 		briefing_level = index;
 		screen = SCR_BRIEFING;
 		Sound(snd_click);
 		return;
 	}
 
+    if(editor_testing&&!selected_campaign.id.empty())ZPlaytest_Event(selected_campaign,index,"start");
 	Sound(snd_start);
 	if(selected_campaign.id.empty())actions.push_back(Action(FE_START_MAP,index));
     else {Action action(FE_START_CAMPAIGN_MAP,index);action.text=levels[index].file;actions.push_back(action);community_running=true;community_next=-1;if(!mission_replay)progress_current=index;if(!editor_testing&&!mission_replay)ZCampaign_Progress(selected_campaign.id,progress_current,progress_unlocked,true);}
@@ -1481,6 +1490,8 @@ void ZFrontEnd::Render()
     case SCR_CAMPAIGNS: RenderCampaigns();break;
     case SCR_RECORDINGS:RenderRecordings();break;
     case SCR_ALERTS:RenderAlerts();break;
+    case SCR_MULTIPLAYER_GUIDE:RenderMultiplayerGuide();break;
+    case SCR_BUILD_INFO:RenderBuildInfo();break;
     case SCR_EDITOR: if(workspace && workspace->Render()) {
         string play=workspace->PlayPath();editor_testing=!play.empty();if(!editor_testing)workspace.reset();ZVideo_SetFullscreen(editor_fullscreen_previous);screen=SCR_MAIN;ScanCustomMaps(true);
         if(editor_testing&&!workspace->TestCampaign().root.empty()){editor_previous_campaign=selected_campaign;editor_previous_levels=levels;editor_previous_level=current_level;editor_previous_current=progress_current;editor_previous_unlocked=progress_unlocked;selected_campaign=workspace->TestCampaign();levels.clear();for(const auto &mission:selected_campaign.missions){LevelInfo info;info.title=mission.title;info.base=mission.map;ZCampaign_SafeAsset(selected_campaign.root,mission.map,info.file);ZMap map;info.planet=DESERT;info.w=info.h=0;if(map.Read(info.file.c_str())){info.planet=map.GetMapBasics().terrain_type;info.w=map.GetMapBasics().width;info.h=map.GetMapBasics().height;}levels.push_back(info);}StartLevel(workspace->TestMission(),true);break;}
@@ -1599,7 +1610,7 @@ void ZFrontEnd::RenderCommandMain(bool interactive)
         else if(campaign)StartLevel(progress_current,true);else {ScanCampaigns();screen=SCR_CAMPAIGNS;}
     }
     if(Button("Quit",72,714,150,46,interactive)) { screen_before_quit=SCR_MAIN;screen=SCR_QUIT;Sound(snd_click); }
-    DrawLabel(font_ui_medium,18,"zod-enhanced / "+string(ZOD_VERSION),258,727,C_STEEL_DIM);
+    DrawLabel(font_ui_medium,18,"Build "+ZBuild_ID(),258,727,C_STEEL_DIM);
     if(Button("Import disc",868,714,160,46,interactive)) { screen=SCR_IMPORT;Sound(snd_click); }
     if(Button("Options",1048,714,160,46,interactive)) { screen=SCR_SETTINGS;Sound(snd_click); }
 }
@@ -1665,7 +1676,8 @@ void ZFrontEnd::RenderSettings(bool interactive)
     if(kb_dy&&!groups[settings_category].empty()){settings_focus=max(0,min(settings_focus+kb_dy,(int)groups[settings_category].size()-1));}
     if(kb_dx){if(settings_category==1){int *v=settings_focus==0?&zod_effects_volume:&zod_music_volume;*v=max(0,min(100,*v+kb_dx*5));ZAudio_ApplyVolumes();ZPrefs_Save();}else if(!groups[settings_category].empty())AdjustSetting(groups[settings_category][min(settings_focus,(int)groups[settings_category].size()-1)],kb_dx);}
     if(Button("Reset category",252,618,220,40,interactive)){ZPrefs_ResetCategory(settings_category);ZVideo_SetFullscreen(zod_fullscreen);ZVideo_SetGamma(zod_gamma);ZVideo_SetPictureMode(zod_picture_mode);ZAudio_ApplyVolumes();actions.push_back(Action(FE_SET_MUSIC,zod_music?1:0));}
-    DrawLabel(font_ui_medium,16,"Up/Down selects a setting; Left/Right adjusts it.",490,632,C_STEEL_DIM);
+    DrawLabel(font_ui_medium,14,"Arrows adjust settings; Tab navigates.",490,682,C_STEEL_DIM);
+    if(Button("About / build information",650,618,358,40,interactive)){build_info_message.clear();screen=SCR_BUILD_INFO;}
     if(settings_category==3){
         if(Button("Stick dead zone: "+to_string(zod_stick_deadzone)+"%",268,494,740,40,interactive)){zod_stick_deadzone=zod_stick_deadzone>=40?5:min(40,zod_stick_deadzone+5);ZPrefs_Save();}
         if(Button("Edge scrolling: "+to_string(zod_edge_scroll_percent)+"%",268,544,740,40,interactive)){zod_edge_scroll_percent=(zod_edge_scroll_percent+25)%225;ZPrefs_Save();}
@@ -1680,6 +1692,7 @@ void ZFrontEnd::RenderSettings(bool interactive)
         for(int i=0;i<4;++i)if(Button(labels[i],268,316+i*60,740,44,interactive,settings_focus==i)||((kb_activate||kb_dx)&&settings_focus==i)){kb_activate=false;settings_focus=i;if(i==0)zod_text_percent=100+(zod_text_percent-100+(kb_dx<0?20:10))%30;if(i==1)zod_cursor_percent=100+(zod_cursor_percent-100+(kb_dx<0?100:50))%150;if(i==2)zod_team_markers=!zod_team_markers;if(i==3)zod_reduced_motion=!zod_reduced_motion;ZPrefs_Save();}
         DrawLabel(font_ui_medium,17,"Presets change related settings together; individual options remain editable.",268,600,C_STEEL_DIM);
     }
+    if(settings_category==4&&Button("Multiplayer guide",268,554,354,40,interactive)){guide_return=screen;screen=SCR_MULTIPLAYER_GUIDE;multiplayer_guide_step=0;}
     if(settings_category==4&&Button("Export diagnostics",650,554,358,40,interactive)){string path;bool exported=ZAsset_ExportDiagnostics(path,asset_import.phase);screen=SCR_IMPORT;import_return_screen=SCR_SETTINGS;asset_import.message=!exported?"Could not export diagnostics.":"Diagnostics saved in your profile diagnostics folder. No personal paths or raw logs included.";}
     if(settings_category==4){DrawLabel(font_ui,23,"Video volume",268,398,C_STEEL);if(Button("-",650,390,40,40,interactive)){zod_video_volume=max(0,zod_video_volume-5);ZPrefs_Save();}DrawLabel(font_ui,22,to_string(zod_video_volume)+"%",848,398,C_STEEL_HI,1);if(Button("+",968,390,40,40,interactive)){zod_video_volume=min(100,zod_video_volume+5);ZPrefs_Save();}if(Button(zod_video_subtitles?"Subtitles: On":"Subtitles: Off",650,448,358,40,interactive)){zod_video_subtitles=!zod_video_subtitles;ZPrefs_Save();}}
     if(settings_category==0){
@@ -2775,7 +2788,7 @@ void ZFrontEnd::RenderCampaigns(){
 }
 
 
-void ZFrontEnd::RecordCampaignResult(bool won,int seconds,int kills,int lost,int difficulty){if(editor_testing){{const auto *mission=!selected_campaign.id.empty()&&current_level>=0&&current_level<(int)selected_campaign.missions.size()?&selected_campaign.missions[current_level]:nullptr;int branch=mission?(won?mission->nextWin:mission->nextLoss):-1;community_next=branch!=-1?branch:won?(current_level+1<(int)levels.size()?current_level+1:-2):current_level;}return;}if(won&&seconds>=0&&current_level>=0&&current_level<(int)levels.size())ZCampaign_RecordWin(selected_campaign.id.empty()?"original":selected_campaign.id,selected_campaign.id.empty()?levels[current_level].base:ZCampaign_MissionKey(selected_campaign,current_level),seconds,kills,lost,difficulty);if(won&&current_level>=0&&current_level<(int)levels.size())ZCampaign_MarkCompleted(selected_campaign.id.empty()?"original":selected_campaign.id,selected_campaign.id.empty()?levels[current_level].base:ZCampaign_MissionKey(selected_campaign,current_level));if(mission_replay){community_next=-1;return;}if(!community_running||current_level<0)return;{const auto *mission=!selected_campaign.id.empty()&&current_level>=0&&current_level<(int)selected_campaign.missions.size()?&selected_campaign.missions[current_level]:nullptr;int branch=mission?(won?mission->nextWin:mission->nextLoss):-1;community_next=branch!=-1?branch:won?(current_level+1<(int)levels.size()?current_level+1:-2):current_level;}progress_current=community_next==-2&&ZCampaign_Branched(selected_campaign)?-2:community_next==-2?(int)levels.size()-1:community_next;progress_unlocked=max(progress_unlocked,progress_current);ZCampaign_Progress(selected_campaign.id,progress_current,progress_unlocked,true);}
+void ZFrontEnd::RecordCampaignResult(bool won,int seconds,int kills,int lost,int difficulty){if(editor_testing){{const auto *mission=!selected_campaign.id.empty()&&current_level>=0&&current_level<(int)selected_campaign.missions.size()?&selected_campaign.missions[current_level]:nullptr;int branch=mission?(won?mission->nextWin:mission->nextLoss):-1;community_next=branch!=-1?branch:won?(current_level+1<(int)levels.size()?current_level+1:-2):current_level;}ZPlaytest_Event(selected_campaign,current_level,won?"victory":"defeat",community_next);return;}if(won&&seconds>=0&&current_level>=0&&current_level<(int)levels.size())ZCampaign_RecordWin(selected_campaign.id.empty()?"original":selected_campaign.id,selected_campaign.id.empty()?levels[current_level].base:ZCampaign_MissionKey(selected_campaign,current_level),seconds,kills,lost,difficulty);if(won&&current_level>=0&&current_level<(int)levels.size())ZCampaign_MarkCompleted(selected_campaign.id.empty()?"original":selected_campaign.id,selected_campaign.id.empty()?levels[current_level].base:ZCampaign_MissionKey(selected_campaign,current_level));if(mission_replay){community_next=-1;return;}if(!community_running||current_level<0)return;{const auto *mission=!selected_campaign.id.empty()&&current_level>=0&&current_level<(int)selected_campaign.missions.size()?&selected_campaign.missions[current_level]:nullptr;int branch=mission?(won?mission->nextWin:mission->nextLoss):-1;community_next=branch!=-1?branch:won?(current_level+1<(int)levels.size()?current_level+1:-2):current_level;}progress_current=community_next==-2&&ZCampaign_Branched(selected_campaign)?-2:community_next==-2?(int)levels.size()-1:community_next;progress_unlocked=max(progress_unlocked,progress_current);ZCampaign_Progress(selected_campaign.id,progress_current,progress_unlocked,true);}
 void ZFrontEnd::ContinueCommunity(){if(workspace&&screen==SCR_EDITOR)return;int next=community_next;community_running=false;community_next=-1;if(next>=0)StartLevel(next,true);else{ScanCampaigns();screen=SCR_CAMPAIGNS;}}
 void ZFrontEnd::RenderCommunityBriefing(){
     if(briefing_level<0||briefing_level>=(int)selected_campaign.missions.size()){screen=SCR_MAIN;return;}
@@ -2812,3 +2825,25 @@ void ZFrontEnd::RenderRecordings(){
 }
 
 void ZFrontEnd::RenderAlerts(){int before=(zod_damage_alerts?1:0)+(zod_production_alerts?2:0)+(zod_alert_sounds?4:0)+zod_alert_cooldown_ms*8;DimScreen(190);DrawPanel(240,150,800,520);DrawLabel(font_ui,30,"BATTLE ALERTS",272,174,C_AMBER);if(Button(zod_damage_alerts?"Damage alerts: On":"Damage alerts: Off",272,246,736,46))zod_damage_alerts=!zod_damage_alerts;if(Button(zod_production_alerts?"Production alerts: On":"Production alerts: Off",272,306,736,46))zod_production_alerts=!zod_production_alerts;if(Button(zod_alert_sounds?"Alert sounds: On":"Alert sounds: Off",272,366,736,46))zod_alert_sounds=!zod_alert_sounds;if(Button("Repeat cooldown: "+to_string(zod_alert_cooldown_ms)+" ms",272,426,736,46))zod_alert_cooldown_ms=zod_alert_cooldown_ms>=10000?500:zod_alert_cooldown_ms+500;DrawLabel(font_ui_medium,17,"Nearby repeated alerts merge. History retains the latest 32 notices.",272,500,C_STEEL);if(Button("Reset alerts",272,584,300,44))ZPrefs_ResetCategory(6);if(Button("Back",768,584,240,44)||kb_back){kb_back=false;screen=SCR_SETTINGS;}if(before!=(zod_damage_alerts?1:0)+(zod_production_alerts?2:0)+(zod_alert_sounds?4:0)+zod_alert_cooldown_ms*8)ZPrefs_Save();}
+
+void ZFrontEnd::RenderMultiplayerGuide(){
+ DimScreen(190);DrawPanel(140,100,1000,610);DrawLabel(font_ui,28,"MULTIPLAYER / GETTING STARTED",176,132,C_AMBER);
+ const char *titles[]={"1. Import your game data","2. Public servers use your cloud account","3. Private games stay independent","4. Join friends and check compatibility"};
+ const char *lines[4][4]={{"Use Import disc to install your own original graphics and sounds.","The engine download contains our code and tools, not original game media.","Map data is downloaded from the host and verified before loading.","If assets are missing, return to Import disc from the main menu."},{"Choose Online games, select a server, then approve in your browser.","Only sign in on your configured HTTPS portal; the game never needs your password.","Approval is short lived and can be used once for the selected server.","If it expires or the connection drops, request fresh browser approval."},{"Private and LAN hosts support guests without a cloud account.","Share the host address and game port with people you invite.","Local campaign and private play do not submit public account statistics.","The public server owner controls administrators, moderators and temporary bans."},{"Use the portal community page for friends and server invitations.","Match the host engine version; check map and capacity in the browser.","Different local maps use the host copy; your saved maps are not replaced.","If a join fails, read the connection message before retrying."}};
+ DrawLabel(font_ui,25,titles[multiplayer_guide_step],176,220,C_STEEL);for(int i=0;i<4;++i)DrawLabel(font_ui_medium,20,lines[multiplayer_guide_step][i],176,282+i*60,C_STEEL);
+ if(multiplayer_guide_step==0&&Button("Open importer",176,544,270,42)){import_return_screen=SCR_MULTIPLAYER_GUIDE;screen=SCR_IMPORT;}
+ if(multiplayer_guide_step==3&&Button("Friends on the portal",176,544,300,42))SDL_OpenURL((ZPortal_URL()+"/community").c_str());
+ if(Button("Back",176,636,190,44)){if(multiplayer_guide_step) --multiplayer_guide_step;else screen=guide_return;}
+ if(kb_back){kb_back=false;screen=guide_return;}
+ if(Button(multiplayer_guide_step==3?"Open server browser":"Next",780,636,324,44,true,true)||kb_activate){kb_activate=false;if(multiplayer_guide_step<3)++multiplayer_guide_step;else {SDL_CreateDirectory(ZAsset_Profile().c_str());std::ofstream seen(ZAsset_Profile()+"multiplayer-guide-seen");seen<<"1\n";seen.close();guide_completed_session=true;screen=SCR_MAIN;actions.push_back(Action(FE_OPEN_MULTIPLAYER));}}
+}
+
+void ZFrontEnd::RenderBuildInfo(){
+ DimScreen(190);DrawPanel(140,100,1000,610);DrawLabel(font_ui,28,"ABOUT / BUILD INFORMATION",176,132,C_AMBER);auto json=ZBuild_JSON();std::string value;
+ const char *keys[]={"version","commit","configuration","compiler","platform"};const char *labels[]={"Version: ","Commit: ","Configuration: ","Compiler: ","Platform: "};DrawLabel(font_ui_medium,20,"Build: "+ZBuild_ID(),176,204,C_STEEL);
+ for(int i=0;i<5;++i)if(ZPortal_String(json,keys[i],value))DrawLabel(font_ui_medium,19,std::string(labels[i])+value,176,250+i*42,C_STEEL);
+ if(ZPortal_String(json,"source_sha256",value)){DrawLabel(font_ui_medium,17,"Source SHA-256: "+value.substr(0,32),176,474,C_STEEL_DIM);DrawLabel(font_ui_medium,17,value.substr(32),332,502,C_STEEL_DIM);}
+ DrawLabel(font_ui_medium,18,"Based on Zod Engine by Michael Bok / Nighsoft. SDL3 foundation by fenio.",176,546,C_STEEL_DIM);
+ if(Button("Copy build JSON",176,594,300,42))build_info_message=SDL_SetClipboardText(json.c_str())?"Build information copied":"Clipboard unavailable; use --build-info or export diagnostics";
+ DrawLabel(font_ui_medium,16,build_info_message,176,650,C_AMBER);if(Button("Back",900,636,204,44)||kb_back){kb_back=false;screen=SCR_SETTINGS;}
+}

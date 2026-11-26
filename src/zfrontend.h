@@ -97,7 +97,7 @@ public:
 
 private:
 	friend struct ZFrontEndRegression;
-	enum Screen { SCR_MAIN, SCR_REPLAY, SCR_SCORES, SCR_BRIEFING, SCR_LOADING, SCR_QUIT, SCR_LOAD, SCR_CUSTOM, SCR_KEYS, SCR_IMPORT, SCR_SETTINGS, SCR_EDITOR, SCR_CAMPAIGNS, SCR_RECORDINGS, SCR_ALERTS };
+	enum Screen { SCR_MAIN, SCR_REPLAY, SCR_SCORES, SCR_BRIEFING, SCR_LOADING, SCR_QUIT, SCR_LOAD, SCR_CUSTOM, SCR_KEYS, SCR_IMPORT, SCR_SETTINGS, SCR_EDITOR, SCR_CAMPAIGNS, SCR_RECORDINGS, SCR_ALERTS, SCR_MULTIPLAYER_GUIDE, SCR_BUILD_INFO };
 
 	struct CustomMap
 	{
@@ -137,7 +137,7 @@ private:
     int campaign_dependency_scroll=0,campaign_backup_choice=0;
     std::string recordingDetails,recordingError;int recordingInspected=-1;
     std::vector<std::string> recordingFiles;int recordingChoice=0,recordingScroll=0;
-    void RenderRecordings();void RenderAlerts();
+    void RenderRecordings();void RenderAlerts();void RenderMultiplayerGuide();void RenderBuildInfo();std::string build_info_message;bool guide_completed_session=false;int multiplayer_guide_step=0;Screen guide_return=SCR_MAIN;
     void RenderImport();
 
 	// ---- state ----

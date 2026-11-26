@@ -31,13 +31,15 @@ void GMMPlayerList::SetupLayout1()
 
 	h = GMM_TITLE_MARGIN + player_list.GetHeight() + GMM_BOTTOM_MARGIN + MMLABEL_HEIGHT + 2;
 
-	if(staff){int y=h-GMM_BOTTOM_MARGIN;help.SetText("Select player; reason required. Ban: 60 min.");help.SetCoords(GMM_SIDE_MARGIN,y);help.SetDimensions(w-2*GMM_SIDE_MARGIN,12);AddWidget(&help);y+=16;reason.SetMaxText(160);reason.SetCoords(GMM_SIDE_MARGIN,y);reason.SetDimensions(w-2*GMM_SIDE_MARGIN,16);AddWidget(&reason);y+=20;for(auto *b:{&kick,&ban}){b->SetType(MMGENERIC_BUTTON);b->SetDimensions((w-2*GMM_SIDE_MARGIN-4)/2,GMMWBUTTON_HEIGHT);AddWidget(b);}kick.SetText("Kick selected");ban.SetText("Ban 60 min");kick.SetCoords(GMM_SIDE_MARGIN,y);ban.SetCoords(w/2+2,y);h=y+GMMWBUTTON_HEIGHT+GMM_BOTTOM_MARGIN;}
+	if(staff){int y=h-GMM_BOTTOM_MARGIN;help.SetText("Select player and reason; Tab navigates controls.");help.SetCoords(GMM_SIDE_MARGIN,y);help.SetDimensions(w-2*GMM_SIDE_MARGIN,12);AddWidget(&help);y+=16;reason.SetMaxText(160);reason.SetCoords(GMM_SIDE_MARGIN,y);reason.SetDimensions(w-2*GMM_SIDE_MARGIN,16);AddWidget(&reason);y+=20;duration.SetType(MMGENERIC_BUTTON);duration.SetText("Ban duration: 1 hour");duration.SetCoords(GMM_SIDE_MARGIN,y);duration.SetDimensions(w-2*GMM_SIDE_MARGIN,GMMWBUTTON_HEIGHT);AddWidget(&duration);y+=GMMWBUTTON_HEIGHT+4;for(auto *b:{&kick,&ban}){b->SetType(MMGENERIC_BUTTON);b->SetDimensions((w-2*GMM_SIDE_MARGIN-4)/2,GMMWBUTTON_HEIGHT);AddWidget(b);}kick.SetText("Kick selected");ban.SetText("Ban selected");kick.SetCoords(GMM_SIDE_MARGIN,y);ban.SetCoords(w/2+2,y);h=y+GMMWBUTTON_HEIGHT+GMM_BOTTOM_MARGIN;}
     //needed if w is ever changed / set
 	UpdateDimensions();
 }
 
 void GMMPlayerList::Process()
 {
+    if(moderation_pending&&SDL_GetTicks()-moderation_sent_at>70000)SetFeedback("expired: delivery not confirmed; check portal history");
+    kick.SetActive(!moderation_pending);ban.SetActive(!moderation_pending);
 	SetupList();
 
 	ProcessWidgets();
@@ -78,9 +80,12 @@ void GMMPlayerList::SetupList()
 
 void GMMPlayerList::HandleWidgetEvent(int event_type, ZGMMWidget *event_widget)
 {
+ if(staff&&event_type==GMM_UNCLICK_EVENT&&event_widget==&duration){const int values[]={15,60,1440,10080};duration_index=(duration_index+1)%4;const char *labels[]={"15 min","1 hour","1 day","7 days"};duration.SetText(string("Ban duration: ")+labels[duration_index]);}
  if(event_widget==&player_list){int index=player_list.GetFirstSelected();if(index>=0&&index<(int)player_list.GetEntryList().size())selected=player_list.GetEntryList()[index].ref_id;}
- if(staff&&event_type==GMM_UNCLICK_EVENT&&(event_widget==&kick||event_widget==&ban)){
+ if(staff&&!moderation_pending&&event_type==GMM_UNCLICK_EVENT&&(event_widget==&kick||event_widget==&ban)){
   if(selected<0||reason.GetText().empty()){help.SetText("Select a player and enter a reason first.");return;}
-  gmm_flags.moderate_target=selected;gmm_flags.moderate_minutes=event_widget==&ban?60:0;gmm_flags.moderate_reason=reason.GetText().substr(0,160);help.SetText("Request queued; server checks your current permissions.");
+  gmm_flags.moderate_target=selected;const int minutes[]={15,60,1440,10080};gmm_flags.moderate_minutes=event_widget==&ban?minutes[duration_index]:0;moderation_pending=true;moderation_sent_at=SDL_GetTicks();gmm_flags.moderate_reason=reason.GetText().substr(0,160);help.SetText("Request queued; server checks your current permissions.");
  }
 }
+
+void GMMPlayerList::SetFeedback(const string &status){moderation_pending=status.compare(0,7,"pending")==0;help.SetText(status.substr(0,65));}

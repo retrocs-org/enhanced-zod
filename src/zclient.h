@@ -15,7 +15,7 @@ class ZClient : public ZCore
 		virtual void SetDesiredTeam(team_type player_team);
 	protected:
 		int ProcessMapDownload(char *data, int size);
-        std::string expected_map_hash,map_download_error;int map_download_next=0;
+        std::string expected_map_hash,map_download_error,loaded_map_hash;int map_download_next=0;
 		ZObject* ProcessNewObject(char *data, int size);
 		void ProcessZoneInfo(char *data, int size);
 		ZObject* ProcessObjectTeam(char *data, int size);

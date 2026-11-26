@@ -52,3 +52,38 @@ func TestOperationsWireAndScopedAcknowledgement(t *testing.T) {
 		t.Fatal("acknowledgement failed", w.Code)
 	}
 }
+
+func TestNativeModerationDeliveryFeedback(t *testing.T) {
+	hub := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/api/server/moderate" {
+			w.Write([]byte(`{"ok":true,"command":"42"}`))
+			return
+		}
+		if r.URL.Path == "/api/server/moderation-status" {
+			w.Write([]byte(`{"status":"applied"}`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer hub.Close()
+	a, e := New(Config{Mode: "public", Hub: hub.URL, ID: "owned", Key: strings.Repeat("c", 64), Port: 2137})
+	if e != nil {
+		t.Fatal(e)
+	}
+	w := httptest.NewRecorder()
+	a.Moderate(w, httptest.NewRequest("POST", "/moderate", strings.NewReader(`{"Secret":"wrong"}`)))
+	if w.Code != 401 {
+		t.Fatal("unauthenticated local moderation")
+	}
+	w = httptest.NewRecorder()
+	a.Moderate(w, httptest.NewRequest("POST", "/moderate", strings.NewReader(`{"Secret":"`+a.secret+`","Actor":"`+strings.Repeat("a", 64)+`","Target":"`+strings.Repeat("b", 64)+`","Action":"kick","Reason":"Test","Minutes":60}`)))
+	if w.Code != 200 || strings.TrimSpace(w.Body.String()) != "42" {
+		t.Fatal("missing durable command identity", w.Code)
+	}
+	w = httptest.NewRecorder()
+	a.ModerationStatus(w, httptest.NewRequest("POST", "/moderation-status", strings.NewReader(`{"Secret":"`+a.secret+`","Actor":"`+strings.Repeat("a", 64)+`","Command":"42"}`)))
+	if w.Code != 200 || strings.TrimSpace(w.Body.String()) != "applied" {
+		t.Fatal("missing delivery feedback", w.Code)
+	}
+}

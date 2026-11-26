@@ -1,5 +1,8 @@
 #include "zserver.h"
 #include "zhash.h"
+#include "zbuild.h"
+#include "zsync.h"
+#include "zplaytest.h"
 #include "gmm_player_list.h"
 #include <ctime>
 #include "zgamepad.h"
@@ -98,7 +101,7 @@ struct ZFrontEndRegression {
         frontend.FreeGraphics();SDL_Quit();std::cout<<"enhancements-ok";
     }
     static void polish(const string &root){
-        REQUIRE(SDL_Init(SDL_INIT_VIDEO));REQUIRE(ZVideo_SetMode(1280,800,false));ZFontEngine::Init();ZGuiMainMenuBase::Init();GMMWButton::Init();ZSDL_Surface::SetScreenDimensions(1280,800);
+        REQUIRE(SDL_Init(SDL_INIT_VIDEO));REQUIRE(ZVideo_SetMode(1280,800,false));ZFontEngine::Init();ZGuiMainMenuBase::Init();GMMWButton::Init();GMMWList::Init();ZSDL_Surface::SetScreenDimensions(1280,800);
         zod_text_percent=120;zod_cursor_percent=150;zod_team_markers=zod_reduced_motion=true;ZPrefs_Save();zod_text_percent=zod_cursor_percent=100;zod_team_markers=zod_reduced_motion=false;ZPrefs_Load();REQUIRE(zod_text_percent==120&&zod_cursor_percent==150&&zod_team_markers&&zod_reduced_motion);
         GMMOptions options;for(int i=0;i<4;++i)options.KeyPress(']');options.KeyPress(13);REQUIRE(zod_text_percent==100);options.KeyPress(SDLK_DOWN);options.KeyPress(13);REQUIRE(zod_cursor_percent==200);ZPrefs_ResetCategory(5);REQUIRE(zod_cursor_percent==100&&!zod_team_markers&&!zod_reduced_motion);
         ZFrontEnd frontend;frontend.Show();REQUIRE(frontend.EnsureGraphics());frontend.custom_dir=root+"/polish-maps";SDL_CreateDirectory(frontend.custom_dir.c_str());REQUIRE(frontend.LaunchEditor({"maps/p02_bb_orig01.map"}));auto &editor=*frontend.workspace;
@@ -113,11 +116,13 @@ struct ZFrontEndRegression {
         zod_text_percent=120;GMMSaveGame saveMenu;saveMenu.SetCenterCoords(640,400);saveMenu.SetRenderScale(2);renderMenu(saveMenu,"save-menu");saveMenu.KeyPress(SDLK_DOWN);saveMenu.KeyPress(SDLK_RETURN);REQUIRE(saveMenu.KillMe()&&saveMenu.GetGMMFlags().save_slot==2);
         GMMOptions gameOptions;gameOptions.SetCenterCoords(640,400);for(int i=0;i<4;++i)gameOptions.KeyPress(']');gameOptions.Process();gameOptions.SetRenderScale(2);renderMenu(gameOptions,"game-accessibility");gameOptions.KeyPress(']');gameOptions.KeyPress(']');gameOptions.Process();renderMenu(gameOptions,"game-alerts");
         for(auto size:{std::pair<int,int>{640,480},{800,600},{1280,800}}){ZSDL_Surface::SetScreenDimensions(size.first,size.second);for(double scale:{1.0,1.5,2.0,3.0}){GMMOptions audit;for(int category=0;category<7;++category){audit.SetRenderScale(scale);int w,h;audit.GetDimensions(w,h);REQUIRE(w*audit.GetRenderScale()<=size.first&&h*audit.GetRenderScale()<=size.second);audit.KeyPress(']');}}}
+        GMMPlayerList moderationPanel(true);vector<p_info> staffPlayers{p_info(1),p_info(2)};staffPlayers[0].mode=staffPlayers[1].mode=PLAYER_MODE;staffPlayers[0].name="Commander";staffPlayers[0].team=RED_TEAM;staffPlayers[1].name="Guest";staffPlayers[1].team=BLUE_TEAM;moderationPanel.SetPlayerInfoList(&staffPlayers);moderationPanel.Process();moderationPanel.SetFeedback("pending: checking permission and delivery");moderationPanel.Process();moderationPanel.SetCenterCoords(640,400);moderationPanel.SetRenderScale(2);renderMenu(moderationPanel,"moderation-feedback");
         ZSDL_Surface::SetScreenDimensions(1280,800);ZSDL_Surface::SetMainSoftwareSurface(nullptr);SDL_DestroySurface(screen);zod_text_percent=100;
         frontend.LoadSaveInfo();REQUIRE(frontend.saves.size()==6&&frontend.saves[0].campaign.find("Original Campaign / Mission 1")!=string::npos);frontend.screen=ZFrontEnd::SCR_LOAD;frontend.load_selected=0;capture("save-browser");REQUIRE(frontend.map_preview_texture);
         frontend.screen=ZFrontEnd::SCR_KEYS;frontend.settings_category=3;frontend.settings_focus=2;frontend.kb_back=true;frontend.Render();REQUIRE(frontend.screen==ZFrontEnd::SCR_SETTINGS&&frontend.settings_category==3&&frontend.settings_focus==2);
         frontend.settings_category=5;zod_text_percent=120;capture("accessibility");frontend.screen=ZFrontEnd::SCR_CAMPAIGNS;frontend.ScanCampaigns();capture("campaign-polish");
         frontend.screen=ZFrontEnd::SCR_SETTINGS;for(int category:{2,3,4}){frontend.settings_category=category;capture("settings-"+to_string(category));}
+        frontend.screen=ZFrontEnd::SCR_BUILD_INFO;capture("build-info");frontend.screen=ZFrontEnd::SCR_MULTIPLAYER_GUIDE;frontend.multiplayer_guide_step=1;capture("multiplayer-guide");
         frontend.screen=ZFrontEnd::SCR_KEYS;frontend.keys_scroll=MAX_ZKEYS-8;capture("editor-bindings");
         REQUIRE(frontend.LaunchEditor({"maps/p02_bb_orig01.map"}));frontend.workspace->tool=1;frontend.workspace->objectScroll=6;frontend.workspace->objectKind=8;capture("object-palette");ZPrefs_ResetCategory(5);frontend.FreeGraphics();SDL_Quit();std::cout<<"polish-ok";
     }
@@ -221,6 +226,7 @@ struct ZFrontEndRegression {
         campaign.missions[0].nextWin=-2;campaign.missions[0].nextLoss=-2;campaign.missions.push_back(mission);REQUIRE(ZCampaign_Write(campaign,error));
         auto graphIssues=ZContent_ValidateCampaign(campaign,true);REQUIRE(std::any_of(graphIssues.begin(),graphIssues.end(),[](const ZContentIssue &i){return i.text.find("unreachable")!=string::npos;}));
         campaign.missions={mission};REQUIRE(ZCampaign_Write(campaign,error));
+        SDL_SetEnvironmentVariable(SDL_GetEnvironment(),"ZOD_EDITOR_TEST_SOURCE",(campaign.root+"/campaign.ini").c_str(),true);ZCampaign testSnapshot;REQUIRE(ZCampaign_Load(campaign.root+"/campaign.ini",testSnapshot,error));REQUIRE(ZPlaytest_Event(testSnapshot,0,"start"));REQUIRE(ZPlaytest_Event(testSnapshot,0,"victory",-2));REQUIRE(ZPlaytest_Read(campaign).size()==2);auto testKey=ZPlaytest_Fingerprint(campaign,0);campaign.missions[0].briefing+=" Changed briefing";REQUIRE(ZCampaign_Write(campaign,error));REQUIRE(ZPlaytest_Fingerprint(campaign,0)!=testKey);REQUIRE(ZPlaytest_Report(campaign).find("Not tested for current")!=string::npos);campaign=testSnapshot;REQUIRE(ZCampaign_Write(campaign,error));SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(),"ZOD_EDITOR_TEST_SOURCE");
         string archive;REQUIRE(ZCampaign_Export(campaign,archive,error));ZCampaign summary;REQUIRE(ZCampaign_InspectPack(archive,summary,error));REQUIRE(summary.description==campaign.description&&summary.missions[0].objectives.size()==2);
         REQUIRE(!ZCampaign_ImportPack(archive,error));REQUIRE(error.find("already installed")!=string::npos);
         REQUIRE(SDL_RenamePath(campaign.root.c_str(),(root+"/author-backup").c_str()));REQUIRE(ZCampaign_ImportPack(archive,error));auto installed=ZCampaign_List();REQUIRE(installed.size()==1);string marker;REQUIRE(!ZCampaign_SafeAsset(installed[0].root,".zod-authoring",marker));
@@ -363,7 +369,7 @@ struct ZFrontEndRegression {
             ZFrontEnd::Action action;
             click(800,622); REQUIRE(frontend.PopAction(action));
             REQUIRE(action.type==ZFrontEnd::FE_LOAD_SAVE && action.value==3);
-            click(280,555);REQUIRE(frontend.PopAction(action));REQUIRE(action.type==ZFrontEnd::FE_OPEN_MULTIPLAYER);
+            click(280,555);REQUIRE(!frontend.PopAction(action));REQUIRE(frontend.screen==ZFrontEnd::SCR_MULTIPLAYER_GUIDE);for(int step=0;step<4;++step){frontend.kb_activate=true;frontend.Render();}REQUIRE(frontend.PopAction(action));REQUIRE(action.type==ZFrontEnd::FE_OPEN_MULTIPLAYER);
             click(280,445);REQUIRE(frontend.PopAction(action));REQUIRE(action.type==ZFrontEnd::FE_OPEN_SKIRMISH);
             click(1128,737);REQUIRE(frontend.screen==ZFrontEnd::SCR_SETTINGS);
             int effects=zod_effects_volume,music=zod_music_volume;
@@ -390,6 +396,14 @@ struct ZFrontEndRegression {
 // A narrowly scoped friend fixture exercises production world serialization.
 class ZServerRegression {
 public:
+    static void soak(const string &first,const string &second,int rounds,int ticks,int units){
+        REQUIRE(rounds>=4&&rounds<=10000&&ticks>=10&&ticks<=100000&&units>=1&&units<=512);ZMap::ServerInit();auto server=std::make_unique<ZServer>();server->SetAllowRemoteClients(true);server->psettings.start_map_paused=true;server->cloud_required=true;server->cloud_settings.rotation={first,second};server->LoadNextMap(first);
+        vector<Uint64> rss;vector<double> timings;size_t peakObjects=0;
+        for(int round=0;round<rounds;++round){REQUIRE(server->zmap.Loaded()&&server->map_name==(round%2?second:first));for(int i=0;i<units;++i){auto *o=server->CreateObject(ROBOT_OBJECT,GRUNT,(2+i%28)*16,(32+i/28)*16,i%2?BLUE_TEAM:RED_TEAM);REQUIRE(o);waypoint wp;wp.mode=MOVE_WP;wp.x=(4+i%28)*16;wp.y=(34+i/28)*16;o->GetWayPointList().push_back(wp);}
+         auto initialHash=ZSync_Hash(server->object_list,server->zmap);REQUIRE(initialHash.size()==64);for(int tick=0;tick<ticks;++tick){auto start=SDL_GetTicksNS();server->ztime.ztime=tick*.1;server->ScuffleUnits();server->ProcessObjects();server->ProcessMissiles();server->ProcessPathFindingResults();if((round*(long long)ticks+tick)%std::max<long long>(1,(long long)rounds*ticks/100000)==0)timings.push_back((SDL_GetTicksNS()-start)/1000000.0);if(tick%20==0)SDL_Delay(1);}
+         peakObjects=std::max(peakObjects,server->object_list.size());rss.push_back(ZPerf_ResidentBytes());server->game_on=false;server->end_return_to_menu=true;server->do_reset_game=true;server->next_reset_game_time=0;server->CheckResetGame();REQUIRE(server->game_on&&server->ztime.IsPaused());}
+        size_t warmIndex=std::min<size_t>(3,rss.size()-1);std::sort(timings.begin(),timings.end());std::cout<<"SOAK_REPORT {\"rounds\":"<<rounds<<",\"ticks\":"<<ticks<<",\"warm_rss\":"<<rss[warmIndex]<<",\"peak_rss_after_warmup\":"<<*std::max_element(rss.begin()+warmIndex,rss.end())<<",\"final_rss\":"<<rss.back()<<",\"peak_objects\":"<<peakObjects<<",\"p95_tick_ms\":"<<timings[timings.size()*95/100]<<",\"build_id\":"<<ZCloud_JSON(ZBuild_ID())<<"}\n";
+    }
     static void scripted_stress(const string &map,int ticks,int units){
         REQUIRE(ticks>=1&&ticks<=216000&&units>=1&&units<=512);ZPerf_Enable(true);ZMap::ServerInit();auto server=std::make_unique<ZServer>();server->LoadNextMap(map);REQUIRE(server->game_on);
         for(int i=0;i<units;++i){auto *unit=server->CreateObject(ROBOT_OBJECT,GRUNT,(2+i%28)*16,((i%2?36:32)+i/56)*16,i%2?BLUE_TEAM:RED_TEAM);REQUIRE(unit);waypoint order;order.mode=MOVE_WP;order.x=(4+i%28)*16;order.y=(38+i/56)*16;order.player_given=true;unit->GetWayPointList().push_back(order);}
@@ -442,6 +456,7 @@ public:
         server->CheckResetGame();
         REQUIRE(server->game_on && server->zmap.Loaded() && server->ztime.IsPaused());
         REQUIRE(!server->end_return_to_menu && !server->lan_match_started);
+        auto originalSync=ZSync_Hash(server->object_list,server->zmap);auto reversed=server->object_list;std::reverse(reversed.begin(),reversed.end());REQUIRE(ZSync_Hash(reversed,server->zmap)==originalSync);auto *probe=server->object_list.front();auto team=probe->GetOwner();probe->SetOwner(team==RED_TEAM?BLUE_TEAM:RED_TEAM);REQUIRE(ZSync_Hash(server->object_list,server->zmap)!=originalSync);probe->SetOwner(team);REQUIRE(ZSync_Hash(server->object_list,server->zmap)==originalSync);
         server->cloud_roles.valid=true;server->cloud_roles.revision=1;server->cloud_roles.speed=125;server->cloud_roles.difficulty=2;server->cloud_roles.rotation={server->map_name};server->cloud_roles_until=current_time()+15;
         server->ApplyCloudOperations();REQUIRE(server->cloud_applied_revision==1&&zod_bot_difficulty==2);
         server->lan_match_started=true;server->cloud_roles.revision=2;server->cloud_roles.difficulty=3;
@@ -1169,13 +1184,15 @@ public:
 class ZLANRegression {
 public:
     static void integrity(){
+        REQUIRE(!ZBuild_ID().empty()&&ZBuild_JSON().find("source_sha256")!=string::npos);
         REQUIRE(ZSHA256("",0)=="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
         REQUIRE(ZSHA256("abc",3)=="ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
         string million(1000000,'a');REQUIRE(ZSHA256(million.data(),million.size())=="cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0");
         GMMPlayerList moderation(true);vector<p_info> humans{p_info(42)};humans[0].mode=PLAYER_MODE;humans[0].team=RED_TEAM;humans[0].name="Target";moderation.SetPlayerInfoList(&humans);moderation.Process();
-        REQUIRE(moderation.KeyPress(9));REQUIRE(moderation.KeyPress(SDLK_HOME));REQUIRE(moderation.KeyPress(9));for(char c:string("Test reason"))moderation.KeyPress(c);moderation.KeyPress(9);moderation.KeyPress(13);REQUIRE(moderation.GetGMMFlags().moderate_target==42&&moderation.GetGMMFlags().moderate_minutes==0);
+        REQUIRE(moderation.KeyPress(9));REQUIRE(moderation.KeyPress(SDLK_HOME));REQUIRE(moderation.KeyPress(9));for(char c:string("Test reason"))moderation.KeyPress(c);moderation.KeyPress(9);moderation.KeyPress(9);moderation.KeyPress(13);REQUIRE(moderation.GetGMMFlags().moderate_target==42&&moderation.GetGMMFlags().moderate_minutes==0);
         auto player=std::make_unique<ZPlayer>();auto &p=*player;p.expected_map_hash=string(64,'0');char data[7]={};memcpy(data+4,"abc",3);REQUIRE(p.ProcessMapDownload(data,7)==0);int end=-1;REQUIRE(p.ProcessMapDownload((char*)&end,4)==-1&&!p.map_download_error.empty()&&!p.zmap.Loaded());
-        int sequence=2;REQUIRE(p.ProcessMapDownload((char*)&sequence,4)==-1);std::cout<<"map-integrity-ok";
+        int sequence=2;REQUIRE(p.ProcessMapDownload((char*)&sequence,4)==-1);
+        REQUIRE(p.zmap.Read("maps/p02_bb_orig01.map"));char *raw=nullptr;int length=0;p.zmap.GetMapData(raw,length);p.loaded_map_hash=ZSHA256(raw,length);for(int seq=1;seq<=3;++seq){auto packet=to_string(seq)+"|"+p.loaded_map_hash+"|"+string(64,'0');ZPlayer::state_sync_event(&p,const_cast<char*>(packet.c_str()),packet.size()+1,0);}REQUIRE(p.sync_strikes==3&&p.sync_reported_hash==p.loaded_map_hash);std::cout<<"map-integrity-ok";
     }
     static void portal_join(int port,const string &approvalFile,const string &expected){
         REQUIRE(SDL_Init(SDL_INIT_VIDEO));ZMap::ServerInit();auto player=std::make_unique<ZPlayer>();auto &p=*player;
@@ -1188,7 +1205,7 @@ public:
             SDL_Delay(5);
         }
         REQUIRE(wrote&&p.zmap.Loaded());bool named=false;for(const auto &entry:p.player_info)if(entry.p_id==p.p_id)named=entry.name==expected;
-        REQUIRE(named);player.reset();SDL_Quit();std::cout<<"native-portal-join-ok";
+        REQUIRE(named);auto observe=SDL_GetTicks()+16000;while(SDL_GetTicks()<observe){p.ProcessSocketEvents();p.ehandler.ProcessEvents();p.ProcessGame();SDL_Delay(5);}REQUIRE(p.sync_history.size()>=3&&p.sync_last_sequence>0&&p.sync_strikes==0&&p.sync_reported_hash.empty());player.reset();SDL_Quit();std::cout<<"native-portal-join-ok";
     }
 
     static void browser(const string &image = "") {
@@ -1419,6 +1436,7 @@ int main(int argc, char **argv) {
         else if(std::string(argv[1]) == "authoring-tools"){REQUIRE(argc==3);ZFrontEndRegression::authoring_tools(argv[2]);}
         else if(std::string(argv[1]) == "feature-checks"){REQUIRE(argc==3);feature_checks(argv[2]);}
         else if(std::string(argv[1]) == "script-save"){REQUIRE(argc==3);ZServerRegression::script_save(argv[2]);}
+        else if(std::string(argv[1]) == "soak"){REQUIRE(argc==7);ZServerRegression::soak(argv[2],argv[3],atoi(argv[4]),atoi(argv[5]),atoi(argv[6]));}
         else if(std::string(argv[1]) == "stress"){REQUIRE(argc==5);ZServerRegression::scripted_stress(argv[2],atoi(argv[3]),atoi(argv[4]));}
         else if(std::string(argv[1]) == "save") { REQUIRE(argc == 3); ZServerRegression::roundtrip(argv[2]); }
         else if(std::string(argv[1]) == "integrity") ZLANRegression::integrity();
@@ -1426,7 +1444,7 @@ int main(int argc, char **argv) {
         else if(std::string(argv[1]) == "protocol") {
 #define EMIT(value) std::cout << "\"" #value "\":" << (int)value << ",";
             std::cout << "{";
-            EMIT(CLOUD_MODERATE) EMIT(CLOUD_NOTICE) EMIT(MAP_FINGERPRINT) EMIT(SET_LPLAYER_NAME) EMIT(CLOUD_SERVER_ROLE) EMIT(SET_GAME_SPEED) EMIT(UPDATE_GAME_SPEED) EMIT(CLOUD_REQUIRED) EMIT(CLOUD_TICKET) EMIT(CLOUD_RESULT) EMIT(REQUEST_VERSION) EMIT(GIVE_VERSION) EMIT(SET_LPLAYER_READY) EMIT(LOBBY_COUNTDOWN) EMIT(RESET_MAP) EMIT(RESET_GAME) EMIT(REQUEST_MAP) EMIT(STORE_MAP) EMIT(REQUEST_OBJECTS) EMIT(ADD_NEW_OBJECT)
+            EMIT(MODERATION_FEEDBACK) EMIT(STATE_SYNC_CHECK) EMIT(STATE_SYNC_REPLY) EMIT(CLOUD_MODERATE) EMIT(CLOUD_NOTICE) EMIT(MAP_FINGERPRINT) EMIT(SET_LPLAYER_NAME) EMIT(CLOUD_SERVER_ROLE) EMIT(SET_GAME_SPEED) EMIT(UPDATE_GAME_SPEED) EMIT(CLOUD_REQUIRED) EMIT(CLOUD_TICKET) EMIT(CLOUD_RESULT) EMIT(REQUEST_VERSION) EMIT(GIVE_VERSION) EMIT(SET_LPLAYER_READY) EMIT(LOBBY_COUNTDOWN) EMIT(RESET_MAP) EMIT(RESET_GAME) EMIT(REQUEST_MAP) EMIT(STORE_MAP) EMIT(REQUEST_OBJECTS) EMIT(ADD_NEW_OBJECT)
             EMIT(REQUEST_ZONES) EMIT(SET_ZONE_INFO) EMIT(REQUEST_PLAYER_ID) EMIT(GIVE_PLAYER_ID)
             EMIT(SET_READY) EMIT(SET_LPLAYER_TEAM) EMIT(SET_LPLAYER_MODE) EMIT(REQUEST_PLAYER_LIST) EMIT(BOT_MODE) EMIT(SET_NAME) EMIT(SET_TEAM) EMIT(SET_PLAYER_MODE) EMIT(PLAYER_MODE)
             EMIT(GET_GAME_PAUSED) EMIT(UPDATE_GAME_PAUSED) EMIT(SET_GAME_PAUSED)
