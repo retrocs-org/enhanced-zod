@@ -2,6 +2,7 @@
 #include "zlan.h"
 #include "zserver_bookmarks.h"
 #include "znetconnect.h"
+#include "zasset_import.h"
 #include <chrono>
 #include <cctype>
 #include <algorithm>
@@ -116,6 +117,10 @@ bool GMMMultiplayer::KeyPress(int c)
 void GMMMultiplayer::Process()
 {
     PollAuthorization();
+    Compatibility check;if(compatibility_task.Poll(check)&&check.address==compatibility_address&&!joining){
+        status_label.SetText(check.compatible?"Compatible engine: "+check.version:check.error.substr(0,70));
+        detail_label.SetText(!ZAsset_RuntimeReady()?"Import original graphics and sounds before playing.":check.compatible?"Map: "+check.map.substr(0,32)+" / downloaded on join":"Install the same engine version; Refresh checks updated servers.");
+    }
     RefreshResult result; if(refresh_task.Poll(result)) ApplyRefresh(result);
     if(applied_search!=search_entry.GetText()||applied_region!=region_entry.GetText())Refilter();
     if(join_delay>0 && --join_delay==0) {
@@ -133,7 +138,7 @@ void GMMMultiplayer::HandleWidgetEvent(int type,ZGMMWidget *widget)
             match_list.UnSelectAll(index);
             if(index<(int)match_list.GetEntryList().size()) {
                 int ref=match_list.GetEntryList()[index].ref_id;
-                if(ref>=0 && ref<(int)matches.size()) address_entry.SetText(matches[ref].host+":"+to_string(matches[ref].port));
+                if(ref>=0 && ref<(int)matches.size()){address_entry.SetText(matches[ref].host+":"+to_string(matches[ref].port));CheckCompatibility(matches[ref]);}
             }
         }
         return;
@@ -197,4 +202,12 @@ void GMMMultiplayer::PollAuthorization(){
         if(state!="pending"){SetError("Connection approval was declined. Select the server to retry.");return;}
     }
     if(!auth_poll.Pending()&&SDL_GetTicks()>=auth_poll_at){auto device=auth_device;auth_poll.Start([device](){return ZPortal_Request("/api/connect/poll","{\"device\":\""+device+"\"}");});}
+}
+
+void GMMMultiplayer::CheckCompatibility(const MatchInfo &match){
+ compatibility_task.Cancel();compatibility_address=match.host+":"+to_string(match.port);
+ status_label.SetText("Map: "+(match.map.empty()?string("announced on joining"):match.map.substr(0,52)));
+ detail_label.SetText("Checking engine compatibility before joining...");
+ auto address=compatibility_address,host=match.host,map=match.map;int port=match.port;
+ compatibility_task.Start([address,host,port,map](){Compatibility result;result.address=address;result.map=map;result.compatible=ZNetCheckVersion(host,port,result.error,2000,&result.version);return result;});
 }

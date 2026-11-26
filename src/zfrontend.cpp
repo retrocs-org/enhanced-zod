@@ -499,10 +499,12 @@ void ZFrontEnd::LoadProgress()
 	string path = (home && *home) ? string(home) + "/.zod_campaign_progress" : ".zod_campaign_progress";
 
 	FILE *fp = fopen(path.c_str(), "r");
-	if(!fp) return;
+	if(!fp)fp=fopen((path+".bak").c_str(),"r");
+	if(!fp)return;
 
 	int cur = -1, unl = -1;
 	int got = fscanf(fp, "%d %d", &cur, &unl);
+    if(got<1||cur<0||cur>=(int)levels.size()){fclose(fp);fp=fopen((path+".bak").c_str(),"r");if(!fp)return;got=fscanf(fp,"%d %d",&cur, &unl);}
 	fclose(fp);
 
 	if(got >= 1 && cur >= 0 && cur < (int)levels.size()) progress_current = cur;
@@ -1243,9 +1245,13 @@ static string base_name(const string &f)
 void ZFrontEnd::StartLevel(int index, bool via_briefing)
 {
     history_briefing=false;
+    if(!selected_campaign.id.empty()&&!editor_testing&&!ZCampaign_MigrateIdentity(selected_campaign,campaign_error)){screen=SCR_CAMPAIGNS;return;}
     if(!selected_campaign.id.empty()&&!editor_testing){auto errors=ZCampaign_Compatibility(selected_campaign,campaigns);if(!errors.empty()){campaign_error=errors.front();screen=SCR_CAMPAIGNS;return;}}
 	if(index < 0 || index >= (int)levels.size()) return;
 
+    auto completed=ZCampaign_Completed(selected_campaign.id.empty()?"original":selected_campaign.id);
+    string key=selected_campaign.id.empty()?levels[index].base:ZCampaign_MissionKey(selected_campaign,index);
+    mission_replay=std::find(completed.begin(),completed.end(),key)!=completed.end();
 	current_level = index;
 
 	if(via_briefing && zod_scenes)
@@ -1270,7 +1276,7 @@ void ZFrontEnd::StartLevel(int index, bool via_briefing)
 
 	Sound(snd_start);
 	if(selected_campaign.id.empty())actions.push_back(Action(FE_START_MAP,index));
-    else {Action action(FE_START_CAMPAIGN_MAP,index);action.text=levels[index].file;actions.push_back(action);community_running=true;community_next=-1;progress_current=index;if(!editor_testing)ZCampaign_Progress(selected_campaign.id,progress_current,progress_unlocked,true);}
+    else {Action action(FE_START_CAMPAIGN_MAP,index);action.text=levels[index].file;actions.push_back(action);community_running=true;community_next=-1;if(!mission_replay)progress_current=index;if(!editor_testing&&!mission_replay)ZCampaign_Progress(selected_campaign.id,progress_current,progress_unlocked,true);}
 	screen = SCR_LOADING;
 	loading_since = SDL_GetTicks();deployment_stage="Connecting to the game server";
 }
@@ -2769,7 +2775,7 @@ void ZFrontEnd::RenderCampaigns(){
 }
 
 
-void ZFrontEnd::RecordCampaignResult(bool won,int seconds,int kills,int lost,int difficulty){if(editor_testing){{const auto *mission=!selected_campaign.id.empty()&&current_level>=0&&current_level<(int)selected_campaign.missions.size()?&selected_campaign.missions[current_level]:nullptr;int branch=mission?(won?mission->nextWin:mission->nextLoss):-1;community_next=branch!=-1?branch:won?(current_level+1<(int)levels.size()?current_level+1:-2):current_level;}return;}if(won&&seconds>=0&&current_level>=0&&current_level<(int)levels.size())ZCampaign_RecordWin(selected_campaign.id.empty()?"original":selected_campaign.id,selected_campaign.id.empty()?levels[current_level].base:ZCampaign_MissionKey(selected_campaign,current_level),seconds,kills,lost,difficulty);if(won&&current_level>=0&&current_level<(int)levels.size())ZCampaign_MarkCompleted(selected_campaign.id.empty()?"original":selected_campaign.id,selected_campaign.id.empty()?levels[current_level].base:ZCampaign_MissionKey(selected_campaign,current_level));if(!community_running||current_level<0)return;{const auto *mission=!selected_campaign.id.empty()&&current_level>=0&&current_level<(int)selected_campaign.missions.size()?&selected_campaign.missions[current_level]:nullptr;int branch=mission?(won?mission->nextWin:mission->nextLoss):-1;community_next=branch!=-1?branch:won?(current_level+1<(int)levels.size()?current_level+1:-2):current_level;}progress_current=community_next==-2&&ZCampaign_Branched(selected_campaign)?-2:community_next==-2?(int)levels.size()-1:community_next;progress_unlocked=max(progress_unlocked,progress_current);ZCampaign_Progress(selected_campaign.id,progress_current,progress_unlocked,true);}
+void ZFrontEnd::RecordCampaignResult(bool won,int seconds,int kills,int lost,int difficulty){if(editor_testing){{const auto *mission=!selected_campaign.id.empty()&&current_level>=0&&current_level<(int)selected_campaign.missions.size()?&selected_campaign.missions[current_level]:nullptr;int branch=mission?(won?mission->nextWin:mission->nextLoss):-1;community_next=branch!=-1?branch:won?(current_level+1<(int)levels.size()?current_level+1:-2):current_level;}return;}if(won&&seconds>=0&&current_level>=0&&current_level<(int)levels.size())ZCampaign_RecordWin(selected_campaign.id.empty()?"original":selected_campaign.id,selected_campaign.id.empty()?levels[current_level].base:ZCampaign_MissionKey(selected_campaign,current_level),seconds,kills,lost,difficulty);if(won&&current_level>=0&&current_level<(int)levels.size())ZCampaign_MarkCompleted(selected_campaign.id.empty()?"original":selected_campaign.id,selected_campaign.id.empty()?levels[current_level].base:ZCampaign_MissionKey(selected_campaign,current_level));if(mission_replay){community_next=-1;return;}if(!community_running||current_level<0)return;{const auto *mission=!selected_campaign.id.empty()&&current_level>=0&&current_level<(int)selected_campaign.missions.size()?&selected_campaign.missions[current_level]:nullptr;int branch=mission?(won?mission->nextWin:mission->nextLoss):-1;community_next=branch!=-1?branch:won?(current_level+1<(int)levels.size()?current_level+1:-2):current_level;}progress_current=community_next==-2&&ZCampaign_Branched(selected_campaign)?-2:community_next==-2?(int)levels.size()-1:community_next;progress_unlocked=max(progress_unlocked,progress_current);ZCampaign_Progress(selected_campaign.id,progress_current,progress_unlocked,true);}
 void ZFrontEnd::ContinueCommunity(){if(workspace&&screen==SCR_EDITOR)return;int next=community_next;community_running=false;community_next=-1;if(next>=0)StartLevel(next,true);else{ScanCampaigns();screen=SCR_CAMPAIGNS;}}
 void ZFrontEnd::RenderCommunityBriefing(){
     if(briefing_level<0||briefing_level>=(int)selected_campaign.missions.size()){screen=SCR_MAIN;return;}

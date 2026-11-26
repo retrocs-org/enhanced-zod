@@ -20,5 +20,5 @@ std::shared_ptr<ZConnectedSocket> ZNetConnect(const std::string &host, int port,
                                              std::string &error, int milliseconds = 3000);
 // Checks the advertised engine version without sending credentials or joining a team.
 bool ZNetCheckVersion(const std::string &host, int port, std::string &error,
-                      int milliseconds = 2000);
+                      int milliseconds = 2000, std::string *serverVersion=nullptr);
 #endif

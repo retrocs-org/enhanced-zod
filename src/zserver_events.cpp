@@ -84,6 +84,7 @@ void ZServer::connect_event(ZServer *p, char *data, int size, int player)
 	//set ip
 	if(size) new_entry.ip = data;
 
+	new_entry.world_sync=0;
 	p->player_info.push_back(new_entry);
     p->CloudConnected(player);
 
@@ -126,6 +127,7 @@ void ZServer::disconnect_event(ZServer *p, char *data, int size, int player)
 
 void ZServer::request_map_event(ZServer *p, char *data, int size, int player)
 {
+    if(player>=0&&player<(int)p->player_info.size()){p->player_info[player].world_sync=0;p->player_info[player].ready=false;p->RelayLPlayerReady(player);}
 	
 	const int buf_size = 1024 * 4;
 	char buf[buf_size + 4];
@@ -257,6 +259,7 @@ void ZServer::send_object_list_event(ZServer *p, char *data, int size, int playe
 
 void ZServer::send_zone_info_list_event(ZServer *p, char *data, int size, int player)
 {
+    if(player>=0&&player<(int)p->player_info.size()){p->player_info[player].world_sync=1;p->RelayLPlayerReady(player);}
    int i;
    
    for(i=0;i<p->zmap.GetZoneInfoList().size(); i++)

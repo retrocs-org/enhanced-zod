@@ -41,6 +41,7 @@ private:
     int objectScroll=0,snap=1;std::string lastObjectSearch,placementIcon;
     std::string search,importArchive;ZCampaign importSummary;std::vector<ZContentIssue> issues;int issueScroll=0;Uint64 autosaveAt=0;
     void Validate();void Autosave();void Recover();
+    bool historyPanel=false;void RenderHistory();
     int tool=0,tile=0,page=0,team=1,objectKind=0,brush=1,selectedFile=0,scroll=0;
     float mx=0,my=0,pressX=0,pressY=0,zoom=1,cameraX=0,cameraY=0;
     bool panning=false,fileMenu=false,campaignPanel=false,recoveryPrompt=false,helpPanel=false,recoveryDeferred=false;

@@ -10,6 +10,14 @@ are retained below; new website changes belong in that separate log.
 
 ## Unreleased
 
+### Compatibility, editor and campaign polish
+
+- Publish the engine's actual version through the server agent and website; inspect it directly before joining; show its map and explain server map delivery and required imported base assets.
+- Show map-transfer state, named ready blockers, voting permissions and countdown cancellation in multiplayer lobbies.
+- Add an editor history panel (Ctrl/Cmd+H), reverse keyboard traversal and forced recovery snapshots before playtesting; surface autosave failures.
+- Back up campaign progress and records before replacement, recover unreadable resume files, preserve mission identity and keep completed-mission replays from changing campaign progression.
+- Add Tab/Shift+Tab focus, list arrow navigation, Enter/Space activation and visible keyboard focus to shared in-game menus.
+
 ### Native HTTPS public games
 
 - Discover public servers through the HTTPS portal and approve a join in the browser; the game connects automatically with a one-use ticket held in memory.

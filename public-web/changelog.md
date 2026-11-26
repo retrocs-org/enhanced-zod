@@ -6,6 +6,14 @@ repository changes, not an announcement that the live website has been updated.
 
 ## Unreleased
 
+### Moderation and accessibility
+
+- Migration 004 adds private community reports and an operator audit trail.
+- Allowlisted existing accounts can review unpublished uploads, approve/hide revisions, enable/disable provisioned servers and resolve reports at `/admin`.
+- Add report links on server and creation pages; operator access defaults to disabled until `ZOD_ADMIN_USERS` is configured.
+- Show the engine version and map delivery information in server listings.
+- Improve keyboard focus, narrow/zoomed layouts, wrapped text and reduced-motion support.
+
 ### Native connection approval
 
 - Migration 003 adds expiring device requests with explicit signed-in browser approval and single-use ticket delivery to the native game.

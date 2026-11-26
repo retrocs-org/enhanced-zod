@@ -138,6 +138,21 @@ bool ZGuiMainMenuBase::KeyPress(int c)
 	bool action_taken = false;
 
 	gmm_flags.clear();
+    auto focusable=[](ZGMMWidget *widget){return widget->IsActive()&&widget->GetWidgetType()!=MMLABEL_WIDGET&&widget->GetWidgetType()!=MMTEAM_COLOR_WIDGET;};
+    if(c==9){
+        int direction=(SDL_GetModState()&SDL_KMOD_SHIFT)?-1:1;
+        if(keyboard_focus<0&&direction<0)keyboard_focus=0;
+        for(auto *widget:widget_list)if(auto *entry=dynamic_cast<GMMWTextEntry*>(widget))entry->SetSelected(false);
+        for(size_t step=0;step<widget_list.size();++step){keyboard_focus=(keyboard_focus+direction+(int)widget_list.size())%widget_list.size();if(focusable(widget_list[keyboard_focus])){if(auto *entry=dynamic_cast<GMMWTextEntry*>(widget_list[keyboard_focus]))entry->SetSelected(true);break;}}
+        return true;
+    }
+    if(keyboard_focus>=0&&keyboard_focus<(int)widget_list.size()&&focusable(widget_list[keyboard_focus])){
+        auto *widget=widget_list[keyboard_focus];
+        if((c==13||c==32)&&widget->GetWidgetType()==MMBUTTON_WIDGET){widget->Click(widget->GetX()+1,widget->GetY()+1);HandleWidgetEvent(GMM_CLICK_EVENT,widget);widget->UnClick(widget->GetX()+1,widget->GetY()+1);HandleWidgetEvent(GMM_UNCLICK_EVENT,widget);return true;}
+        if(auto *radio=dynamic_cast<GMMWRadio*>(widget))if(c==SDLK_LEFT||c==SDLK_RIGHT){int selected=(radio->GetSelected()+(c==SDLK_LEFT?-1:1)+radio->GetSelections())%radio->GetSelections();radio->GetGMMWFlags().mmradio_si_selected=selected;radio->SetSelected(selected);HandleWidgetEvent(GMM_CLICK_EVENT,radio);return true;}
+        if(auto *list=dynamic_cast<GMMWList*>(widget))if(c==SDLK_UP||c==SDLK_DOWN){auto &rows=list->GetEntryList();int selected=list->GetFirstSelected();for(size_t step=0;step<rows.size();++step){selected=(selected+(c==SDLK_UP?-1:1)+(int)rows.size())%rows.size();if(!rows[selected].disabled){list->UnSelectAll();rows[selected].state=MMLIST_PRESSED;list->GetGMMWFlags().mmlist_entry_selected=selected;HandleWidgetEvent(GMM_CLICK_EVENT,list);list->EnsureVisible(selected);break;}}return true;}
+        if(widget->GetWidgetType()!=MMTEXTENTRY_WIDGET&&widget->KeyPress(c)){HandleWidgetEvent(GMM_KEYPRESS_EVENT,widget);return true;}
+    }
 
 	for(vector<ZGMMWidget*>::iterator i=widget_list.begin(); i!=widget_list.end(); ++i)
 		if((*i)->KeyPress(c))
@@ -183,6 +198,7 @@ bool ZGuiMainMenuBase::WheelDownButton()
 
 bool ZGuiMainMenuBase::Click(int x_, int y_)
 {
+    keyboard_focus=-1;
 	ScaleInput(x_, y_);
 	bool action_taken = false;
 	int tx, ty;
@@ -339,7 +355,11 @@ void ZGuiMainMenuBase::RenderWidgets(ZMap &the_map, SDL_Surface *dest)
 {
 	//widgets
 	for(vector<ZGMMWidget*>::iterator i=widget_list.begin(); i!=widget_list.end(); ++i)
-		(*i)->DoRender(the_map, dest, x, y);
+        {(*i)->DoRender(the_map, dest, x, y);
+        if(keyboard_focus==(int)(i-widget_list.begin())&&(*i)->IsActive()){
+            SDL_Surface *surface=dest?dest:ZSDL_Surface::GetMainSoftwareSurface();auto *widget=*i;
+            if(surface){Uint32 color=SDL_MapSurfaceRGB(surface,255,207,105);int px=x+widget->GetX(),py=y+widget->GetY(),ww=widget->GetWidth(),hh=widget->GetHeight();SDL_Rect edges[]={{px,py,ww,1},{px,py+hh-1,ww,1},{px,py,1,hh},{px+ww-1,py,1,hh}};for(auto &edge:edges)SDL_FillSurfaceRect(surface,&edge,color);}
+        }}
 }
 
 void ZGuiMainMenuBase::RenderBase(ZMap &the_map, SDL_Surface *dest, int tx, int ty)

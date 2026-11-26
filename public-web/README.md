@@ -82,3 +82,17 @@ Regions and modes are operator-supplied labels, not IP geolocation. The portal
 filters region, map, mode, player occupancy, lobby state and browser-local
 favorites/recent ticket requests. Real TCP latency, ping filters, persistent
 favorites and successfully joined servers are available in the native browser.
+
+
+## Operator moderation
+
+Migration 004 adds private reports and moderation audit records. Add
+`'ZOD_ADMIN_USERS' => 'YourExistingUsername'` to the installed `config.inc.php`
+(or set the environment variable) to allow that account into `/index.php/admin`.
+Leaving it empty denies all operator access. Existing local configuration files
+are preserved during refresh and need this setting added manually.
+
+Review pending revision downloads and previews, approve/hide uploads, enable or
+disable provisioned servers, and resolve reports in that page. Report links on
+public servers and creations prefill the private report form. New server secret
+keys are still provisioned through `_app/bin/server.php`, never displayed in the UI.

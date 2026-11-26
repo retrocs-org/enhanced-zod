@@ -38,7 +38,7 @@ class PHPBackend(unittest.TestCase):
         for identifier in ['api-one','api-two']:
             if identifier=='api-two':keyfile.write_text('c'*64)
             subprocess.run([PHP,str(APP/'bin/server.php'),'--id',identifier,'--name',identifier,'--key-file',str(keyfile)],check=True,capture_output=True)
-        env=os.environ.copy();env.update(ZOD_DEV_HTTP='1',ZOD_PUBLIC_URL=BASE,PHP_CLI_SERVER_WORKERS='4')
+        env=os.environ.copy();env.update(ZOD_DEV_HTTP='1',ZOD_PUBLIC_URL=BASE,PHP_CLI_SERVER_WORKERS='4',ZOD_ADMIN_USERS='LegacyCommander')
         cls.site=directory/'standalone-site'
         shutil.copytree(ROOT/'public-web',cls.site)
         cls.log=open(directory/'php.log','w+')
@@ -243,6 +243,31 @@ class PHPBackend(unittest.TestCase):
         status,body,_=upload('example.map',map_path.read_bytes())
         self.assertEqual(status,429);self.assertIn(b'reviewed',body)
 
+
+    def test_09_operator_access_reports_visibility_and_audit(self):
+        sql('DELETE FROM rate_limits')
+        admin=api('/api/login',{'username':'LegacyCommander','password':'legacy test password'})['session']
+        user=api('/api/login',{'username':'ApiCommander','password':'a different test password'})['session']
+        api('/api/admin',expected=401);api('/api/admin',token=user,expected=403)
+        queue=api('/api/admin',token=admin);self.assertTrue(queue['servers']);self.assertTrue(queue['creations'])
+        revision=queue['creations'][0]['id']
+        api('/api/admin/actions',{'action':'approve','target':revision},user,expected=403)
+        api('/api/admin/actions',{'action':'approve','target':revision},admin)
+        self.assertEqual(request('/creations/download/'+revision)[0],200)
+        api('/api/reports',{'kind':'creation','target':revision,'reason':'Please review this example.'},user)
+        reports=api('/api/admin',token=admin)['reports'];self.assertTrue(reports)
+        api('/api/admin/actions',{'action':'resolve','target':reports[0]['id']},admin)
+        self.assertFalse(api('/api/admin',token=admin)['reports'])
+        api('/api/admin/actions',{'action':'hide','target':revision},admin)
+        self.assertEqual(request('/creations/download/'+revision)[0],404)
+        self.assertEqual(request('/creations/download/'+revision,token=admin)[0],200)
+        self.assertEqual(request('/admin',token=admin)[0],200)
+        self.assertEqual(request('/admin',token=user)[0],403)
+        self.assertEqual(request('/admin/action',token=admin,raw=b'action=approve&target='+revision.encode(),headers={'Content-Type':'application/x-www-form-urlencoded'})[0],403)
+        api('/api/admin/actions',{'action':'disable-server','target':'api-one'},admin)
+        self.assertFalse(any(row['id']=='api-one' for row in api('/api/servers')))
+        api('/api/admin/actions',{'action':'enable-server','target':'api-one'},admin)
+        self.assertTrue(api('/api/admin',token=admin)['audit'])
 
     def test_08_native_browser_approval_scope_cancellation_and_single_use(self):
         sql('DELETE FROM rate_limits')

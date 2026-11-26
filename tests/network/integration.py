@@ -114,6 +114,8 @@ with tempfile.TemporaryDirectory(prefix='zod-cloud-') as tmp:
    wait(lambda:any(row['id']=='test' and row['started'] for row in api(base,'/api/servers')),30)
    listing=json.loads(subprocess.check_output([DRIVER,'list-online'],cwd=DATA,env=browser_env,text=True))
    assert any(row['id']=='test' and row['started'] for row in listing),'native browser did not read the public started state'
+   self_version=subprocess.check_output([ENGINE,'--version'],text=True).strip()
+   assert any(row['id']=='test' and row['version'] and row['version'] in self_version for row in api(base,'/api/servers')),'agent did not publish the engine version'
    alice.close()
    # Fail closed if the account service becomes unavailable.
    offline_ticket=api(base,'/api/tickets',{'Server':'test'},session)['ticket'];hub.terminate();hub.wait(timeout=5)

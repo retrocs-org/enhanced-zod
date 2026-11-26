@@ -11,6 +11,7 @@ template<class T> class ZMPAsync
     struct State { T value{}; std::atomic<bool> done{false}; };
     std::shared_ptr<State> state;
 public:
+    void Cancel(){state.reset();}
     bool Pending() const { return bool(state); }
     template<class F> void Start(F work) {
         if(state) return;

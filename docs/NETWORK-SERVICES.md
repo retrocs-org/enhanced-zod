@@ -444,3 +444,23 @@ The expanded account, social and sharing workflows are documented in
 Run the guarded migrations after deploying an update. Set PHP upload limits and
 install ZipArchive for campaign submissions. Friends and presence are opt-in;
 password recovery uses previously saved offline codes rather than email.
+
+
+## Website moderation
+
+Apply migration 004 with `php _app/bin/migrate.php` after copying `public-web`.
+In the installed `config.inc.php`, set `ZOD_ADMIN_USERS` to a comma-separated list
+of existing account usernames. The default is empty: nobody has operator access.
+Protect those accounts with strong passwords and keep their recovery codes offline.
+Refresh preserves the installed configuration, so add this new setting there explicitly.
+
+Sign in and open `/index.php/admin` (or `/admin` with clean routing). Review each
+revision's preview, files and redistribution permissions before approving it.
+Operators can hide revisions, review private reports and enable/disable existing
+server credentials. Key generation/provisioning stays in the server CLI: the
+website never exposes secret keys. Disabling a server removes its listing and
+revokes pending approvals/unused tickets; it does not kick already-connected players.
+Actions are recorded with operator, target and UTC time. Public users can report
+servers or published creations; reports are limited to ten per account per day.
+
+These changes are tested locally; no production migration/deployment is performed.

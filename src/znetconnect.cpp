@@ -111,7 +111,7 @@ std::shared_ptr<ZConnectedSocket> ZNetConnect(const std::string &host, int port,
 }
 
 // A disposable preflight leaves the player's current session untouched on failure.
-bool ZNetCheckVersion(const std::string &host,int port,std::string &error,int milliseconds) {
+bool ZNetCheckVersion(const std::string &host,int port,std::string &error,int milliseconds,std::string *serverVersion) {
     auto started=std::chrono::steady_clock::now();
     auto connection=ZNetConnect(host,port,error,milliseconds);
     if(!connection) return false;
@@ -132,7 +132,7 @@ bool ZNetCheckVersion(const std::string &host,int port,std::string &error,int mi
                 if(event->size!=sizeof(version_packet) || !event->data || !memchr(event->data,0,sizeof(version_packet)))
                     error="Server sent an invalid version response.";
                 else {
-                    std::string version(event->data);
+                    std::string version(event->data);if(serverVersion)*serverVersion=version;
                     compatible=version==GAME_VERSION;
                     if(!compatible)error="Version mismatch: server "+version+", your game "+GAME_VERSION+". Install the same version before joining.";
                 }

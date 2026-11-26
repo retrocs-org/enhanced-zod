@@ -3,7 +3,7 @@
 
 GMMWLabel::GMMWLabel() : ZGMMWidget()
 {
-	widget_type = MMRADIO_WIDGET;
+	widget_type = MMLABEL_WIDGET;
 
 	rerender_text = false;
 	justify = MMLABEL_NORMAL;

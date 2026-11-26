@@ -231,6 +231,7 @@ protected:
 	int grab_x, grab_y;
 
 	vector<ZGMMWidget*> widget_list;
+    int keyboard_focus=-1;
 
 	GMMWButton close_button;
 };

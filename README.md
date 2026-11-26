@@ -27,6 +27,10 @@ a separate Zod account and a website-issued join ticket.
 
 ## Features
 
+Server compatibility checks, lobby map-transfer status, editor history and campaign
+progress backups complement the portal and creator tools. Shared game menus support
+Tab/Shift+Tab, arrow-key lists and Enter/Space activation.
+
 - Native SDL3 rendering, input and audio, inherited from the upstream SDL3 fork.
 - Offline ISO and BIN/CUE import of original DOS Z graphics, sound, music and
   cutscenes, with progress, cancellation and per-user storage.

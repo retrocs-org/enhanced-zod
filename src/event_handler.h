@@ -290,6 +290,7 @@ enum tcp_event
 	LOAD_MAP_FILE,		//single-player: client -> server "start this map file" (path string)
     LOBBY_COUNTDOWN, //server -> clients: seconds remaining, -1 waiting, 0 starting
     CLOUD_REQUIRED, CLOUD_TICKET, CLOUD_RESULT,
+    SET_LPLAYER_SYNC, // map/world transfer state: 0 receiving, 1 sent
 	MAX_TCP_EVENTS
 };
 

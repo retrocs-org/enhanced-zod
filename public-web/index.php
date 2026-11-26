@@ -17,13 +17,16 @@ try {
         if (!in_array($method,['GET','HEAD'],true)) require_origin();
         $route=$method.' '.$path;
         $result=match($route) {
-            'GET /healthz'=>['ok'=>(int)query('SELECT MAX(version) FROM schema_migrations')->fetchColumn()>=3],
+            'GET /healthz'=>['ok'=>(int)query('SELECT MAX(version) FROM schema_migrations')->fetchColumn()>=4],
             'POST /api/accounts'=>$service->register(json_input()),
             'POST /api/login'=>$service->login(json_input()),
             'POST /api/logout'=>$service->logout(),
             'POST /api/connect/start'=>$service->startNativeConnect(json_input()),
             'POST /api/connect/poll'=>$service->pollNativeConnect(json_input()),
             'POST /api/connect/cancel'=>$service->cancelNativeConnect(json_input()),
+            'GET /api/admin'=>$service->moderation(),
+            'POST /api/admin/actions'=>$service->moderate(json_input()),
+            'POST /api/reports'=>$service->report(json_input()),
             'GET /api/community'=>$service->community(),
             'POST /api/community'=>$service->contact(json_input()),
             'GET /api/account/privacy'=>$service->preferences(),
@@ -48,6 +51,7 @@ try {
         };
         json_response($result,$route==='POST /api/accounts'?201:200);
     }
+    if($method==='POST'&&in_array($path,['/admin/action','/reports'],true)){require_csrf();$data=$_POST;unset($data['csrf']);if($path==='/admin/action')$service->moderate($data);else $service->report($data);header('Location: '.route_url($path==='/admin/action'?'/admin':'/account').'?message=Saved',true,303);exit;}
     if($method==='POST'&&$path==='/connect/approve'){
         require_csrf();$data=$_POST;unset($data['csrf']);$service->approveNativeConnect($data);
         require_once __DIR__.'/_app/src/views.php';page_header('connect',$service->currentAccount());echo '<section class="shell section"><h1>Connection approved</h1><p>Return to your game. It will receive a one-use ticket and connect automatically.</p></section>';page_footer();exit;

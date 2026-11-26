@@ -40,9 +40,10 @@ bool ZMapWorkspace::Button(const string &value,float x,float y,float w,bool prim
     if(primary||hot) Rect(x,y,3,38,amber);Text(value,x+10,y+6,20,{218,226,232,255},w-20);
     if(hot&&modalLayer==0){if(value=="Save")hoverTip="Save [Ctrl/Cmd+S] / Originals always save as a copy";else if(value=="Test")hoverTip="Playtest an unsaved snapshot; return to this workspace";else if(value=="Undo")hoverTip="Undo [Ctrl/Cmd+Z]";else if(value=="Redo")hoverTip="Redo [Ctrl/Cmd+Y]";else if(value=="Fit map")hoverTip="Fit entire map [F]";else if(value=="Select / Move")hoverTip="Select [5] / Shift-click adds / Drag empty area to select";else hoverTip=value;}
     bool interactive=true;
-    if(!pending.empty()&&dirty)interactive=modalLayer==2;
+    if(historyPanel)interactive=modalLayer==1;
+    else if(!pending.empty()&&dirty)interactive=modalLayer==2;
     else if(recoveryPrompt||helpPanel)interactive=modalLayer==3;
-    else if(browser||fileMenu||fileForm||campaignPanel||validationPanel||importPanel||prefabPanel||connectionsPanel||terrainConfirm)interactive=modalLayer==1;
+    else if(historyPanel||browser||fileMenu||fileForm||campaignPanel||validationPanel||importPanel||prefabPanel||connectionsPanel||terrainConfirm)interactive=modalLayer==1;
     if(interactive){int index=focusIndex++;if(index==focusButton){Rect(x,y,w,2,amber);Rect(x,y+36,w,2,amber);if(focusActivate){focusActivate=false;return true;}}}
     if(interactive&&clicked&&hot&&pressX>=x&&pressX<x+w&&pressY>=y&&pressY<y+38) { clicked=false;return true; }return false;
 }
@@ -85,7 +86,7 @@ bool ZMapWorkspace::Save() {
 void ZMapWorkspace::Request(const string &action) { pending=action;if(!dirty)Proceed(); }
 void ZMapWorkspace::Proceed() { string next=pending;pending.clear();if(next=="@close"){ClearRecovery();closed=true;}else if(next=="@recover")Recover();else if(next=="@new"){const int widths[]={64,80,128},heights[]={80,100,128};Create(UniqueMapPath(formName),formName,newTerrain,widths[newSize],heights[newSize]);fileForm=0;}else if(!next.empty()){Open(next,directory);browser=false;campaignPanel=false;fileMenu=false;fileForm=0;} }
 void ZMapWorkspace::Paint() {
-    if(mx<306||mx>=1250||my<162||my>=702||browser||fileMenu||fileForm||campaignPanel||validationPanel||importPanel||prefabPanel||connectionsPanel||terrainConfirm||recoveryPrompt||helpPanel||!pending.empty())return;
+    if(mx<306||mx>=1250||my<162||my>=702||historyPanel||browser||fileMenu||fileForm||campaignPanel||validationPanel||importPanel||prefabPanel||connectionsPanel||terrainConfirm||recoveryPrompt||helpPanel||!pending.empty())return;
     auto &h=map.GetMapBasics();int x=(int)floor(((mx-306)/zoom+cameraX)/16),y=(int)floor(((my-162)/zoom+cameraY)/16);
     if(x<0||y<0||x>=h.width||y>=h.height)return;
     if(tool==1){x=x/snap*snap;y=y/snap*snap;}
@@ -113,7 +114,7 @@ void ZMapWorkspace::Paint() {
 void ZMapWorkspace::Event(const SDL_Event &event) {
     if(pickEventLocation){if(event.type==SDL_EVENT_KEY_DOWN&&event.key.key==SDLK_ESCAPE){pickEventLocation=false;campaignPanel=true;return;}if(event.type==SDL_EVENT_MOUSE_MOTION){mx=event.motion.x;my=event.motion.y;}if(event.type==SDL_EVENT_MOUSE_BUTTON_UP&&event.button.button==SDL_BUTTON_LEFT){int x=(int)(((event.button.x-306)/zoom+cameraX)/16),y=(int)(((event.button.y-162)/zoom+cameraY)/16);auto &h=map.GetMapBasics();if(event.button.x>=306&&event.button.x<1250&&event.button.y>=162&&event.button.y<702&&x>=0&&y>=0&&x<h.width&&y<h.height){eventX=to_string(x);eventY=to_string(y);pickEventLocation=false;campaignPanel=true;}}return;}
     if(terrainConfirm||connectionsPanel){if(event.type==SDL_EVENT_KEY_DOWN&&event.key.key==SDLK_ESCAPE){terrainConfirm=connectionsPanel=false;terrainPreview.clear();return;}if(terrainConfirm&&event.type==SDL_EVENT_KEY_DOWN&&event.key.key==SDLK_RETURN){ApplyTerrainPreview();return;}if(event.type==SDL_EVENT_MOUSE_MOTION){mx=event.motion.x;my=event.motion.y;}if(event.type==SDL_EVENT_MOUSE_BUTTON_DOWN){mx=pressX=event.button.x;my=pressY=event.button.y;}if(event.type==SDL_EVENT_MOUSE_BUTTON_UP){mx=event.button.x;my=event.button.y;clicked=true;}return;}
-    if(event.type==SDL_EVENT_KEY_DOWN&&editField<0&&event.key.key==SDLK_TAB){focusButton=(focusButton+1)%max(1,focusCount);return;}
+    if(event.type==SDL_EVENT_KEY_DOWN&&editField<0&&event.key.key==SDLK_TAB){int count=max(1,focusCount),step=(event.key.mod&SDL_KMOD_SHIFT)?-1:1;if(focusButton<0&&step<0)focusButton=0;focusButton=(focusButton+step+count)%count;return;}
     if(event.type==SDL_EVENT_KEY_DOWN&&editField<0&&event.key.key==SDLK_RETURN&&focusButton>=0){focusActivate=true;return;}
     if(event.type==SDL_EVENT_WINDOW_FOCUS_LOST){panning=down=painting=false;autosaveAt=0;Autosave();}
     if(recoveryPrompt||helpPanel){if(event.type==SDL_EVENT_KEY_DOWN&&event.key.key==SDLK_ESCAPE){if(recoveryPrompt)recoveryDeferred=true;recoveryPrompt=helpPanel=false;return;}if(event.type==SDL_EVENT_MOUSE_MOTION){mx=event.motion.x;my=event.motion.y;}if(event.type==SDL_EVENT_MOUSE_BUTTON_DOWN){mx=pressX=event.button.x;my=pressY=event.button.y;}if(event.type==SDL_EVENT_MOUSE_BUTTON_UP){mx=event.button.x;my=event.button.y;clicked=true;}return;}
@@ -130,11 +131,11 @@ void ZMapWorkspace::Event(const SDL_Event &event) {
     if(event.type==SDL_EVENT_MOUSE_BUTTON_UP&&event.button.button==SDL_BUTTON_LEFT){mx=event.button.x;my=event.button.y;clicked=true;
         if(down&&tool==4&&selectedObject<0&&anchorX>=0){auto &h=map.GetMapBasics();int x=max(0,min((int)h.width-1,(int)(((mx-306)/zoom+cameraX)/16))),y=max(0,min((int)h.height-1,(int)(((my-162)/zoom+cameraY)/16)));areaX=min(x,anchorX);areaY=min(y,anchorY);areaW=abs(x-anchorX)+1;areaH=abs(y-anchorY)+1;selectedObjects.clear();for(int i=0;i<(int)map.GetObjectList().size();++i){auto&o=map.GetObjectList()[i];if(o.x>=areaX&&o.y>=areaY&&o.x<areaX+areaW&&o.y<areaY+areaH)selectedObjects.insert(i);}if(!selectedObjects.empty())selectedObject=*selectedObjects.begin();anchorX=anchorY=-1;}
         down=painting=false;}
-    if(event.type==SDL_EVENT_MOUSE_WHEEL) {if(fileForm||fileMenu||importPanel||prefabPanel||connectionsPanel||terrainConfirm||(campaignPanel&&(eventPanel||compatibilityPanel))){}else if(campaignPanel&&timelinePanel)timelineScroll=max(0,min(timelineScroll-(int)event.wheel.y,max(0,(int)authorCampaign.missions[campaignMission].objectives.size()-8)));else if(validationPanel)issueScroll=max(0,min(issueScroll-(int)event.wheel.y,max(0,(int)issues.size()-8)));else if(campaignPanel)missionScroll=max(0,min(missionScroll-(int)event.wheel.y,max(0,(int)authorCampaign.missions.size()-6)));else if(browser)scroll=max(0,min(scroll-(int)event.wheel.y,max(0,(int)files.size()-7)));else if(mx>=306)zoom=max(0.25f,min(4.0f,zoom*(event.wheel.y>0?1.2f:1/1.2f)));else page=max(0,min(page-(int)event.wheel.y,(MAX_PLANET_TILES-1)/96));}
+    if(event.type==SDL_EVENT_MOUSE_WHEEL) {if(historyPanel||fileForm||fileMenu||importPanel||prefabPanel||connectionsPanel||terrainConfirm||(campaignPanel&&(eventPanel||compatibilityPanel))){}else if(campaignPanel&&timelinePanel)timelineScroll=max(0,min(timelineScroll-(int)event.wheel.y,max(0,(int)authorCampaign.missions[campaignMission].objectives.size()-8)));else if(validationPanel)issueScroll=max(0,min(issueScroll-(int)event.wheel.y,max(0,(int)issues.size()-8)));else if(campaignPanel)missionScroll=max(0,min(missionScroll-(int)event.wheel.y,max(0,(int)authorCampaign.missions.size()-6)));else if(browser)scroll=max(0,min(scroll-(int)event.wheel.y,max(0,(int)files.size()-7)));else if(mx>=306)zoom=max(0.25f,min(4.0f,zoom*(event.wheel.y>0?1.2f:1/1.2f)));else page=max(0,min(page-(int)event.wheel.y,(MAX_PLANET_TILES-1)/96));}
     if(event.type==SDL_EVENT_TEXT_INPUT)if(auto *field=Editing()){if(field->size()+strlen(event.text.text)<4096)*field+=event.text.text;}
     if(event.type==SDL_EVENT_KEY_DOWN) {
         auto key=event.key.key;bool ctrl=(event.key.mod&(SDL_KMOD_CTRL|SDL_KMOD_GUI))!=0;
-        if(key==SDLK_ESCAPE) {if(editField>=0){editField=-1;SDL_StopTextInput(SDL_GetKeyboardFocus());}else if(campaignPanel&&eventPanel)eventPanel=false;else if(campaignPanel&&compatibilityPanel)compatibilityPanel=false;else if(campaignPanel&&timelinePanel)timelinePanel=false;else if(campaignPanel&&metadataPanel)metadataPanel=false;else if(!pending.empty())pending.clear();else if(fileForm){fileForm=0;fileMenu=true;}else if(fileMenu)fileMenu=false;else if(validationPanel)validationPanel=false;else if(prefabPanel)prefabPanel=false;else if(importPanel)importPanel=false;else if(campaignPanel)campaignPanel=false;else if(browser)browser=false;else Request("@close");return;}
+        if(key==SDLK_ESCAPE) {if(historyPanel){historyPanel=false;return;}if(editField>=0){editField=-1;SDL_StopTextInput(SDL_GetKeyboardFocus());}else if(campaignPanel&&eventPanel)eventPanel=false;else if(campaignPanel&&compatibilityPanel)compatibilityPanel=false;else if(campaignPanel&&timelinePanel)timelinePanel=false;else if(campaignPanel&&metadataPanel)metadataPanel=false;else if(!pending.empty())pending.clear();else if(fileForm){fileForm=0;fileMenu=true;}else if(fileMenu)fileMenu=false;else if(validationPanel)validationPanel=false;else if(prefabPanel)prefabPanel=false;else if(importPanel)importPanel=false;else if(campaignPanel)campaignPanel=false;else if(browser)browser=false;else Request("@close");return;}
         if(ctrl&&campaignPanel&&(key==SDLK_Z||key==SDLK_Y)){UndoCampaign(key==SDLK_Y||(event.key.mod&SDL_KMOD_SHIFT));return;}
         if(ctrl&&campaignPanel&&key==SDLK_S){if(eventPanel)StoreEvent(eventIndex<0);else SaveCampaign();return;}
         if(auto *field=Editing()) {
@@ -142,8 +143,10 @@ void ZMapWorkspace::Event(const SDL_Event &event) {
             if(key==SDLK_RETURN){if(editField==14||editField==56)*field+='\n';else{editField=-1;SDL_StopTextInput(SDL_GetKeyboardFocus());}}
             return;
         }
-        if(browser||fileMenu||fileForm||campaignPanel||validationPanel||importPanel||prefabPanel||connectionsPanel||terrainConfirm||!pending.empty())return;
+        if(historyPanel){if(ctrl&&key==SDLK_H){historyPanel=false;return;}if(ctrl&&(key==SDLK_Z||key==SDLK_Y))Undo(key==SDLK_Y||(event.key.mod&SDL_KMOD_SHIFT));return;}
+        if(historyPanel||browser||fileMenu||fileForm||campaignPanel||validationPanel||importPanel||prefabPanel||connectionsPanel||terrainConfirm||!pending.empty())return;
         if(key==SDLK_F1){helpPanel=true;return;}
+        if(ctrl&&key==SDLK_H){historyPanel=!historyPanel;return;}
         if(!ctrl&&key>=SDLK_1&&key<=SDLK_5){tool=key-SDLK_1;zoneX=-1;}
         if(!ctrl&&key==SDLK_F)Fit();if(!ctrl&&key==SDLK_G)grid=!grid;
         if(key==SDLK_EQUALS||key==SDLK_PLUS)zoom=min(4.0f,zoom*1.2f);if(key==SDLK_MINUS)zoom=max(.25f,zoom/1.2f);
@@ -174,7 +177,7 @@ bool ZMapWorkspace::Render() {
     if(Button("Fit map",512,82,120))Fit();if(Button(grid?"Grid: On":"Grid: Off",644,82,130))grid=!grid;
     if(Button("Zoom -",786,82,110))zoom=max(0.25f,zoom/1.2f);if(Button("Zoom +",908,82,110))zoom=min(4.0f,zoom*1.2f);
     if(Button("Test",1030,82,92)) {
-        issues=ZContent_ValidateMap(map);if(ZContent_HasErrors(issues)){validationPanel=true;issueScroll=0;message="Resolve errors before testing. Select an issue to locate it.";}else {playPath=ZAsset_Profile()+"editor-playtest-"+to_string(SDL_GetTicksNS())+".map";if(map.Write(playPath.c_str()))closed=true;else {playPath.clear();message="Could not create temporary playtest map";}}
+        autosaveAt=0;Autosave();issues=ZContent_ValidateMap(map);if(ZContent_HasErrors(issues)){validationPanel=true;issueScroll=0;message="Resolve errors before testing. Select an issue to locate it.";}else {playPath=ZAsset_Profile()+"editor-playtest-"+to_string(SDL_GetTicksNS())+".map";if(map.Write(playPath.c_str()))closed=true;else {playPath.clear();message="Could not create temporary playtest map";}}
     }
     if(Button("Back",1134,82,116))Request("@close");
     const char *tools[]={"Terrain","Objects","Territories","Erase","Select / Move","Validate"};
@@ -196,7 +199,7 @@ bool ZMapWorkspace::Render() {
         if(row>6&&Button("More objects",24,660,254))objectScroll=objectScroll+6>=row?0:objectScroll+6;
         if(Button("Snap: "+to_string(snap)+" tiles",24,704,254))snap=snap==1?2:snap==2?4:1;
         if(Button("Team: "+(team?team_type_string[team]:string("Neutral")),24,620,254))team=(team+1)%5;
-    } else {Text(tool==2?"Click two map corners":tool==4?"Drag objects to move":"Click objects / territories",24,310,18);Text("Ctrl+C / Ctrl+V copy object",24,346,18);Text("Delete removes selection",24,376,18);Text("History: "+to_string(undo.size())+" undo / "+to_string(redo.size())+" redo",24,406,18);
+    } else {Text(tool==2?"Click two map corners":tool==4?"Drag objects to move":"Click objects / territories",24,310,18);Text("Ctrl+C / Ctrl+V copy object",24,346,18);Text("Delete removes selection",24,376,18);if(Button("History [Ctrl+H]",24,406,256))historyPanel=true;
         if(Button("Snap: "+to_string(snap)+" tiles",24,650,254))snap=snap==1?2:snap==2?4:1;
         if(tool==4&&!selectedObjects.empty()){Text(to_string(selectedObjects.size())+" selected",24,450,20,amber);if(Button("Change team",24,492,254))ChangeProperties(0,1);if(Button("Health -",24,538,120))ChangeProperties(1,-10);if(Button("Health +",158,538,120))ChangeProperties(1,10);if(Button("Level -",24,584,120))ChangeProperties(2,-1);if(Button("Level +",158,584,120))ChangeProperties(2,1);}}
 
@@ -260,6 +263,7 @@ bool ZMapWorkspace::Render() {
         Rect(330,276,620,220,{24,32,39,255});Text("UNSAVED CHANGES",356,300,27,amber);Text("Save your work before leaving this level?",356,348,22);
         if(Button("Save",356,424,160,true)&&Save())Proceed();if(Button("Discard",536,424,160)){dirty=false;Proceed();}if(Button("Cancel",716,424,200))pending.clear();
     }
+    if(historyPanel)RenderHistory();
     if(validationPanel){modalLayer=1;Rect(210,166,860,528,{24,32,39,255});Text("VALIDATION / SELECT AN ISSUE TO LOCATE",236,188,25,amber);
         if(issues.empty())Text("No issues found",236,252,24);
         for(int i=0;i<8&&i+issueScroll<(int)issues.size();++i){auto &issue=issues[i+issueScroll];if(Button((issue.error?"ERROR: ":"NOTE: ")+issue.text.substr(0,82),236,238+i*46,808)){if(issue.x>=0){cameraX=issue.x*16-472/zoom;cameraY=issue.y*16-270/zoom;}message=issue.text;validationPanel=false;}}
@@ -268,7 +272,7 @@ bool ZMapWorkspace::Render() {
     if(importPanel){auto requirements=ZCampaign_Compatibility(importSummary,ZCampaign_List());modalLayer=1;Rect(250,220,780,320,{24,32,39,255});Text("IMPORT CAMPAIGN PACK",278,242,28,amber);Text(importSummary.title,278,294,24);Text(to_string(importSummary.missions.size())+" missions / "+importSummary.author,278,338,21);Text(requirements.empty()?"ID: "+importSummary.id+" / existing IDs will not be replaced":requirements.front(),278,380,18);if(Button("Install pack",278,466,300,true)&&requirements.empty()){string error;if(ZCampaign_ImportPack(importArchive,error)){message="Campaign installed";importPanel=false;}else message=error;}if(Button("Cancel",700,466,300))importPanel=false;}
     if(!hoverTip.empty()&&SDL_GetTicks()-hoverSince>650&&!recoveryPrompt&&!helpPanel&&pending.empty()){Rect(306,742,944,36,{28,40,49,255});Text(hoverTip.substr(0,105),316,748,18,amber);}
     if(recoveryPrompt){modalLayer=3;Rect(230,240,820,300,{24,32,39,255});Text("RECOVER UNSAVED WORK?",260,268,28,amber);Text("An editor recovery snapshot from a previous session is available.",260,324,20);Text("Restore opens a new copy; original levels remain protected.",260,360,20);if(Button("Restore",260,444,220,true)){recoveryPrompt=false;Recover();}if(Button("Later",500,444,220)){recoveryPrompt=false;recoveryDeferred=true;message="Previous recovery kept. Restore it from File before starting new edits.";}if(Button("Discard snapshot",740,444,280)){recoveryPrompt=false;ClearRecovery();}}
-    if(helpPanel){modalLayer=3;Rect(230,174,820,500,{24,32,39,255});Text("EDITOR SHORTCUTS",260,200,28,amber);const char *lines[]={"1 Terrain / 2 Objects / 3 Territories / 4 Erase / 5 Select","F: Fit map / G: Grid / +/- or mouse wheel: Zoom","WASD / arrows: Pan / Middle mouse: Drag canvas","Ctrl/Cmd+S: Save / Ctrl/Cmd+Z: Undo / Ctrl/Cmd+Y: Redo","Shift-click: Add selection / Drag empty space: Area selection","Ctrl/Cmd+C/V: Copy/paste terrain and objects / Delete: Remove","Escape: Close one panel / Original maps always save as copies"};for(int i=0;i<7;++i)Text(lines[i],260,264+i*40,20);if(Button("Close",800,612,220))helpPanel=false;}
+    if(helpPanel){modalLayer=3;Rect(230,174,820,500,{24,32,39,255});Text("EDITOR SHORTCUTS",260,200,28,amber);const char *lines[]={"1 Terrain / 2 Objects / 3 Territories / 4 Erase / 5 Select","F: Fit map / G: Grid / +/- or mouse wheel: Zoom","WASD / arrows: Pan / Middle mouse: Drag canvas","Ctrl/Cmd+S: Save / Ctrl/Cmd+Z: Undo / Ctrl/Cmd+Y: Redo","Shift-click: Add selection / Drag empty space: Area selection","Ctrl/Cmd+C/V: Copy/paste terrain and objects / Delete: Remove","Ctrl/Cmd+H: Edit history / Escape: Close one panel"};for(int i=0;i<7;++i)Text(lines[i],260,264+i*40,20);if(Button("Close",800,612,220))helpPanel=false;}
     if(prefabPanel)RenderPrefabs();if(connectionsPanel)RenderConnections();if(terrainConfirm){modalLayer=1;Rect(306,706,944,74,{24,32,39,255});Text(terrainUnresolved?to_string(terrainUnresolved)+" tiles use fallback; configure Connections for exact variants.":"Connected stroke preview: corners and junctions matched.",318,714,18,amber);if(Button("Apply stroke",680,742,260,true))ApplyTerrainPreview();if(Button("Cancel preview",958,742,270)){terrainConfirm=false;terrainPreview.clear();}}if(pickEventLocation)Text("Click a map tile for this event. Escape cancels.",330,714,22,amber);
     clicked=false;return closed;
 }
@@ -291,7 +295,7 @@ void ZMapWorkspace::Field(string &value,int id,float x,float y,float w,int heigh
     Rect(x,y,w,height,{12,21,28,255});if(editField==id)Rect(x,y,3,height,amber);
     if(height>50){vector<string> lines;std::istringstream stream(value+(editField==id?"|":""));string line;while(std::getline(stream,line))lines.push_back(line);int rows=max(1,(height-12)/24),start=max(0,(int)lines.size()-rows);for(int row=start;row<(int)lines.size();++row)Text(lines[row].substr(0,max(1,(int)(w/10)-2)),x+10,y+6+(row-start)*24,18);}
     else {string shown=value;if(shown.size()>70)shown=shown.substr(shown.size()-70);Text(shown+(editField==id?"|":""),x+10,y+6,19);}
-    if((pending.empty()||!dirty)&&(!(browser||fileMenu||fileForm||campaignPanel||validationPanel||importPanel||prefabPanel||connectionsPanel||terrainConfirm)||modalLayer==1)&&clicked&&mx>=x&&mx<x+w&&my>=y&&my<y+height){editField=id;SDL_StartTextInput(SDL_GetKeyboardFocus());clicked=false;}
+    if((pending.empty()||!dirty)&&(!(historyPanel||browser||fileMenu||fileForm||campaignPanel||validationPanel||importPanel||prefabPanel||connectionsPanel||terrainConfirm)||modalLayer==1)&&clicked&&mx>=x&&mx<x+w&&my>=y&&my<y+height){editField=id;SDL_StartTextInput(SDL_GetKeyboardFocus());clicked=false;}
 }
 void ZMapWorkspace::RenderFileTools(){
     if(fileMenu){modalLayer=1;Rect(24,126,280,334,{24,32,39,255});
@@ -375,12 +379,19 @@ Rect(150,150,980,600,{24,32,39,255});Text("CAMPAIGN STUDIO",176,170,28,amber);Te
         string file;if(ZCampaign_SafeAsset(authorCampaign.root,authorCampaign.missions[campaignMission].map,file))Request(file);
     }
     if(Button("Validate",730,694,144)){if(!SaveCampaign())return;issues=ZContent_ValidateCampaign(authorCampaign,true);issueScroll=0;validationPanel=true;campaignPanel=false;}
-    if(Button("Close",894,694,210)){if(!authorCampaign.root.empty())SaveCampaign();campaignPanel=false;editField=-1;SDL_StopTextInput(SDL_GetKeyboardFocus());}
+    if(Button("Close",894,694,210)){if(!authorCampaign.root.empty()&&!SaveCampaign())return;campaignPanel=false;editField=-1;SDL_StopTextInput(SDL_GetKeyboardFocus());}
 }
 
 void ZMapWorkspace::Validate(){issues=ZContent_ValidateMap(map);issueScroll=0;validationPanel=true;}
 void ZMapWorkspace::ClearRecovery(){recoveryDeferred=false;autosaveAt=0;SDL_RemovePath((ZAsset_Profile()+"editor-recovery.map").c_str());SDL_RemovePath((ZAsset_Profile()+"editor-recovery.view").c_str());}
-void ZMapWorkspace::Autosave(){if(recoveryPrompt||recoveryDeferred||!dirty||painting||SDL_GetTicks()<autosaveAt)return;autosaveAt=SDL_GetTicks()+30000;SDL_CreateDirectory(ZAsset_Profile().c_str());string recovery=ZAsset_Profile()+"editor-recovery.map",temp=recovery+".tmp";if(map.Write(temp.c_str())&&SDL_RenamePath(temp.c_str(),recovery.c_str())){std::ofstream view(ZAsset_Profile()+"editor-recovery.view");view<<cameraX<<" "<<cameraY<<" "<<zoom<<"\n";}}
+void ZMapWorkspace::Autosave(){
+ if(recoveryPrompt||recoveryDeferred||!dirty||painting||SDL_GetTicks()<autosaveAt)return;
+ autosaveAt=SDL_GetTicks()+30000;SDL_CreateDirectory(ZAsset_Profile().c_str());
+ string recovery=ZAsset_Profile()+"editor-recovery.map",temp=recovery+".tmp";
+ if(!map.Write(temp.c_str())||!SDL_RenamePath(temp.c_str(),recovery.c_str())){message="Autosave failed. Save your work to a writable folder.";SDL_RemovePath(temp.c_str());return;}
+ std::ofstream view(ZAsset_Profile()+"editor-recovery.view.tmp");view<<cameraX<<" "<<cameraY<<" "<<zoom<<"\n";view.close();if(view)SDL_RenamePath((ZAsset_Profile()+"editor-recovery.view.tmp").c_str(),(ZAsset_Profile()+"editor-recovery.view").c_str());
+}
+
 void ZMapWorkspace::Recover(){string dir=directory;if(Open(ZAsset_Profile()+"editor-recovery.map",dir)){recoveryDeferred=false;path=UniqueMapPath("Recovered");dirty=true;std::ifstream view(ZAsset_Profile()+"editor-recovery.view");float cx,cy,z;if(view>>cx>>cy>>z&&std::isfinite(cx)&&std::isfinite(cy)&&std::isfinite(z)&&z>=.1f&&z<=4){cameraX=cx;cameraY=cy;zoom=z;}message="Recovered autosave. Save creates a new custom map.";}}
 
 void ZMapWorkspace::RenderTimeline(){
@@ -497,3 +508,12 @@ void ZMapWorkspace::RenderConnections(){modalLayer=1;Rect(220,170,840,540,{24,32
 
 void ZMapWorkspace::AdoptCampaign(const ZCampaign &campaign){authorCampaign=lastSavedCampaign=campaign;campaignUndo.clear();campaignRedo.clear();}
 void ZMapWorkspace::UndoCampaign(bool forward){if(!forward&&!lastSavedCampaign.root.empty()&&campaignDocumentKey(authorCampaign)!=campaignDocumentKey(lastSavedCampaign)){auto draft=authorCampaign;std::string error;if(!ZCampaign_Write(lastSavedCampaign,error)){message=error;return;}authorCampaign=lastSavedCampaign;campaignRedo.clear();campaignRedo.push_back(draft);editField=-1;message="Undid unsaved campaign changes";return;}auto &from=forward?campaignRedo:campaignUndo;auto &to=forward?campaignUndo:campaignRedo;if(from.empty())return;auto restored=from.back();std::string error;if(!ZCampaign_Write(restored,error)){message=error;return;}to.push_back(authorCampaign);from.pop_back();authorCampaign=lastSavedCampaign=restored;campaignMission=std::max(0,std::min(campaignMission,(int)restored.missions.size()-1));editField=-1;timelinePanel=eventPanel=metadataPanel=compatibilityPanel=false;message=forward?"Redid campaign edit":"Undid campaign edit";}
+
+void ZMapWorkspace::RenderHistory(){
+ modalLayer=1;Rect(300,190,680,430,{24,32,39,255});Text("EDIT HISTORY / Ctrl+H",328,214,25,amber);
+ Text(to_string(undo.size())+" undo steps / "+to_string(redo.size())+" redo steps",328,258,20);
+ for(int i=0;i<6&&i<(int)undo.size();++i)Text(to_string(i+1)+". "+undo[undo.size()-1-i].action,328,302+i*34,18);
+ if(Button("Undo last edit",328,550,220)&&!undo.empty())Undo(false);
+ if(Button("Redo",560,550,160)&&!redo.empty())Undo(true);
+ if(Button("Close",732,550,220))historyPanel=false;
+}

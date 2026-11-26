@@ -11,7 +11,17 @@
 #include <ctime>
 #include <functional>
 #include <set>
+
 namespace {
+bool progress_replace(const std::string &path){
+ bool primaryValid=true;
+ if(path.size()>=4&&path.substr(path.size()-4)==".txt"&&path.find("-records.txt")==std::string::npos&&path.find("-completed.txt")==std::string::npos){int current,unlocked;std::ifstream check(path);primaryValid=bool(check>>current>>unlocked)&&(current>=0||current==-2)&&current<=128&&unlocked>=0&&unlocked<=128;}
+ SDL_PathInfo info;if(primaryValid&&SDL_GetPathInfo(path.c_str(),&info)){
+  if(!SDL_CopyFile(path.c_str(),(path+".bak.tmp").c_str())||!SDL_RenamePath((path+".bak.tmp").c_str(),(path+".bak").c_str()))return false;
+ }
+ return SDL_RenamePath((path+".tmp").c_str(),path.c_str());
+}
+
 bool slug(const std::string &s){if(s.empty()||s.size()>64||s=="original")return false;for(unsigned char c:s)if(!std::isalnum(c)&&c!='-'&&c!='_')return false;return true;}
 std::string clean(std::string s){s.erase(std::remove(s.begin(),s.end(),'\r'),s.end());return s;}
 std::string escaped(const std::string &s){std::string out;for(char c:s){if(c=='\\')out+="\\\\";else if(c=='\n')out+="\\n";else if(c!='\r')out+=c;}return out;}
@@ -73,8 +83,8 @@ bool ZCampaign_Write(const ZCampaign &source,std::string &error){ZCampaign campa
  for(const auto &m:campaign.missions){out<<"\n[mission]\nuid="<<escaped(m.uid)<<"\ntitle="<<escaped(m.title)<<"\nmap="<<escaped(m.map)<<"\nbriefing="<<escaped(m.briefing)<<"\nspeaker="<<escaped(m.speaker)<<"\ncharacter="<<escaped(m.character)<<"\nvideo="<<escaped(m.video)<<"\nvictory_video="<<escaped(m.victoryVideo)<<"\n";auto branchUID=[&](int index){return index==-1?std::string("default"):index==-2?std::string("end"):index>=0&&index<(int)campaign.missions.size()?campaign.missions[index].uid:std::string("invalid");};out<<"next_win_uid="<<branchUID(m.nextWin)<<"\nnext_loss_uid="<<branchUID(m.nextLoss)<<"\n";out<<"next_win="<<m.nextWin<<"\nnext_loss="<<m.nextLoss<<"\n";for(const auto &event:m.events)out<<"event="<<escaped(ZMission_EncodeEvent(event))<<"\n";for(const auto &o:m.objectives)out<<"objective="<<escaped(ZMission_Encode(o))<<"\n";}
  out.close();ZCampaign validated;if(!out||!ZCampaign_Load(temp,validated,error)){remove(temp.c_str());if(error.empty())error="Campaign could not be validated";return false;}if(!SDL_RenamePath(temp.c_str(),path.c_str())){error="Campaign could not be saved";return false;}return true;}
 void ZCampaign_Progress(const std::string &id,int &current,int &unlocked,bool save){if(!slug(id))return;std::string dir=ZAsset_Profile()+"campaign-progress";SDL_CreateDirectory(dir.c_str());std::string path=dir+"/"+id+".txt";
- if(save){std::ofstream out(path+".tmp");out<<current<<" "<<unlocked<<"\n";for(const auto &pack:ZCampaign_List())if(pack.id==id&&current>=0&&current<(int)pack.missions.size())out<<pack.missions[current].uid<<"\n";if(current==-2)out<<"end\n";out.close();if(out)SDL_RenamePath((path+".tmp").c_str(),path.c_str());}
- else {current=0;unlocked=0;std::ifstream input(path);int c,u;if(input>>c>>u&&(c>=0||c==-2)&&u>=0&&c<=128&&u<=128){current=c;unlocked=u;std::string uid;if(input>>uid){if(uid=="end")current=-2;else for(const auto &pack:ZCampaign_List())if(pack.id==id)for(size_t i=0;i<pack.missions.size();++i)if(pack.missions[i].uid==uid)current=i;}}}
+ if(save){std::ofstream out(path+".tmp");out<<current<<" "<<unlocked<<"\n";for(const auto &pack:ZCampaign_List())if(pack.id==id&&current>=0&&current<(int)pack.missions.size())out<<pack.missions[current].uid<<"\n";if(current==-2)out<<"end\n";out.close();if(out)progress_replace(path);}
+ else {current=0;unlocked=0;std::ifstream input(path);int c,u;{int checkC,checkU;std::ifstream check(path);if(!(check>>checkC>>checkU)||(checkC<0&&checkC!=-2)||checkU<0||checkC>128||checkU>128){input.close();input.open(path+".bak");}}if(input>>c>>u&&(c>=0||c==-2)&&u>=0&&c<=128&&u<=128){current=c;unlocked=u;std::string uid;if(input>>uid){if(uid=="end")current=-2;else for(const auto &pack:ZCampaign_List())if(pack.id==id)for(size_t i=0;i<pack.missions.size();++i)if(pack.missions[i].uid==uid)current=i;}}}
 }
 
 std::vector<std::string> ZCampaign_Completed(const std::string &id){
@@ -85,7 +95,7 @@ std::vector<std::string> ZCampaign_Completed(const std::string &id){
 void ZCampaign_MarkCompleted(const std::string &id,const std::string &map){
  if((id!="original"&&!slug(id))||map.empty()||map.size()>=1024||map.find_first_of("\r\n")!=std::string::npos)return;
  auto maps=ZCampaign_Completed(id);if(std::find(maps.begin(),maps.end(),map)!=maps.end())return;maps.push_back(map);
- std::string dir=ZAsset_Profile()+"campaign-progress";SDL_CreateDirectory(dir.c_str());std::string path=dir+"/"+id+"-completed.txt";std::ofstream output(path+".tmp");for(auto &name:maps)output<<name<<"\n";output.close();if(output)SDL_RenamePath((path+".tmp").c_str(),path.c_str());
+ std::string dir=ZAsset_Profile()+"campaign-progress";SDL_CreateDirectory(dir.c_str());std::string path=dir+"/"+id+"-completed.txt";std::ofstream output(path+".tmp");for(auto &name:maps)output<<name<<"\n";output.close();if(output)progress_replace(path);
 }
 
 std::vector<ZCampaignRecord> ZCampaign_Records(const std::string &id){
@@ -96,11 +106,12 @@ void ZCampaign_RecordWin(const std::string &id,const std::string &key,int second
  if((id!="original"&&!slug(id))||key.empty()||key.size()>=1024||key.find_first_of("\n\r")!=std::string::npos||seconds<0)return;
  auto records=ZCampaign_Records(id);auto found=std::find_if(records.begin(),records.end(),[&](const ZCampaignRecord&r){return r.key==key;});if(found==records.end()){records.push_back({});found=records.end()-1;found->key=key;}
  found->medal=std::max(found->medal,lost==0&&difficulty>=2?3:lost==0?2:1);found->wins++;found->completedAt=std::time(nullptr);found->bestSeconds=found->bestSeconds<0?seconds:std::min(found->bestSeconds,seconds);found->kills=std::max(0,kills);found->lost=std::max(0,lost);found->difficulty=std::max(found->difficulty,std::max(0,std::min(3,difficulty)));
- std::string dir=ZAsset_Profile()+"campaign-progress";SDL_CreateDirectory(dir.c_str());std::string path=dir+"/"+id+"-records.txt";std::ofstream out(path+".tmp");for(auto&r:records)out<<std::quoted(r.key)<<" "<<r.wins<<" "<<r.completedAt<<" "<<r.bestSeconds<<" "<<r.kills<<" "<<r.lost<<" "<<r.difficulty<<" "<<r.medal<<"\n";out.close();if(out)SDL_RenamePath((path+".tmp").c_str(),path.c_str());
+ std::string dir=ZAsset_Profile()+"campaign-progress";SDL_CreateDirectory(dir.c_str());std::string path=dir+"/"+id+"-records.txt";std::ofstream out(path+".tmp");for(auto&r:records)out<<std::quoted(r.key)<<" "<<r.wins<<" "<<r.completedAt<<" "<<r.bestSeconds<<" "<<r.kills<<" "<<r.lost<<" "<<r.difficulty<<" "<<r.medal<<"\n";out.close();if(out)progress_replace(path);
 }
 std::string ZCampaign_Medal(const ZCampaignRecord&r){if(!r.wins)return "";return r.medal>=3?"Gold":r.medal==2?"Silver":"Bronze";}
 
-namespace {bool version_parts(const std::string &text,std::vector<int> &parts){if(text.empty()||text.size()>32)return false;std::istringstream input(text);std::string part;while(std::getline(input,part,'.')){if(part.empty()||part.size()>6||parts.size()==3)return false;int value=0;for(char c:part){if(c<'0'||c>'9')return false;value=value*10+c-'0';}parts.push_back(value);}if(text.back()=='.')return false;parts.resize(3);return true;}}
+namespace {
+bool version_parts(const std::string &text,std::vector<int> &parts){if(text.empty()||text.size()>32)return false;std::istringstream input(text);std::string part;while(std::getline(input,part,'.')){if(part.empty()||part.size()>6||parts.size()==3)return false;int value=0;for(char c:part){if(c<'0'||c>'9')return false;value=value*10+c-'0';}parts.push_back(value);}if(text.back()=='.')return false;parts.resize(3);return true;}}
 int ZCampaign_CompareVersion(const std::string &a,const std::string &b){std::vector<int>x,y;if(!version_parts(a,x)||!version_parts(b,y))return -2;return x==y?0:x<y?-1:1;}
 bool ZCampaign_Branched(const ZCampaign &campaign){for(const auto &mission:campaign.missions)if(mission.nextWin!=-1||mission.nextLoss!=-1)return true;return false;}
 std::vector<std::string> ZCampaign_Compatibility(const ZCampaign &candidate,const std::vector<ZCampaign> &installed){
@@ -116,8 +127,8 @@ std::vector<std::string> ZCampaign_Compatibility(const ZCampaign &candidate,cons
 
 std::string ZCampaign_MissionKey(const ZCampaign &campaign,int index){if(index<0||index>=(int)campaign.missions.size())return "";return "uid:"+campaign.missions[index].uid;}
 bool ZCampaign_MigrateIdentity(const ZCampaign &campaign,std::string &error){
- if(campaign.id.empty()||campaign.id=="original")return true;int current=0,unlocked=0;ZCampaign_Progress(campaign.id,current,unlocked);std::ifstream oldProgress(ZAsset_Profile()+"campaign-progress/"+campaign.id+".txt");int oldCurrent,oldUnlocked;std::string oldIdentity;oldProgress>>oldCurrent>>oldUnlocked>>oldIdentity;bool legacy=oldIdentity.empty();auto complete=ZCampaign_Completed(campaign.id);auto records=ZCampaign_Records(campaign.id);
+ if(campaign.id.empty()||campaign.id=="original")return true;int current=0,unlocked=0;ZCampaign_Progress(campaign.id,current,unlocked);std::ifstream oldProgress(ZAsset_Profile()+"campaign-progress/"+campaign.id+".txt");int oldCurrent,oldUnlocked;std::string oldIdentity;oldProgress>>oldCurrent>>oldUnlocked>>oldIdentity;bool legacy=oldIdentity.empty();if(!legacy&&oldIdentity!="end"&&std::none_of(campaign.missions.begin(),campaign.missions.end(),[&](const ZCampaignMission &mission){return mission.uid==oldIdentity;})){error="Updated campaign removed your current mission. Restore the previous pack; progress was kept.";return false;}auto complete=ZCampaign_Completed(campaign.id);auto records=ZCampaign_Records(campaign.id);
  auto translate=[&](const std::string &key){for(size_t i=0;i<campaign.missions.size();++i)if(key==std::to_string(i)+":"+campaign.missions[i].map)return ZCampaign_MissionKey(campaign,i);return key;};
  for(auto &key:complete)key=translate(key);if(legacy&&!ZCampaign_Branched(campaign))for(int i=0;i<unlocked&&i<(int)campaign.missions.size();++i){auto key=ZCampaign_MissionKey(campaign,i);if(std::find(complete.begin(),complete.end(),key)==complete.end())complete.push_back(key);}for(auto &record:records)record.key=translate(record.key);
- auto folder=ZAsset_Profile()+"campaign-progress/";SDL_CreateDirectory(folder.c_str());auto write=[&](const std::string &suffix,const std::string &text){auto path=folder+campaign.id+suffix;std::ofstream out(path+".tmp");out<<text;out.close();return out&&SDL_RenamePath((path+".tmp").c_str(),path.c_str());};std::ostringstream done,score,progress;for(auto &key:complete)done<<key<<"\n";for(auto &v:records)score<<std::quoted(v.key)<<" "<<v.wins<<" "<<v.completedAt<<" "<<v.bestSeconds<<" "<<v.kills<<" "<<v.lost<<" "<<v.difficulty<<" "<<v.medal<<"\n";progress<<current<<" "<<unlocked<<"\n"<<(current>=0&&current<(int)campaign.missions.size()?campaign.missions[current].uid:current==-2?"end":"")<<"\n";if(!write("-completed.txt",done.str())||!write("-records.txt",score.str())||!write(".txt",progress.str())){error="Could not preserve campaign identity/progress";return false;}return true;
+ auto folder=ZAsset_Profile()+"campaign-progress/";SDL_CreateDirectory(folder.c_str());auto write=[&](const std::string &suffix,const std::string &text){auto path=folder+campaign.id+suffix;std::ofstream out(path+".tmp");out<<text;out.close();return out&&progress_replace(path);};std::ostringstream done,score,progress;for(auto &key:complete)done<<key<<"\n";for(auto &v:records)score<<std::quoted(v.key)<<" "<<v.wins<<" "<<v.completedAt<<" "<<v.bestSeconds<<" "<<v.kills<<" "<<v.lost<<" "<<v.difficulty<<" "<<v.medal<<"\n";progress<<current<<" "<<unlocked<<"\n"<<(current>=0&&current<(int)campaign.missions.size()?campaign.missions[current].uid:current==-2?"end":"")<<"\n";if(!write("-completed.txt",done.str())||!write("-records.txt",score.str())||!write(".txt",progress.str())){error="Could not preserve campaign identity/progress";return false;}return true;
 }

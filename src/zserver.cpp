@@ -926,11 +926,16 @@ void ZServer::SaveCampaignProgress()
 	string path = CampaignProgressPath();
 	if(!path.size()) return;
 
-	FILE *fp = fopen(path.c_str(), "w");
-	if(!fp) return;
-	//line 1: where you are; line 2: highest map unlocked (#77)
-	fprintf(fp, "%d\n%d\n", current_map_i, max_unlocked_i);
-	fclose(fp);
+    int previous=-1,previousUnlocked=-1;
+    {FILE *old=fopen(path.c_str(),"r");if(old){fscanf(old,"%d %d",&previous,&previousUnlocked);fclose(old);}}
+    if(previous<0||previous>=(int)map_list.size())previous=-1;if(previousUnlocked<0||previousUnlocked>=(int)map_list.size())previousUnlocked=-1;
+    // Replaying an older mission must not move the campaign's resume point back.
+    int resume=std::max(current_map_i,previous),unlocked=std::max(max_unlocked_i,previousUnlocked);
+    string temp=path+".tmp";FILE *fp=fopen(temp.c_str(),"w");if(!fp)return;
+    bool written=fprintf(fp,"%d\n%d\n",resume,unlocked)>0;if(fclose(fp)!=0)written=false;
+    if(!written){remove(temp.c_str());return;}
+    if(previous>=0){FILE *backup=fopen((path+".bak.tmp").c_str(),"w");if(!backup){remove(temp.c_str());return;}bool saved=fprintf(backup,"%d\n%d\n",previous,previousUnlocked)>0;if(fclose(backup)!=0)saved=false;if(!saved||!SDL_RenamePath((path+".bak.tmp").c_str(),(path+".bak").c_str())){remove(temp.c_str());return;}}
+    SDL_RenamePath(temp.c_str(),path.c_str());
 }
 
 void ZServer::LoadCampaignProgress()
@@ -942,10 +947,12 @@ void ZServer::LoadCampaignProgress()
 	if(!path.size()) return;
 
 	FILE *fp = fopen(path.c_str(), "r");
-	if(!fp) return;
+	if(!fp)fp=fopen((path+".bak").c_str(),"r");
+	if(!fp)return;
 
 	int idx = -1, unlocked = -1;
 	int got = fscanf(fp, "%d %d", &idx, &unlocked);
+    if(got<1||idx<0||idx>=(int)map_list.size()){fclose(fp);fp=fopen((path+".bak").c_str(),"r");if(!fp)return;got=fscanf(fp,"%d %d",&idx, &unlocked);}
 	if(got >= 1 && idx >= 0 && idx < (int)map_list.size())
 	{
 		//resume AT idx: set current_map_i so the first NextInMapList() lands on it
@@ -1611,8 +1618,8 @@ void ZServer::CheckStatusAndIdle()
 			char buf[1024];
 			//"started" = the match has un-paused (game running, no longer a joinable
 			//lobby), so the orchestrator can stop offering it for matchmaking.
-			int n = snprintf(buf, sizeof(buf), "{\"players\":%d,\"started\":%d,\"capacity\":%d,\"map\":%s}\n",
-                players, lan_match_started ? 1 : 0, MapPlayerCapacity(), ZCloud_JSON(map_name).c_str());
+			int n = snprintf(buf, sizeof(buf), "{\"players\":%d,\"started\":%d,\"capacity\":%d,\"map\":%s,\"version\":%s}\n",
+                players, lan_match_started ? 1 : 0, MapPlayerCapacity(), ZCloud_JSON(map_name).c_str(),ZCloud_JSON(GAME_VERSION).c_str());
 			if(n > 0 && n < (int)sizeof(buf)) write(c, buf, (size_t)n);
 			close(c);
 		}
@@ -3574,6 +3581,9 @@ void ZServer::RelayLPlayerReady(int player, int to_player)
 	set_player_int_packet packet;
 
 	packet.p_id = player_info[player].p_id;
+	packet.value = player_info[player].world_sync;
+    if(to_player==-1)server_socket.SendMessageAll(SET_LPLAYER_SYNC,(char*)&packet,sizeof(packet));
+    else server_socket.SendMessage(to_player,SET_LPLAYER_SYNC,(char*)&packet,sizeof(packet));
 	packet.value = player_info[player].ready;
 
 	if(to_player == -1)

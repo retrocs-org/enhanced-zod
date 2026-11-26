@@ -18,7 +18,7 @@ void GMMLobby::SetupLayout1()
     auto button=[&](GMMWButton &b,int x,int y,const string &text) {
         b.SetType(MMGENERIC_BUTTON); b.SetCoords(x,y); b.SetDimensions(196,20); b.SetText(text); AddWidget(&b);
     };
-    button(team_button,10,216,"Choose next open team"); button(bots_button,214,216,"Manage bots");
+    button(team_button,10,216,"Choose next open team"); button(bots_button,214,216,"Bot changes (vote)");
     button(ready_button,10,240,"Waiting for assignment..."); button(leave_button,214,240,"Leave lobby");
     button(auto_button,10,264,"Auto assign open team");button(spectate_button,214,264,"Watch as spectator");
     label(hint_label,291); label(error_label,308);
@@ -50,16 +50,17 @@ bool GMMLobby::Playable(const p_info &p) const
 void GMMLobby::RebuildPlayers()
 {
     auto &rows=player_list.GetEntryList(); rows.clear();
-    int humans=0,ready=0,bots=0;
+    int humans=0,ready=0,bots=0;string waiting;
+    if(previous_countdown>0&&countdown<0)cancelled_at=SDL_GetTicks();previous_countdown=countdown;
     for(int team:fort_teams) {
         bool occupied=false;
         if(player_info) for(const auto &p:*player_info) if(p.team==team && (p.mode==PLAYER_MODE || (p.mode==BOT_MODE && !p.ignored))) {
             string name=clip(clean(p.name.empty() ? "Unnamed player" : p.name),32);
             bool me=local_p_id && p.p_id==*local_p_id;
-            string state=p.mode==BOT_MODE ? "BOT" : p.ready ? "READY" : "NOT READY";
+            string state=p.mode==BOT_MODE ? "BOT" : p.world_sync==0 ? "RECEIVING MAP" : p.ready ? "READY" : "NOT READY";
             rows.push_back(mmlist_entry(team_type_string[team]+" | "+name+(me ? " (you)" : "")+" | "+state,p.p_id,team));
             occupied=true;
-            if(p.mode==PLAYER_MODE) { ++humans; ready+=p.ready; } else ++bots;
+            if(p.mode==PLAYER_MODE) { ++humans; ready+=p.ready;if(!p.ready){if(!waiting.empty())waiting+=", ";waiting+=clip(name,16);} } else ++bots;
         }
         if(!occupied) rows.push_back(mmlist_entry(team_type_string[team]+" | Open - waiting for player",-team,team));
     }
@@ -69,15 +70,16 @@ void GMMLobby::RebuildPlayers()
     if(ready_pending && me && me->ready==requested_ready) ready_pending=false;
     if(ready_pending && SDL_GetTicks()-ready_sent_at>5000) SetError("Ready change was not confirmed. Check connection and retry.");
     bool eligible=world_loaded && me && me->mode==PLAYER_MODE && Playable(*me);
-    ready_button.SetText(!eligible ? "Waiting for playable team..." : ready_pending ? "Confirming ready state..." : me->ready ? "Not ready" : "I'm ready");
+    ready_button.SetText(!eligible ? "Waiting for playable team..." : ready_pending ? "Confirming ready state..." : me->ready ? (countdown>0?"Cancel countdown / Not ready":"Not ready") : "I'm ready");
     ready_button.SetGreen(eligible && me->ready);
     team_button.SetText(eligible ? string("You: ")+team_type_string[me->team]+" - change team" : "Choose next open team");
     if(!world_loaded || !me) status_label.SetText("Loading map and player assignment...");
     else if(countdown>0) status_label.SetText("Starting in "+to_string(countdown)+"s - empty teams become bots");
     else if(countdown==0) status_label.SetText("All ready - starting match...");
     else if(humans<2 && !bots) status_label.SetText("Waiting for an opponent - invite a player or add a bot");
-    else status_label.SetText("Ready "+to_string(ready)+"/"+to_string(humans)+" humans | "+to_string(bots)+" bots");
-    hint_label.SetText(eligible ? "Everyone must be ready. Changing teams clears your ready state." : "Spectators do not hold a team or block match startup.");
+    else status_label.SetText("Waiting for ready: "+clip(waiting,45)+" ("+to_string(ready)+"/"+to_string(humans)+")");
+    if(cancelled_at&&SDL_GetTicks()-cancelled_at<5000&&countdown<0)status_label.SetText("Countdown cancelled: a player or team is no longer ready.");
+    hint_label.SetText(eligible ? "Not ready cancels countdown. Bot changes use a player vote." : "Spectators do not hold a team or block match startup.");
     player_list.CheckViewI();
 }
 void GMMLobby::Process()

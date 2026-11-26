@@ -173,7 +173,7 @@ private:
     ZCampaign selected_campaign;
     std::vector<ZCampaign> campaigns;
     std::vector<LevelInfo> original_levels;
-    bool community_running=false;
+    bool community_running=false,mission_replay=false;
     int campaign_mission_choice=-1,campaign_mission_scroll=0,campaign_previous_choice=-2;bool campaign_mission_focus=false,history_briefing=false;
     std::vector<int> CampaignVisibleMissions(const ZCampaign *pack,int unlocked) const;
     std::string CampaignMoviePath(const ZCampaign *pack,int index,bool victory) const;

@@ -103,7 +103,8 @@ struct ZFrontEndRegression {
         frontend.workspace.reset();REQUIRE(frontend.LaunchEditor({}));auto &recovered=*frontend.workspace;REQUIRE(recovered.recoveryPrompt);recovered.Remember();recovered.Autosave();REQUIRE(bytes(ZAsset_Profile()+"editor-recovery.map")==snapshot);recovered.mx=recovered.pressX=300;recovered.my=recovered.pressY=460;recovered.clicked=true;frontend.Render();REQUIRE(!recovered.recoveryPrompt&&recovered.dirty&&recovered.map.GetTile(0).tile==29&&recovered.cameraX==65&&recovered.zoom==1.25f);REQUIRE(recovered.path.find(frontend.custom_dir)==0);recovered.ClearRecovery();
         SDL_Event key{};key.type=SDL_EVENT_KEY_DOWN;key.key.key=SDLK_F1;recovered.Event(key);REQUIRE(recovered.helpPanel);key.key.key=SDLK_ESCAPE;recovered.Event(key);REQUIRE(!recovered.helpPanel&&!recovered.closed);key.key.key=SDLK_2;recovered.Event(key);REQUIRE(recovered.tool==1);key.key.key=SDLK_G;recovered.Event(key);REQUIRE(recovered.grid);key.key.key=SDLK_F;recovered.Event(key);REQUIRE(recovered.zoom!=1.25f);
         auto capture=[&](const string &name){frontend.Render();auto *renderer=ZVideo_GetRenderer();SDL_SetRenderTarget(renderer,frontend.target);SDL_Surface *surface=SDL_RenderReadPixels(renderer,nullptr);REQUIRE(surface&&IMG_SavePNG(surface,(root+"/"+name+".png").c_str()));SDL_DestroySurface(surface);SDL_SetRenderTarget(renderer,nullptr);};
-        recovered.helpPanel=true;capture("editor-help");recovered.helpPanel=false;frontend.workspace.reset();
+        recovered.helpPanel=true;capture("editor-help");recovered.helpPanel=false;
+        recovered.Remember();recovered.map.GetTile(0).tile=31;recovered.historyPanel=true;auto beforeHistory=recovered.undo.size();capture("editor-history");REQUIRE(recovered.undo.size()==beforeHistory);recovered.Undo(false);REQUIRE(recovered.map.GetTile(0).tile==29);recovered.Undo(true);REQUIRE(recovered.map.GetTile(0).tile==31);recovered.historyPanel=false;frontend.workspace.reset();
         for(int slot=0;slot<=ZSAVE_USER_SLOTS;++slot){ZSaveInfo info;info.map_name="maps/p02_bb_orig01.map";info.map_title="Virgin Soldiers";info.campaign_id="original";info.mission_index=0;info.elapsed=754;info.when=1795000000;ZSaveWriter writer;ZSave_WriteInfo(writer,info);REQUIRE(writer.WriteFile(ZSave_Path(slot)));}SDL_Surface *screen=SDL_CreateSurface(1280,800,SDL_PIXELFORMAT_ARGB8888);REQUIRE(screen);ZSDL_Surface::SetMainSoftwareSurface(screen);ZMap dummy;
         auto renderMenu=[&](ZGuiMainMenuBase &menu,const string &name){auto *renderer=ZVideo_GetRenderer();SDL_FillSurfaceRect(screen,nullptr,0xff0e171e);ZMenuTheme::beginText(renderer);menu.DoRender(dummy,screen);ZMenuTheme::endText();SDL_Texture *frame=SDL_CreateTextureFromSurface(renderer,screen);REQUIRE(frame);SDL_RenderTexture(renderer,frame,nullptr,nullptr);ZMenuTheme::presentText(renderer,1280,800);SDL_Surface *image=SDL_RenderReadPixels(renderer,nullptr);REQUIRE(image&&IMG_SavePNG(image,(root+"/"+name+".png").c_str()));SDL_DestroySurface(image);SDL_DestroyTexture(frame);};
         zod_text_percent=120;GMMSaveGame saveMenu;saveMenu.SetCenterCoords(640,400);saveMenu.SetRenderScale(2);renderMenu(saveMenu,"save-menu");saveMenu.KeyPress(SDLK_DOWN);saveMenu.KeyPress(SDLK_RETURN);REQUIRE(saveMenu.KillMe()&&saveMenu.GetGMMFlags().save_slot==2);
@@ -253,6 +254,11 @@ struct ZFrontEndRegression {
         frontend.RecordCampaignResult(false);frontend.ContinueCommunity();REQUIRE(frontend.PopAction(action)&&action.value==1);
         frontend.RecordCampaignResult(true);frontend.ContinueCommunity();REQUIRE(frontend.screen==ZFrontEnd::SCR_CAMPAIGNS);
         int current,unlocked;ZCampaign_Progress(campaign.id,current,unlocked);REQUIRE(current==1&&unlocked==1);REQUIRE(ZCampaign_Completed(campaign.id).size()==2);
+        auto progressFile=ZAsset_Profile()+"campaign-progress/"+campaign.id+".txt";auto beforeReplay=bytes(progressFile);
+        frontend.StartLevel(0,false);REQUIRE(frontend.mission_replay&&frontend.PopAction(action));frontend.RecordCampaignResult(true,25,3,0,1);REQUIRE(bytes(progressFile)==beforeReplay);REQUIRE(frontend.community_next==-1);
+        REQUIRE(!bytes(progressFile+".bak").empty());auto changed=frontend.campaigns[0];changed.missions.erase(changed.missions.begin()+1);REQUIRE(!ZCampaign_MigrateIdentity(changed,error));REQUIRE(bytes(progressFile)==beforeReplay);
+        {std::ofstream broken(progressFile);broken<<"interrupted write";}ZCampaign_Progress(campaign.id,current,unlocked);REQUIRE(current>=0&&unlocked>=0);auto recoveredBackup=bytes(progressFile+".bak");ZCampaign_Progress(campaign.id,current,unlocked,true);REQUIRE(bytes(progressFile+".bak")==recoveredBackup);
+
         auto originalVisible=frontend.CampaignVisibleMissions(nullptr,2);REQUIRE(originalVisible==vector<int>({0,1,2}));
         ZCampaign many=loaded;many.missions.resize(10,mission);for(size_t i=2;i<many.missions.size();++i)many.missions[i].uid="extra-"+to_string(i);REQUIRE(frontend.CampaignVisibleMissions(&many,4)==vector<int>({0,1,4}));
         frontend.SelectCampaign(-1);REQUIRE(frontend.selected_campaign.id.empty());REQUIRE(frontend.levels.size()==originals.size());
@@ -410,7 +416,9 @@ public:
         REQUIRE(server->map_name.empty());server->LoadCampaignProgress();REQUIRE(server->max_unlocked_i==2);
         server->map_name="community.map";server->SaveCampaignProgress();REQUIRE(bytes(progress)==before);server->map_name.clear();
         ZMap::ServerInit();int_packet request{};request.map_num=2;ZServer::select_map_event(server.get(),(char*)&request,sizeof(request),-1);
-        REQUIRE(server->game_on&&server->zmap.Loaded()&&!server->menu_first);REQUIRE(server->map_name==server->map_list[2]&&server->current_map_i==2);server->ProcessEndGame();REQUIRE(server->end_return_to_menu&&!server->game_on);server->next_reset_game_time=0;server->CheckResetGame();REQUIRE(server->current_map_i==2&&!server->game_on);std::cout<<"campaign-menu-resume-ok";
+        REQUIRE(server->game_on&&server->zmap.Loaded()&&!server->menu_first);REQUIRE(server->map_name==server->map_list[2]&&server->current_map_i==2);server->ProcessEndGame();REQUIRE(server->end_return_to_menu&&!server->game_on);server->next_reset_game_time=0;server->CheckResetGame();REQUIRE(server->current_map_i==2&&!server->game_on);
+        server->map_name=server->map_list[2];server->current_map_i=2;server->SaveCampaignProgress();server->map_name=server->map_list[0];server->current_map_i=0;server->SaveCampaignProgress();{std::ifstream saved(progress);int resume;saved>>resume;REQUIRE(resume==2);}REQUIRE(!bytes(progress+".bak").empty());{std::ofstream broken(progress);broken<<"interrupted";}server->LoadCampaignProgress();REQUIRE(server->current_map_i==1);
+        std::cout<<"campaign-menu-resume-ok";
     }
     static void objective_round(){
         ZCampaign campaign;string error;REQUIRE(ZCampaign_Create("Server objective",campaign,error));REQUIRE(SDL_CopyFile("maps/p02_bb_orig01.map",(campaign.root+"/one.map").c_str()));ZCampaignMission mission;mission.map="one.map";mission.objectives={{"survive","Hold position",0,30}};campaign.missions={mission};REQUIRE(ZCampaign_Write(campaign,error));
@@ -791,6 +799,9 @@ public:
         menu.GetGMMFlags().clear(); menu.HandleWidgetEvent(GMM_UNCLICK_EVENT,&menu.ready_button);
         REQUIRE(!menu.GetGMMFlags().toggle_ready); // Don't flood duplicate ready requests.
         players[1].ready=true; menu.Process(); REQUIRE(!menu.ready_pending);
+        players[0].world_sync=0;menu.Process();REQUIRE(menu.player_list.GetEntryList()[0].text.find("RECEIVING MAP")!=string::npos);players[0].world_sync=1;
+        menu.SetCountdown(5);menu.Process();menu.SetCountdown(-1);menu.Process();REQUIRE(menu.cancelled_at>0);
+
         menu.HandleWidgetEvent(GMM_UNCLICK_EVENT,&menu.team_button);
         REQUIRE(menu.GetGMMFlags().change_team && menu.GetGMMFlags().change_team_type==YELLOW_TEAM);
         menu.GetGMMFlags().clear(); local_id=103; menu.Process();
@@ -802,6 +813,7 @@ public:
         menu.Process(); REQUIRE(menu.sticky_error && !menu.ready_pending);
         menu.GetGMMFlags().clear();menu.HandleWidgetEvent(GMM_UNCLICK_EVENT,&menu.spectate_button);REQUIRE(menu.GetGMMFlags().change_team&&menu.GetGMMFlags().change_team_type==-1);
         menu.GetGMMFlags().clear();menu.HandleWidgetEvent(GMM_UNCLICK_EVENT,&menu.auto_button);REQUIRE(menu.GetGMMFlags().change_team);
+        menu.GetGMMFlags().clear();menu.KeyPress(9);menu.KeyPress(SDLK_DOWN);REQUIRE(menu.player_list.GetFirstSelected()>=0);menu.KeyPress(9);menu.KeyPress(13);REQUIRE(menu.GetGMMFlags().change_team);
         menu.HandleWidgetEvent(GMM_UNCLICK_EVENT,&menu.leave_button); REQUIRE(menu.GetGMMFlags().leave_match);
         // The title-bar close action must leave too, rather than expose a
         // paused match with its ready gate hidden.

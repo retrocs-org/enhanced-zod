@@ -109,29 +109,29 @@ func (a *Agent) Verify(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 	fmt.Fprintf(w, "%s\n%s\n%s", claim.Account, claim.Username, claim.Grant)
 }
-func (a *Agent) status() (int, bool, string, error) {
+func (a *Agent) status() (int, bool, string, string, error) {
 	c, e := net.DialTimeout("unix", filepath.Join(a.cfg.State, "status.sock"), time.Second)
 	if e != nil {
-		return 0, false, "", e
+		return 0, false, "", "", e
 	}
 	defer c.Close()
 	c.SetReadDeadline(time.Now().Add(time.Second))
 	var v struct {
 		Players, Started, Capacity int
-		Map                        string
+		Map, Version               string
 	}
 	e = json.NewDecoder(io.LimitReader(c, 65536)).Decode(&v)
 	if v.Capacity > 0 {
 		a.cfg.Capacity = v.Capacity
 	}
-	return v.Players, v.Started != 0, v.Map, e
+	return v.Players, v.Started != 0, v.Map, v.Version, e
 }
 func (a *Agent) publish(ctx context.Context) {
-	n, started, m, e := a.status()
+	n, started, m, version, e := a.status()
 	if e != nil {
 		return
 	}
-	if e = a.request(ctx, "POST", "/api/servers/heartbeat", map[string]any{"name": a.cfg.Name, "host": a.cfg.Host, "port": a.cfg.Port, "map": m, "players": n, "capacity": a.cfg.Capacity, "started": started, "version": "zod-cloud-1"}, nil); e != nil {
+	if e = a.request(ctx, "POST", "/api/servers/heartbeat", map[string]any{"name": a.cfg.Name, "host": a.cfg.Host, "port": a.cfg.Port, "map": m, "players": n, "capacity": a.cfg.Capacity, "started": started, "version": version}, nil); e != nil {
 		log.Printf("public listing: %v", e)
 	}
 	entries, e := os.ReadDir(filepath.Join(a.cfg.State, "outbox"))

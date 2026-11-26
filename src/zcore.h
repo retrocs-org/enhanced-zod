@@ -86,7 +86,7 @@ public:
 		mode = NOBODY_MODE;
 		vote_choice = P_NULL_VOTE;
 		ignored = false;
-		ready = false;
+		ready = false;world_sync=-1;
 
 		logout();
 	}
@@ -116,6 +116,7 @@ public:
 	player_mode mode;
 	int vote_choice;
 	bool ignored;
+    int world_sync; // -1 unknown/legacy, 0 receiving map, 1 world sent
 	bool ready;   //matchmaking lobby: has this player clicked "I'm ready"
 	int p_id;
 

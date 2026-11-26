@@ -5,9 +5,10 @@ require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/community_service.php';
 require_once __DIR__ . '/content_service.php';
 require_once __DIR__ . '/native_connect.php';
+require_once __DIR__ . '/moderation.php';
 
 final class ZodService {
-    use CommunityService,ContentService,NativeConnectService;
+    use CommunityService,ContentService,NativeConnectService,ModerationService;
     public function currentAccount(): ?array {
         return query('SELECT a.id,a.username,a.created_at FROM sessions s JOIN accounts a ON a.id=s.account_id WHERE s.token_hash=? AND s.expires_at>UTC_TIMESTAMP(6)', [token_hash(session_token())])->fetch() ?: null;
     }

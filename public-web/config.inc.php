@@ -4,6 +4,8 @@ declare(strict_types=1);
 // Never commit a real password. Environment variables override these settings.
 if (!defined('ZODEE_INTERNAL') && PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 return [
+    // Comma-separated existing account usernames allowed to moderate. Empty disables admin access.
+    'ZOD_ADMIN_USERS' => '',
     // MariaDB: database host and the application account (not the root account).
     'ZOD_DB_HOST' => '172.16.1.121',
     'ZOD_DB_PORT' => '3306',

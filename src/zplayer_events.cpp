@@ -47,6 +47,7 @@ void ZPlayer::SetupEHandler()
 	ehandler.AddFunction(TCP_EVENT, SET_LPLAYER_MODE, set_player_mode_event);
 	ehandler.AddFunction(TCP_EVENT, SET_LPLAYER_IGNORED, set_player_ignored_event);
 	ehandler.AddFunction(TCP_EVENT, SET_LPLAYER_READY, set_player_ready_event);
+    ehandler.AddFunction(TCP_EVENT, SET_LPLAYER_SYNC, set_player_sync_event);
     ehandler.AddFunction(TCP_EVENT, LOBBY_COUNTDOWN, lobby_countdown_event);
 	ehandler.AddFunction(TCP_EVENT, SET_LPLAYER_LOGINFO, set_player_loginfo_event);
 	ehandler.AddFunction(TCP_EVENT, SET_LPLAYER_VOTEINFO, set_player_voteinfo_event);
@@ -1585,6 +1586,10 @@ void ZPlayer::set_player_ignored_event(ZPlayer *p, char *data, int size, int dum
 	p->ProcessSetLPlayerIgnored(data, size);
 }
 
+void ZPlayer::set_player_sync_event(ZPlayer *p,char *data,int size,int){
+ if(size!=sizeof(set_player_int_packet)||!data)return;int id=PacketGetInt(data,0),state=PacketGetInt(data,4);if(state<0||state>1)return;
+ for(auto &player:p->player_info)if(player.p_id==id)player.world_sync=state;
+}
 void ZPlayer::set_player_ready_event(ZPlayer *p, char *data, int size, int dummy)
 {
 	p->ProcessSetLPlayerReady(data, size);

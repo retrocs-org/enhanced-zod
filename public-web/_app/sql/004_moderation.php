@@ -1,0 +1,22 @@
+<?php
+declare(strict_types=1);
+if(PHP_SAPI!=='cli'){http_response_code(404);exit;}
+return <<<'SQL'
+CREATE TABLE IF NOT EXISTS community_reports (
+ id CHAR(64) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+ reporter CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ kind VARCHAR(12) NOT NULL, target VARCHAR(64) NOT NULL, reason VARCHAR(1000) NOT NULL,
+ resolved BOOLEAN NOT NULL DEFAULT FALSE,
+ created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+ FOREIGN KEY(reporter) REFERENCES accounts(id) ON DELETE CASCADE,
+ INDEX report_queue(resolved,created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE IF NOT EXISTS moderation_log (
+ id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+ actor CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+ action VARCHAR(32) NOT NULL, target VARCHAR(64) NOT NULL,
+ created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+ FOREIGN KEY(actor) REFERENCES accounts(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+INSERT IGNORE INTO schema_migrations(version) VALUES(4);
+SQL;

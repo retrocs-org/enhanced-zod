@@ -51,6 +51,8 @@ public:
 	int GetWidgetType() { return widget_type; }
 	int GetWidth() { return w; }
 	int GetHeight() { return h; }
+    int GetX() const { return x; }
+    int GetY() const { return y; }
 	gmmw_flag &GetGMMWFlags() { return the_flags; }
 
 	void SetDimensions(int w_, int h_) { w=w_; h=h_; }
@@ -275,6 +277,7 @@ public:
 	void CheckViewI();
 	void UnSelectAll(int except_entry = -1);
 	int GetFirstSelected();
+    void EnsureVisible(int index){if(index<view_i)view_i=index;else if(index>=view_i+visible_entries)view_i=index-visible_entries+1;CheckViewI();}
 private:
 	static bool finished_init;
 
@@ -344,6 +347,7 @@ public:
 	void SetMaxSelections(int selections_);
 	void SetSelected(int si_) { si=si_; CheckSI(); }
 	int GetSelected() { return si; }
+    int GetSelections() const { return selections; }
 
 private:
 	static bool finished_init;

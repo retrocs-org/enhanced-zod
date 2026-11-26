@@ -8,7 +8,7 @@ trait ContentService {
     }
     public function creationVersion(string $id): array {
         $row=query('SELECT p.*,a.username,v.id AS revision,v.version,v.engine_min,v.notes,v.sha256,v.filename,v.manifest,v.approved,v.created_at FROM community_versions v JOIN community_projects p ON p.id=v.project_id JOIN accounts a ON a.id=p.owner WHERE v.id=?',[$id])->fetch();
-        if(!$row||(!$row['approved']&&($this->currentAccount()['id']??'')!==$row['owner']))fail(404,'Creation not found.');return $row;
+        if(!$row||(!$row['approved']&&($this->currentAccount()['id']??'')!==$row['owner']&&!$this->isOperator()))fail(404,'Creation not found.');return $row;
     }
     public function creationHistory(string $project): array {
         return query('SELECT v.id,v.version,v.notes,v.created_at FROM community_versions v JOIN community_projects p ON p.id=v.project_id WHERE p.id=? AND (v.approved=1 OR p.owner=?) ORDER BY v.created_at DESC LIMIT 100',[$project,$this->currentAccount()['id']??''])->fetchAll();
