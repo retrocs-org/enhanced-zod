@@ -629,7 +629,31 @@ static std::vector<char> packet(int size, int id, std::string body = "") {
     if(!body.empty()) memcpy(result.data() + 8, body.data(), body.size());
     return result;
 }
+static void small_stack_socket_send() {
+    Peer peer;
+    struct SendContext {SocketHandler *socket;std::string error;};
+    SendContext context{peer.receiver.get(),""};
+    auto props=SDL_CreateProperties();REQUIRE(props);
+    auto worker=+[](void *value)->int {
+        auto &context=*static_cast<SendContext*>(value);
+        try {
+            if(!context.socket->SendMessage(101,nullptr,0)||!context.socket->SendMessage(102,"ready123",8)||!context.socket->SendMessage(103,std::string(4096,'m').data(),4096))return 1;
+            return 0;
+        }catch(const std::exception &error){context.error=error.what();return 2;}
+    };
+    REQUIRE(SDL_SetPointerProperty(props,SDL_PROP_THREAD_CREATE_ENTRY_FUNCTION_POINTER,reinterpret_cast<void*>(worker)));
+    REQUIRE(SDL_SetPointerProperty(props,SDL_PROP_THREAD_CREATE_USERDATA_POINTER,&context));
+    REQUIRE(SDL_SetStringProperty(props,SDL_PROP_THREAD_CREATE_NAME_STRING,"socket-stack"));
+    REQUIRE(SDL_SetNumberProperty(props,SDL_PROP_THREAD_CREATE_STACKSIZE_NUMBER,128*1024));
+    auto *thread=SDL_CreateThreadWithProperties(props);SDL_DestroyProperties(props);REQUIRE(thread);
+    int status=-1;SDL_WaitThread(thread,&status);REQUIRE(status==0&&context.error.empty());
+    auto expected=packet(0,101);auto ready=packet(8,102,"ready123");auto map=packet(4096,103,std::string(4096,'m'));expected.insert(expected.end(),ready.begin(),ready.end());expected.insert(expected.end(),map.begin(),map.end());
+    std::vector<char> received(expected.size());size_t offset=0;
+    while(offset<received.size()){int count=recv(peer.sender,received.data()+offset,static_cast<int>(received.size()-offset),0);REQUIRE(count>0);offset+=count;}
+    REQUIRE(received==expected);
+}
 static void packets() {
+    small_stack_socket_send();
     for(bool fast : {false, true}) {
         for(int length : {-1, INT_MIN, INT_MAX, MAX_DATA_STORED, MAX_DATA_STORED - 7}) {
             Peer peer; peer.send_bytes(packet(length, 7));
@@ -1448,6 +1472,11 @@ int main(int argc, char **argv) {
         else if(std::string(argv[1]) == "stress"){REQUIRE(argc==5);ZServerRegression::scripted_stress(argv[2],atoi(argv[3]),atoi(argv[4]));}
         else if(std::string(argv[1]) == "save") { REQUIRE(argc == 3); ZServerRegression::roundtrip(argv[2]); }
         else if(std::string(argv[1]) == "integrity") ZLANRegression::integrity();
+        else if(std::string(argv[1]) == "embedded-stack-server") {
+            REQUIRE(argc==4&&std::string(argv[2])=="-m");
+            auto worker=+[](void *data)->int {try{auto server=std::make_unique<ZServer>();server->SetCloudRequired(false);server->SetMapName(static_cast<const char*>(data));server->Setup();server->Run();return 0;}catch(const std::exception &error){std::cerr<<error.what();return 1;}};
+            auto props=SDL_CreateProperties();REQUIRE(props);REQUIRE(SDL_SetPointerProperty(props,SDL_PROP_THREAD_CREATE_ENTRY_FUNCTION_POINTER,reinterpret_cast<void*>(worker)));REQUIRE(SDL_SetPointerProperty(props,SDL_PROP_THREAD_CREATE_USERDATA_POINTER,argv[3]));REQUIRE(SDL_SetStringProperty(props,SDL_PROP_THREAD_CREATE_NAME_STRING,"server-stack"));REQUIRE(SDL_SetNumberProperty(props,SDL_PROP_THREAD_CREATE_STACKSIZE_NUMBER,512*1024));auto *thread=SDL_CreateThreadWithProperties(props);SDL_DestroyProperties(props);REQUIRE(thread);int status=-1;SDL_WaitThread(thread,&status);REQUIRE(status==0);
+        }
         else if(std::string(argv[1]) == "packets") packets();
         else if(std::string(argv[1]) == "protocol") {
 #define EMIT(value) std::cout << "\"" #value "\":" << (int)value << ",";

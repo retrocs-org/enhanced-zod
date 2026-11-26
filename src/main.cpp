@@ -24,6 +24,7 @@ TCHAR *optarg;
 
 #include <sys/stat.h>
 #include <string>
+#include <memory>
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
 #endif
@@ -269,7 +270,10 @@ int run_server_thread(void *nothing)
 {
 	int i;
 	vector<SDL_Thread*> bot_thread;
-	ZServer zserver;
+    // The embedded server runs on an SDL worker, whose default macOS stack is
+    // about 512 KiB. Its long-lived world state belongs on the heap.
+    auto server = std::make_unique<ZServer>();
+    ZServer &zserver = *server;
 	// Campaign and local host-and-play sessions are always offline-capable.
 	if(!starting_conditions.read_is_dedicated) zserver.SetCloudRequired(false);
 

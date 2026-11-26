@@ -68,3 +68,11 @@ available for headless hosts.
 
 For isolated tests, set `ZOD_PROFILE_DIR` explicitly; preferences then use
 `preferences.ini` under that profile instead of `$HOME/.zod_prefs`.
+
+## Worker-stack networking regression
+
+The packet decoder test also sends empty, eight-byte ready-state and 4 KiB map
+frames over real loopback sockets from a 128 KiB SDL thread. A separate embedded
+server test starts the real server on a 512 KiB worker and repeats map/world
+handshakes. Both checks are included in packaged installation verification, so a
+dedicated server running on the main thread cannot hide small-worker-stack bugs.

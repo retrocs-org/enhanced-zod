@@ -10,6 +10,12 @@ are retained below; new website changes belong in that separate log.
 
 ## Unreleased
 
+### macOS embedded-server startup crash
+
+- Remove the 400 KB automatic socket-send buffer that exhausted SDL's small server-thread stack during map-handshake replies.
+- Keep the embedded server's long-lived state on the heap and add a 128 KB-thread regression checking empty, ready-state and map-chunk wire frames.
+
+
 ### Rejoining, recovery and release rehearsal
 
 - Reserve disconnected multiplayer teams for 90 seconds within the same round: private games use one-use session tokens; public games require fresh cloud approval for the same account.

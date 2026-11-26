@@ -34,7 +34,7 @@ def check(package,binary,driver):
         subprocess.run([sys.executable,str(ROOT/'tests/engine_regressions.py'),str(executable),str(driver),str(ROOT),'--installation-check'],cwd=temporary,env=env,check=True,timeout=240)
     if before!=inventory(package):raise RuntimeError('Installation checks modified staged package files')
     proof={'platform':platform.system(),'architecture':platform.machine(),'package':package.name,'binary':binary,'passed':True,'files':before,
-           'checks':['fresh-profile-import-screen','authored-level-import','campaign-start-save-reload','two-player-match-startup','direct-join-version-check','connection-loss-recovery'],
+           'checks':['fresh-profile-import-screen','authored-level-import','campaign-start-save-reload','two-player-match-startup','direct-join-version-check','connection-loss-recovery','small-stack-socket-replies','embedded-worker-map-transfer'],
            'limitations':['Synthetic game media and dummy SDL renderer; real display, audible output and original-disc import require manual QA.']}
     temporary=receipt.with_suffix('.tmp');temporary.write_text(json.dumps(proof,indent=2)+'\n');temporary.replace(receipt)
     print('Native installation check passed:',receipt)

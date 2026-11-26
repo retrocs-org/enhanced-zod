@@ -11,6 +11,7 @@
 #include <string.h>
 #include "packet_io.h"
 #include <errno.h>
+#include <vector>
 
 #include "socket_handler.h"
 #include "common.h"
@@ -285,7 +286,10 @@ void SocketHandler::ResetFastProcess()
 int SocketHandler::SendMessage(int pack_id, const char *data, int size)
 {
 	if(!connected || size < 0 || size > MAX_DATA_STORED - 8 || (size && !data)) return 0;
-	char temp_buf[MAX_DATA_STORED];
+    // Replies can be sent from a receive callback on SDL's small server stack.
+    // Keep packet storage off that stack, and allocate only the validated frame.
+    std::vector<char> frame(static_cast<size_t>(size) + 8);
+    char *temp_buf = frame.data();
 	int error_no;
 	
 		//if(!pause_for_send())

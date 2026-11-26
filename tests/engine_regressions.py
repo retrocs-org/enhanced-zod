@@ -25,6 +25,8 @@ if installation_check:
         'test_direct_connection_adopts_real_socket_and_reports_refusal',
         'test_version_preflight_rejects_incompatible_or_silent_servers',
         'test_private_multiplayer_reconnects_and_cancel_stops_retries',
+        'test_malformed_and_fragmented_packet_decoder',
+        'test_embedded_server_transfers_maps_on_small_worker_stack',
     ]]
 WORKSPACE=ROOT
 _fixture_workspace=None
@@ -455,12 +457,20 @@ class EngineRegressions(unittest.TestCase):
             result=subprocess.run([DRIVER,'offline-policy'],cwd=WORKSPACE,env=env,capture_output=True,text=True,timeout=10)
             self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
+    def test_embedded_server_transfers_maps_on_small_worker_stack(self):
+        with self.match(embedded=True) as (process,port,sockets):
+            client=Client(sockets[0]);self.identify(client,'Embedded stack test',PROTOCOL['RED_TEAM'])
+            for _ in range(3):
+                self.download_world(client)
+                client.send('REQUEST_VERSION');self.assertTrue(client.until('GIVE_VERSION')[0])
+                self.assertIsNone(process.poll())
+
     def test_malformed_and_fragmented_packet_decoder(self):
         result = subprocess.run([DRIVER, 'packets'], capture_output=True, text=True, timeout=10)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     @contextlib.contextmanager
-    def match(self, private=False, bots=(), map_file=MAP):
+    def match(self, private=False, bots=(), map_file=MAP, embedded=False):
         with tempfile.TemporaryDirectory(prefix='zod-match-test-') as directory:
             with socket.socket() as reserve:
                 reserve.bind(('127.0.0.1', 0))
@@ -471,7 +481,7 @@ class EngineRegressions(unittest.TestCase):
             settings = pathlib.Path(directory) / 'perpetual.txt'
             settings.write_text('start_map_paused=1\n')
             with log_path.open('w+') as log:
-                command = [DRIVER, '-private', '-m', map_file] if private else [GAME, '-d', '-m', map_file, '-e', str(settings)]
+                command = [DRIVER, 'embedded-stack-server', '-m', map_file] if embedded else ([DRIVER, '-private', '-m', map_file] if private else [GAME, '-d', '-m', map_file, '-e', str(settings)])
                 for bot in bots:
                     command.extend(['-b', bot])
                 process = subprocess.Popen(command,
