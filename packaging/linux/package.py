@@ -33,8 +33,12 @@ exec "$root/zod-agent" --engine "$root/zod-enhanced" --data "$root" --state "$st
 Private server (guests welcome; no website needed):
   ./start-server
 
-Public server (every human must use a Zod cloud join ticket):
-  ./start-server --mode public --hub https://YOUR-ZOD-SITE --id YOUR-SERVER-ID --key-file /path/to/key --name "My Zod server"
+Public server (first authorize the host in your browser):
+  ./start-server --mode public --hub https://zodee.retrocs.org/index.php --id YOUR-SERVER-ID --name "My Zod server" --login-only
+Then run without --login-only; its private server credential survives restarts:
+  ./start-server --mode public --hub https://zodee.retrocs.org/index.php --id YOUR-SERVER-ID --name "My Zod server"
+The signing-in account owns the server and manages delegated administrators in My servers.
+Existing operator-provisioned IDs need their old --key-file during the first login.
 
 Open/forward TCP 2137 for remote clients. Default map is maps/p02_bb_orig01.map.
 Use --map and --port to change these; --state selects a per-server writable directory.

@@ -10,6 +10,13 @@ are retained below; new website changes belong in that separate log.
 
 ## Unreleased
 
+### Account-owned public hosting
+
+- Authenticate a dedicated public host through a browser code; persist only its server-scoped credential for restarts, never an account password/session.
+- Require a verified cloud owner before launching public hosting; automatically grant the owner server administrator permissions.
+- Enforce current server roles for map, pause, restart, bot, team-shuffle and speed administration. Roles refresh while connected and fail closed when stale.
+- Show owner/admin status in the multiplayer lobby; private/LAN hosting keeps its existing offline and voting behavior.
+
 ### Compatibility, editor and campaign polish
 
 - Publish the engine's actual version through the server agent and website; inspect it directly before joining; show its map and explain server map delivery and required imported base assets.

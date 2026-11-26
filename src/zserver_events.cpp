@@ -965,7 +965,7 @@ void ZServer::start_vote_event(ZServer *p, char *data, int size, int player)
 	//good packet?
 	if(size != sizeof(vote_info_packet)) return;
 
-	if(p->StartVote(pi->vote_type, pi->value))
+	if(p->StartVote(pi->vote_type, pi->value,player))
 		p->VoteYes(player);
 }
 

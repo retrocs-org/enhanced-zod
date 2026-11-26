@@ -17,5 +17,5 @@ try {
         if ($existing) query('UPDATE server_keys SET name=?,key_hash=?,enabled=1 WHERE id=?',[$name,$hash,$id]);
         else query('INSERT INTO server_keys (id,name,key_hash) VALUES (?,?,?)',[$id,$name,$hash]);
     });
-    echo "Server credential provisioned. The key was not stored in plaintext.\n";
+    echo "Server credential provisioned. The key was not stored in plaintext. Public hosting also requires cloud ownership: authorize the dedicated host with --login and this --key-file.\n";
 } catch(Throwable $e) {fwrite(STDERR,"Provisioning failed: ".$e->getMessage()."\n");exit(1);}

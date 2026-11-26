@@ -1,0 +1,16 @@
+# One-time browser authorization, using the same persistent game-state volume.
+# docker compose -f compose.public.yaml -f compose.public.enroll.yaml run --rm dedicated
+services:
+  dedicated:
+    command:
+      - --mode
+      - public
+      - --state
+      - /data
+      - --hub
+      - ${ZOD_HUB_URL:?Set ZOD_HUB_URL to your Zod HTTPS website}
+      - --id
+      - ${ZOD_SERVER_ID:?Set a unique owned Zod server ID}
+      - --name
+      - ${ZOD_SERVER_NAME:-Public Zod server}
+      - --login-only

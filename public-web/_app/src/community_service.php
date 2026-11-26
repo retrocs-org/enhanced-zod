@@ -78,7 +78,7 @@ trait CommunityService {
             if(!$account||!query('SELECT 1 FROM recovery_codes WHERE account_id=? AND code_hash=?',[$account['id'],token_hash($code)])->fetchColumn())fail(401,'Recovery details are incorrect or the code was already used.');
             query('DELETE FROM recovery_codes WHERE account_id=? AND code_hash=?',[$account['id'],token_hash($code)]);
             query("UPDATE accounts SET password_hash=?,password_scheme='argon2id',legacy_salt=NULL WHERE id=?",[$this->hashPassword($password),$account['id']]);
-            query('DELETE FROM native_connections WHERE account_id=?',[$account['id']]);query('DELETE FROM sessions WHERE account_id=?',[$account['id']]);query('DELETE FROM join_tickets WHERE account_id=?',[$account['id']]);
+            query('DELETE FROM server_auth_requests WHERE account_id=?',[$account['id']]);query('DELETE FROM native_connections WHERE account_id=?',[$account['id']]);query('DELETE FROM sessions WHERE account_id=?',[$account['id']]);query('DELETE FROM join_tickets WHERE account_id=?',[$account['id']]);
         });session_cookie('');return ['ok'=>true];
     }
 }

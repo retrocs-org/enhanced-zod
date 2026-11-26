@@ -41,6 +41,9 @@ class ZServer : public ZCore
         std::map<int,ZCloudPeer> cloud_peers;
         std::map<std::string,ZCloudRoster> cloud_roster;
         ZMPAsync<ZCloudClaim> cloud_task;
+        ZMPAsync<ZCloudRoles> cloud_roles_task;ZCloudRoles cloud_roles;
+        double cloud_roles_next=0,cloud_roles_until=0;std::map<int,int> cloud_role_sent;
+        bool CloudAdmin(int player);void RefreshCloudRoles();
         int cloud_kills[MAX_TEAM_TYPES]={}, cloud_lost[MAX_TEAM_TYPES]={}, cloud_captures[MAX_TEAM_TYPES]={};
         std::set<int> cloud_deaths;
         double cloud_match_start=0;

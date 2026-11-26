@@ -7,7 +7,6 @@ services:
       - "2137:2137/tcp"
     volumes:
       - game-state:/data
-      - ./secrets/server-key:/run/secrets/server-key:ro
     command:
       - --mode
       - public
@@ -16,9 +15,7 @@ services:
       - --hub
       - ${ZOD_HUB_URL:?Set ZOD_HUB_URL to your Zod HTTPS website}
       - --id
-      - ${ZOD_SERVER_ID:?Set the approved Zod server ID}
-      - --key-file
-      - /run/secrets/server-key
+      - ${ZOD_SERVER_ID:?Set a unique owned Zod server ID}
       - --name
       - ${ZOD_SERVER_NAME:-Public Zod server}
     restart: unless-stopped

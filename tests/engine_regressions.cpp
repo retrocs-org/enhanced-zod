@@ -441,6 +441,12 @@ public:
         REQUIRE(getenv("ZOD_REQUIRE_CLOUD") && string(getenv("ZOD_REQUIRE_CLOUD")) == "1");
         auto server=std::make_unique<ZServer>();
         REQUIRE(server->cloud_required);
+        p_info admin(500);admin.mode=PLAYER_MODE;server->player_info.push_back(admin);server->cloud_peers[500].account=string(64,'a');server->cloud_roles.valid=true;server->cloud_roles.owner=string(64,'a');server->cloud_roles_until=current_time()+15;
+        REQUIRE(server->CloudAdmin(0));REQUIRE(server->CloudFilter(TCP_EVENT,RESET_MAP,nullptr,0,0));
+        server->cloud_peers[500].account=string(64,'b');REQUIRE(!server->CloudAdmin(0));REQUIRE(server->CloudFilter(TCP_EVENT,SET_READY,nullptr,0,0));
+        server->cloud_roles.admins.insert(string(64,'b'));REQUIRE(server->CloudFilter(TCP_EVENT,SET_GAME_PAUSED,nullptr,0,0));server->cloud_roles.admins.clear();REQUIRE(!server->CloudAdmin(0));
+        server->cloud_roles.admins.insert(string(64,'b'));server->cloud_roles_until=current_time()-1;REQUIRE(!server->CloudAdmin(0));
+
         server->SetCloudRequired(false); // same policy used by the local campaign launcher
         REQUIRE(!server->cloud_required);
         REQUIRE(server->CloudFilter(TCP_EVENT, 0, nullptr, 0, 0));
@@ -1383,7 +1389,7 @@ int main(int argc, char **argv) {
         else if(std::string(argv[1]) == "protocol") {
 #define EMIT(value) std::cout << "\"" #value "\":" << (int)value << ",";
             std::cout << "{";
-            EMIT(SET_LPLAYER_NAME) EMIT(CLOUD_REQUIRED) EMIT(CLOUD_TICKET) EMIT(CLOUD_RESULT) EMIT(REQUEST_VERSION) EMIT(GIVE_VERSION) EMIT(SET_LPLAYER_READY) EMIT(LOBBY_COUNTDOWN) EMIT(RESET_MAP) EMIT(RESET_GAME) EMIT(REQUEST_MAP) EMIT(STORE_MAP) EMIT(REQUEST_OBJECTS) EMIT(ADD_NEW_OBJECT)
+            EMIT(SET_LPLAYER_NAME) EMIT(CLOUD_SERVER_ROLE) EMIT(SET_GAME_SPEED) EMIT(UPDATE_GAME_SPEED) EMIT(CLOUD_REQUIRED) EMIT(CLOUD_TICKET) EMIT(CLOUD_RESULT) EMIT(REQUEST_VERSION) EMIT(GIVE_VERSION) EMIT(SET_LPLAYER_READY) EMIT(LOBBY_COUNTDOWN) EMIT(RESET_MAP) EMIT(RESET_GAME) EMIT(REQUEST_MAP) EMIT(STORE_MAP) EMIT(REQUEST_OBJECTS) EMIT(ADD_NEW_OBJECT)
             EMIT(REQUEST_ZONES) EMIT(SET_ZONE_INFO) EMIT(REQUEST_PLAYER_ID) EMIT(GIVE_PLAYER_ID)
             EMIT(SET_READY) EMIT(SET_LPLAYER_TEAM) EMIT(SET_LPLAYER_MODE) EMIT(REQUEST_PLAYER_LIST) EMIT(BOT_MODE) EMIT(SET_NAME) EMIT(SET_TEAM) EMIT(SET_PLAYER_MODE) EMIT(PLAYER_MODE)
             EMIT(GET_GAME_PAUSED) EMIT(UPDATE_GAME_PAUSED) EMIT(SET_GAME_PAUSED)

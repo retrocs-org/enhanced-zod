@@ -245,6 +245,7 @@ class ZPlayer : public ZClient
         bool lobby_pause_confirmed=false;
         std::string cloud_disconnect_reason,cloud_join_ticket;
         bool managed_dedicated=false;
+        static void cloud_server_role_event(ZPlayer *p,char *data,int size,int dummy);
         static void cloud_required_event(ZPlayer *p,char *data,int size,int dummy);
         static void cloud_result_event(ZPlayer *p,char *data,int size,int dummy);
         static void lobby_countdown_event(ZPlayer *p, char *data, int size, int dummy);	//matchmaking: center the lobby on the map view rect
@@ -262,6 +263,7 @@ class ZPlayer : public ZClient
         ZMPAsync<PendingJoin> join_task,deployment_connect;bool deployment_handshake=false;Uint64 deployment_deadline=0;
         std::uint64_t join_origin_id = 0;
         bool PollHostedJoin();
+        int cloud_server_role=0;
         bool reconnecting=false, hosted_remote_session=false, public_remote_session=false;
         int reconnect_attempt=0, reconnect_port=2137, reconnect_team=RED_TEAM;
         Uint64 reconnect_after=0;

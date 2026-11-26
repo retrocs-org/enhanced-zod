@@ -365,7 +365,7 @@ bool ZPlayer::PollHostedJoin()
             lobby->SetError(retry ? "Reconnecting: attempt "+to_string(reconnect_attempt)+"/3 failed. Leave to cancel." : error);
         return false;
     }
-    cloud_join_ticket=std::move(result.ticket);
+    cloud_join_ticket=std::move(result.ticket);cloud_server_role=0;
     bool resumed=reconnecting;reconnecting=false;
     hosted_remote_session=true;
     hosted_setup_available=false;
@@ -1257,7 +1257,7 @@ void ZPlayer::ProcessDisconnect()
 	//is already released by ClientSocket::Process() before it fires DISCONNECT_EVENT,
 	//so there's nothing to close here - just reset client state. This is also the
 	//exact path a future "Leave Game / Disconnect" menu button will reuse.
-    cloud_join_ticket.clear();
+    cloud_join_ticket.clear();cloud_server_role=0;
     bool was_lobby=LobbyOpen(),was_deploying=frontend.Loading();
     bool recover=hosted_remote_session && !public_remote_session && cloud_disconnect_reason.empty() && !was_deploying;
     int port=client_socket.GetPort();int team=our_team;
@@ -5696,6 +5696,7 @@ void ZPlayer::RecenterLobby()
             }
             sort(teams.begin(),teams.end());
             lobby->SetSession(remote_address+":"+to_string(client_socket.GetPort()),game_map_name,teams,zmap.Loaded());
+            lobby->SetServerRole(public_remote_session,cloud_server_role);
             lobby->SetCountdown(lobby_countdown); lobby->SetPauseConfirmed(lobby_pause_confirmed);
         }
 }

@@ -69,3 +69,5 @@ textarea { width: 100%; max-width: 100%; min-height: 8rem; font: inherit; color:
 .panel-pad p, .panel-pad li { overflow-wrap: anywhere; }
 @media (max-width: 800px) { .header-inner { flex-wrap: wrap; } .button { white-space: normal; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; } }
+
+.header-inner { flex-wrap: wrap; }

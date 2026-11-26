@@ -6,6 +6,13 @@ repository changes, not an announcement that the live website has been updated.
 
 ## Unreleased
 
+### Server ownership
+
+- Migration 005 adds account-owned servers, delegated server roles and expiring browser authorization for dedicated hosts.
+- Owners manage server administrators under My servers; ownership is permanent and delegates cannot modify membership.
+- Keep server administrator authority separate from global site operators. Record the affected account in role-change audit entries.
+- Require ownership for public server API credentials and hide unclaimed legacy listings until the host signs in.
+
 ### Moderation and accessibility
 
 - Migration 004 adds private community reports and an operator audit trail.

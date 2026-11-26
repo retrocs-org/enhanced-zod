@@ -4128,6 +4128,10 @@ bool ZServer::StartVote(int vote_type, int value, int player)
 		break;
 	}
 
+    if(cloud_required&&player>=0){
+        if(!CloudAdmin(player)){SendNews(player,"Only this server's owner or administrators may change match settings.",0,0,0);return false;}
+        KillVote();ProcessVote(vote_type,value);return false;
+    }
 	if(player != -1 && !CanVote(player))
 	{
 		SendNews(player, "you must be logged in to start a vote, please type /help", 0, 0, 0);

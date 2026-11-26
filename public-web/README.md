@@ -96,3 +96,19 @@ Review pending revision downloads and previews, approve/hide uploads, enable or
 disable provisioned servers, and resolve reports in that page. Report links on
 public servers and creations prefill the private report form. New server secret
 keys are still provisioned through `_app/bin/server.php`, never displayed in the UI.
+
+
+## Account-owned dedicated servers
+
+Migration 005 adds permanent server ownership, delegated server administrators and
+expiring host sign-in requests. Run the migration tool before upgrading public agents.
+The dedicated host's `zod-agent --mode public --login ...` command prints a browser
+URL. Approval under a cloud account makes that account the owner. New IDs register
+automatically; existing IDs need their existing host key and cannot be taken from
+another owner. No account password is stored on the dedicated host.
+
+**My servers** (`/index.php/my-servers`) lets the owner add/remove existing cloud
+accounts as administrators. The owner is always an administrator; delegates cannot
+change membership or ownership. Server roles are separate from global website
+operator permissions. Public agents check ownership before launching and fetch
+current administrator roles for in-game enforcement. Private/LAN hosting stays offline.

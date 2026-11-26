@@ -24,6 +24,7 @@ void ZPlayer::SetupEHandler()
 	ehandler.AddFunction(TCP_EVENT, UPDATE_HEALTH, set_object_health_event);
 	ehandler.AddFunction(TCP_EVENT, END_GAME, end_game_event);
     ehandler.AddFunction(TCP_EVENT,CLOUD_REQUIRED,cloud_required_event);
+    ehandler.AddFunction(TCP_EVENT, CLOUD_SERVER_ROLE, cloud_server_role_event);
     ehandler.AddFunction(TCP_EVENT,CLOUD_RESULT,cloud_result_event);
 	ehandler.AddFunction(TCP_EVENT, RETURN_TO_MENU, return_to_menu_event);	//#136
 	ehandler.AddFunction(TCP_EVENT, RESET_GAME, reset_game_event);

@@ -17,13 +17,21 @@ try {
         if (!in_array($method,['GET','HEAD'],true)) require_origin();
         $route=$method.' '.$path;
         $result=match($route) {
-            'GET /healthz'=>['ok'=>(int)query('SELECT MAX(version) FROM schema_migrations')->fetchColumn()>=4],
+            'GET /healthz'=>['ok'=>(int)query('SELECT MAX(version) FROM schema_migrations')->fetchColumn()>=5],
             'POST /api/accounts'=>$service->register(json_input()),
             'POST /api/login'=>$service->login(json_input()),
             'POST /api/logout'=>$service->logout(),
             'POST /api/connect/start'=>$service->startNativeConnect(json_input()),
             'POST /api/connect/poll'=>$service->pollNativeConnect(json_input()),
             'POST /api/connect/cancel'=>$service->cancelNativeConnect(json_input()),
+            'POST /api/server-auth/start'=>$service->serverAuthStart(json_input()),
+            'POST /api/server-auth/approve'=>$service->approveServerAuth(json_input()),
+            'POST /api/server-auth/poll'=>$service->serverAuthPoll(json_input()),
+            'POST /api/server-auth/cancel'=>$service->serverAuthCancel(json_input()),
+            'GET /api/server/identity'=>$service->serverIdentity(),
+            'GET /api/server/admins'=>$service->serverRoles(),
+            'GET /api/my-servers'=>$service->ownedServers(),
+            'POST /api/my-servers/admin'=>$service->manageServerAdmin(json_input()),
             'GET /api/admin'=>$service->moderation(),
             'POST /api/admin/actions'=>$service->moderate(json_input()),
             'POST /api/reports'=>$service->report(json_input()),
@@ -51,6 +59,8 @@ try {
         };
         json_response($result,$route==='POST /api/accounts'?201:200);
     }
+    if($method==='POST'&&$path==='/my-servers/admin'){require_csrf();$data=$_POST;unset($data['csrf']);$service->manageServerAdmin($data);header('Location: '.route_url('/my-servers'),true,303);exit;}
+    if($method==='POST'&&$path==='/server-auth/approve'){require_csrf();$data=$_POST;unset($data['csrf']);$service->approveServerAuth($data);require_once __DIR__.'/_app/src/views.php';page_header('my-servers',$service->currentAccount());echo '<section class="shell section"><h1>Server host authorized</h1><p>Return to your dedicated host. Manage administrators in <a href="'.e(route_url('/my-servers')).'">My servers</a>.</p></section>';page_footer();exit;}
     if($method==='POST'&&in_array($path,['/admin/action','/reports'],true)){require_csrf();$data=$_POST;unset($data['csrf']);if($path==='/admin/action')$service->moderate($data);else $service->report($data);header('Location: '.route_url($path==='/admin/action'?'/admin':'/account').'?message=Saved',true,303);exit;}
     if($method==='POST'&&$path==='/connect/approve'){
         require_csrf();$data=$_POST;unset($data['csrf']);$service->approveNativeConnect($data);
@@ -63,7 +73,7 @@ try {
     }
     if ($method==='POST' && str_starts_with($path,'/account/')) {
         require_csrf();
-        $data=$_POST;unset($data['csrf']);$returnCode=$data['return_to']??'';unset($data['return_to']);
+        $data=$_POST;unset($data['csrf']);$returnCode=$data['return_to']??'';$returnServer=$data['server_return_to']??'';unset($data['return_to'],$data['server_return_to']);
         switch($path) {
             case '/account/privacy':$data['allow_requests']=isset($data['allow_requests']);$data['show_online']=isset($data['show_online']);$service->setPreferences($data);$message='Privacy updated.';break;
             case '/account/contact':$service->contact($data);$message='Community settings updated.';break;
@@ -78,6 +88,7 @@ try {
             case '/account/password':$service->changePassword($data);$message='Password updated. Other website sessions are signed out.';break;
             default:fail(404,'Page not found.');
         }
+        if(preg_match('/\A[A-F0-9]{12}\z/D',is_string($returnServer)?$returnServer:'')){header('Location: '.route_url($path==='/account/login'?'/server-auth':'/account').'?'.($path==='/account/login'?'code=':'server_connect=').$returnServer,true,303);exit;}
         if(preg_match('/\A[A-F0-9]{12}\z/D',is_string($returnCode)?$returnCode:'')){header('Location: '.route_url($path==='/account/login'?'/connect':'/account').'?'.($path==='/account/login'?'code=':'connect=').$returnCode,true,303);exit;}
         header('Location: '.route_url($path==='/account/contact'?'/community':'/account').'?message='.rawurlencode($message),true,303);exit;
     }
@@ -86,7 +97,7 @@ try {
     render_page($path,$service);
 } catch(ApiError $e) {
     if ($api) json_response(['error'=>$e->getMessage()],$e->status);
-    if ($method==='POST' && str_starts_with($path,'/account/')) {header('Location: '.route_url($path==='/account/contact'?'/community':'/account').'?error='.rawurlencode($e->getMessage()).(isset($returnCode)&&is_string($returnCode)&&preg_match('/\A[A-F0-9]{12}\z/D',$returnCode)?'&connect='.$returnCode:''),true,303);exit;}
+    if ($method==='POST' && str_starts_with($path,'/account/')) {header('Location: '.route_url($path==='/account/contact'?'/community':'/account').'?error='.rawurlencode($e->getMessage()).(isset($returnCode)&&is_string($returnCode)&&preg_match('/\A[A-F0-9]{12}\z/D',$returnCode)?'&connect='.$returnCode:'').(isset($returnServer)&&is_string($returnServer)&&preg_match('/\A[A-F0-9]{12}\z/D',$returnServer)?'&server_connect='.$returnServer:''),true,303);exit;}
     http_response_code($e->status);require_once __DIR__.'/_app/src/views.php';render_error($e->status,$e->getMessage());
 } catch(Throwable $e) {
     error_log('Zod web request failed: '.$e::class.' ['.$e->getCode().']');

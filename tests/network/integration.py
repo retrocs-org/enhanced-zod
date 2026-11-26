@@ -6,6 +6,9 @@ if not (pathlib.Path(ROOT)/'maps/p02_bb_orig01.map').is_file() or os.environ.get
  sys.path.insert(0,str(pathlib.Path(ROOT)/'tests'));import source_fixtures
  _fixture=tempfile.TemporaryDirectory(prefix='zod-portal-authored-');DATA=_fixture.name;source_fixtures.workspace(ROOT,DATA)
 P=json.loads(subprocess.check_output([DRIVER,'protocol'],text=True))
+def reset_limits():
+ assert os.environ.get('ZOD_DB_NAME')=='zod_test' and os.environ.get('ZOD_DB_SOCKET'),'isolated database required'
+ subprocess.run([PHP,'-r','require '+json.dumps(str(pathlib.Path(ROOT)/'public-web/_app/src/bootstrap.php'))+';query("DELETE FROM rate_limits");'],check=True,capture_output=True)
 def port():
  with socket.socket() as s:s.bind(('127.0.0.1',0));return s.getsockname()[1]
 def api(base,path,body=None,token=None,method=None):
@@ -36,7 +39,7 @@ def process(args,env,log):
    try:p.wait(timeout=8)
    except subprocess.TimeoutExpired:p.kill();p.wait()
 class Client:
- def __init__(self,p):self.s=socket.create_connection(('127.0.0.1',p),timeout=2);self.s.settimeout(5)
+ def __init__(self,p):self.role=-1;self.s=socket.create_connection(('127.0.0.1',p),timeout=2);self.s.settimeout(5)
  def send(self,kind,data=b''):self.s.sendall(struct.pack('=ii',len(data),P[kind])+data)
  def exact(self,n):
   b=b''
@@ -47,6 +50,7 @@ class Client:
   seen=[]
   for _ in range(1000):
    n,k=struct.unpack('=ii',self.exact(8));assert 0<=n<=400000;b=self.exact(n);seen.append((k,b))
+   if k==P['CLOUD_SERVER_ROLE']:self.role=struct.unpack('=i',b)[0]
    if k==P[kind]:return b,seen
   raise AssertionError('packet not received')
  def close(self):self.s.close()
@@ -64,6 +68,9 @@ with tempfile.TemporaryDirectory(prefix='zod-cloud-') as tmp:
   session=api(base,'/api/login',{'Username':'CloudAlice','Password':'correct horse cloud password'})['session']
   api(base,'/api/accounts',{'username':'CloudBob','password':'correct horse cloud password'})
   bob_session=api(base,'/api/login',{'username':'CloudBob','password':'correct horse cloud password'})['session']
+  enrollment=api(base,'/api/server-auth/start',{'server':'test','name':'Test server','key':key})
+  api(base,'/api/server-auth/approve',{'code':enrollment['user_code']},session)
+  assert api(base,'/api/server-auth/poll',{'device':enrollment['device']})['state']=='approved'
   gp=port();state=root/'public'
   args=[AGENT,'--mode','public','--engine',ENGINE,'--data',DATA,'--map','maps/p02_bb_orig01.map','--port',str(gp),'--state',str(state),'--hub',base,'--id','test','--key-file',str(keyfile),'--','-b','blue']
   with process(args,env,root/'public.log'):
@@ -116,6 +123,36 @@ with tempfile.TemporaryDirectory(prefix='zod-cloud-') as tmp:
    assert any(row['id']=='test' and row['started'] for row in listing),'native browser did not read the public started state'
    self_version=subprocess.check_output([ENGINE,'--version'],text=True).strip()
    assert any(row['id']=='test' and row['version'] and row['version'] in self_version for row in api(base,'/api/servers')),'agent did not publish the engine version'
+   # Real online role changes: a connected administrator loses controls after removal.
+   reset_limits()
+   bob_ticket=api(base,'/api/tickets',{'server':'test'},bob_session)['ticket']
+   bob=Client(gp);bob.until('CLOUD_REQUIRED');bob.send('CLOUD_TICKET',bob_ticket.encode()+b'\0');assert struct.unpack('=i',bob.until('CLOUD_RESULT')[0])[0]==1
+   def role(client,value):
+    def read():
+     client.send('REQUEST_VERSION');client.until('GIVE_VERSION');return client.role==value
+    return wait(read,12)
+   role(bob,0)
+   bob.send('SET_GAME_PAUSED',b'\1');bob.send('GET_GAME_PAUSED');assert bob.until('UPDATE_GAME_PAUSED')[0]==b'\0','ordinary player changed pause state'
+   api(base,'/api/my-servers/admin',{'server':'test','username':'CloudBob','action':'add'},session)
+   role(bob,1);bob.send('SET_GAME_PAUSED',b'\1');assert bob.until('UPDATE_GAME_PAUSED')[0]==b'\1','delegated administrator could not pause'
+   api(base,'/api/my-servers/admin',{'server':'test','username':'CloudBob','action':'remove'},session)
+   role(bob,0);bob.send('SET_GAME_PAUSED',b'\0');bob.send('GET_GAME_PAUSED');assert bob.until('UPDATE_GAME_PAUSED')[0]==b'\1','revoked administrator retained control'
+   role(alice,2);alice.send('SET_GAME_PAUSED',b'\0');assert alice.until('UPDATE_GAME_PAUSED')[0]==b'\0','owner could not resume directly'
+   bob.close()
+   # A fresh public host enrolls through the actual agent CLI, without an operator-created key.
+   reset_limits();device_state=root/'device-host';device_log=root/'device-host.log';device_port=port()
+   device_args=[AGENT,'--mode','public','--engine',ENGINE,'--data',DATA,'--port',str(device_port),'--state',str(device_state),'--hub',base,'--id','device-host','--name','Browser-owned host']
+   with process(device_args+['--login-only'],env,device_log) as enrollment:
+    def code():
+     match=re.search(r'/server-auth\?code=([A-F0-9]{12})',device_log.read_text());return match.group(1) if match else None
+    approval_code=wait(code)
+    api(base,'/api/server-auth/approve',{'code':approval_code},session)
+    assert enrollment.wait(timeout=10)==0,'login-only did not exit after authorization'
+    saved=json.loads((device_state/'credentials/identity.json').read_text());assert set(saved)=={'Hub','Server','Key'} and saved['Server']=='device-host'
+    assert saved['Key'] not in device_log.read_text(),'host credential leaked to console'
+   with process(device_args,env,root/'device-restart.log'):
+    wait(lambda:any(row['id']=='device-host' for row in api(base,'/api/servers')),15)
+    assert '/server-auth?code=' not in (root/'device-restart.log').read_text(),'restart required interactive sign-in'
    alice.close()
    # Fail closed if the account service becomes unavailable.
    offline_ticket=api(base,'/api/tickets',{'Server':'test'},session)['ticket'];hub.terminate();hub.wait(timeout=5)
@@ -127,4 +164,4 @@ with tempfile.TemporaryDirectory(prefix='zod-cloud-') as tmp:
     except OSError:return None
    private=wait(connect);private.send('SET_NAME',b'Guest\0');private.send('SET_PLAYER_MODE',bytes([P['PLAYER_MODE']]))
    private.send('SET_TEAM',struct.pack('=i',P['RED_TEAM']));private.until('SET_TEAM');private.send('REQUEST_MAP');assert private.until('STORE_MAP')[0];private.close()
-print('Cloud integration passed: public authentication, ticket replay rejection, statistics, outage policy, private guests')
+print('Cloud integration passed: owner sign-in, live admin delegation/revocation, public authentication, ticket replay rejection, statistics, outage policy, private guests')

@@ -171,10 +171,10 @@ video/audio device in `-d` mode and requires no X server, Wayland session or GPU
 ./build-web/zod-agent --mode private --engine "$PWD/build/zod-enhanced" \
   --data "$PWD" --state "$PWD/build-private-state"
 
-# Public: approved key, listing and required cloud authentication.
+# Public: sign in as the cloud owner; credentials persist in this state directory.
 ./build-web/zod-agent --mode public --engine "$PWD/build/zod-enhanced" \
   --data "$PWD" --state "$PWD/build-public-state" \
-  --hub https://YOUR-ZOD-WEBSITE --id europe-1 --key-file /private/zod-server-key
+  --hub https://zodee.retrocs.org/index.php --id europe-1 --login
 ```
 
 The agent announces every 20 seconds; listings expire after 90 seconds without a
@@ -234,8 +234,8 @@ reports are atomically spooled and uploaded by the agent. The PHP API verifies
 server credentials and per-player grants and commits each match and all its
 players in one MariaDB transaction. Identical retries do not duplicate results;
 conflicting retries are rejected. Clients cannot choose arbitrary accounts to
-credit. Only approved operators should receive keys: a modified trusted server
-can still falsify its simulation. Statistics are unranked; bot matches count.
+credit. Public hosts are account-owned, but a modified host can still falsify
+its simulation. These records are community statistics, not a trusted ranking. Statistics are unranked; bot matches count.
 Private games never upload statistics.
 
 Passwords use Argon2id. Sessions last 24 hours and are stored hashed. Cookies are
@@ -464,3 +464,67 @@ Actions are recorded with operator, target and UTC time. Public users can report
 servers or published creations; reports are limited to ten per account per day.
 
 These changes are tested locally; no production migration/deployment is performed.
+
+
+## Public server ownership and administrators
+
+Migration 005 makes a cloud owner mandatory for public hosting. Apply pending
+migrations with `php _app/bin/migrate.php` and update the website, agent and engine
+together. Existing unowned credentials cannot publish or accept cloud players
+until claimed by an account. Campaign and private/LAN hosting remain account-free.
+
+Start a public agent with `--login`, its normal `--engine`, `--data`, `--state`,
+`--hub` and `--id` arguments. It prints a five-minute browser URL and code, which
+also works over SSH on a headless server. Sign in to the portal, check the ID/code
+and explicitly authorize the host. No cloud password or account session is entered
+or saved on the dedicated machine. A new server ID is registered automatically.
+For an unclaimed operator-provisioned ID, include its existing `--key-file` on
+first authorization. Once ownership exists, that owner can authorize a replacement
+host even without the old key; approval replaces the old host credential and
+invalidates its listing and pending joins. Stale approvals cannot undo a newer
+credential change. Possessing a host key alone cannot replace its owner.
+Site-disabled servers remain disabled after owner sign-in.
+
+The agent stores a server-scoped key in `--state/credentials/identity.json`, with a
+private directory and mode 0600 file. Keep this state directory for restarts; the
+same command subsequently runs without `--login` or `--key-file`. The saved identity
+is bound to both hub URL and server ID. Do not share it, add it to Git, or put it in
+a public document root. The portal stores credential hashes only. An interrupted
+approval can be retried with the retained host key.
+
+Sign in and open **My servers** (`/index.php/my-servers`). The owner automatically
+has server administrator access and can add/remove existing cloud usernames.
+Delegated administrators cannot change ownership, remove the owner or grant roles
+themselves. All roles are scoped to one server and are separate from the website's
+`ZOD_ADMIN_USERS` operator allowlist. Account ownership does not grant global site
+moderation permissions. Administrator changes are recorded in the moderation audit.
+
+Join the public game with the owner or delegated account. Server administrators
+can directly pause/resume, restart/select maps, manage bots, reshuffle teams and
+change allowed game speed. Regular players retain team selection and ready controls.
+The engine validates roles rather than trusting client names or claimed flags.
+Remote save/load and arbitrary filesystem map paths remain unavailable even to
+public administrators. Private games keep their existing voting policy.
+
+Roles refresh asynchronously every five seconds, with a fifteen-second validity
+limit. Connected clients lose revoked permissions within about ten seconds; failed
+refreshes suspend admin controls. A portal outage leaves the current game playable
+but cannot grant/retain stale administrative authority indefinitely. New public
+host startup and new player authentication fail closed when the portal is unavailable.
+
+
+For unattended/system-service setup, use `--login-only` to authorize and exit
+without launching a game, then start the agent normally using the same state path.
+The packaged Compose deployment supports this one-time step:
+
+```sh
+cd packaging/linux
+# Set ZOD_HUB_URL, ZOD_SERVER_ID and optionally ZOD_SERVER_NAME first.
+docker compose -f compose.public.yaml -f compose.public.enroll.yaml run --rm dedicated
+# After browser approval, normal restarts use the saved private host credential.
+docker compose -f compose.public.yaml up -d
+```
+
+Existing operator-created keys remain usable for first sign-in with `--key-file`;
+the agent copies that scoped credential into its private identity file. They do
+not bypass the owner check, and a disabled server cannot re-enable itself.

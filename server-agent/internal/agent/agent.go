@@ -49,7 +49,7 @@ func New(c Config) (*Agent, error) {
 			return nil, errors.New("hub requires HTTPS; HTTP is allowed only on loopback for local tests")
 		}
 		if c.ID == "" || len(c.Key) < 64 {
-			return nil, errors.New("public mode requires server ID and key")
+			return nil, errors.New("public mode requires a server ID and credential; run with --login to authorize its cloud owner")
 		}
 		if c.Host != "" && (net.ParseIP(c.Host) == nil || net.ParseIP(c.Host).To4() == nil) {
 			return nil, errors.New("public host must be an IP address")
@@ -61,6 +61,11 @@ func New(c Config) (*Agent, error) {
 	}
 	return &Agent{c, &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, hex.EncodeToString(b)}, nil
 }
+
+type hubStatusError struct{ Code int }
+
+func (e *hubStatusError) Error() string { return fmt.Sprintf("hub returned HTTP %d", e.Code) }
+
 func (a *Agent) request(ctx context.Context, method, path string, in, out any) error {
 	var b bytes.Buffer
 	if in != nil {
@@ -80,7 +85,7 @@ func (a *Agent) request(ctx context.Context, method, path string, in, out any) e
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("hub returned HTTP %d", resp.StatusCode)
+		return &hubStatusError{resp.StatusCode}
 	}
 	if out != nil {
 		return json.NewDecoder(io.LimitReader(resp.Body, 65536)).Decode(out)
@@ -164,6 +169,15 @@ func (a *Agent) publish(ctx context.Context) {
 	}
 }
 func (a *Agent) Run(ctx context.Context) error {
+	if a.cfg.Mode == "public" {
+		var identity struct{ ID, Owner string }
+		if e := a.request(ctx, "GET", "/api/server/identity", nil, &identity); e != nil {
+			return fmt.Errorf("public host needs owner authorization (--login), or is disabled by a site operator: %w", e)
+		}
+		if identity.ID != a.cfg.ID || len(identity.Owner) != 64 {
+			return errors.New("public server has no verified cloud owner; run --login")
+		}
+	}
 	var e error
 	a.cfg.State, e = filepath.Abs(a.cfg.State)
 	if e != nil {
@@ -180,6 +194,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	defer listener.Close()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/verify", a.Verify)
+	mux.HandleFunc("/roles", a.Roles)
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 2 * time.Second, ReadTimeout: 3 * time.Second, WriteTimeout: 7 * time.Second, MaxHeaderBytes: 4096}
 	defer srv.Close()
 	go srv.Serve(listener)

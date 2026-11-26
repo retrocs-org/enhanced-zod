@@ -16,7 +16,9 @@ Michael Bok / Nighsoft engine for SDL3.
 It includes the desktop game, map tools, Linux headless dedicated hosting, and
 an optional PHP/MariaDB website and API. **Campaign and private/LAN games do
 not require a cloud account.** Public servers connected to the Zod API require
-a separate Zod account and a website-issued join ticket.
+a separate Zod account and a website-issued join ticket. Public dedicated hosts
+sign in once with `zod-agent --login`; their cloud owner manages delegated server
+administrators under **My servers**.
 
 [Build](#build--run) · [Import game media](#import-original-z-disc-assets) ·
 [LAN games](#find-and-join-a-lan-game) ·

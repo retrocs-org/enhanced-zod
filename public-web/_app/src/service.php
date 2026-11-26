@@ -6,15 +6,16 @@ require_once __DIR__ . '/community_service.php';
 require_once __DIR__ . '/content_service.php';
 require_once __DIR__ . '/native_connect.php';
 require_once __DIR__ . '/moderation.php';
+require_once __DIR__ . '/server_ownership.php';
 
 final class ZodService {
-    use CommunityService,ContentService,NativeConnectService,ModerationService;
+    use CommunityService,ContentService,NativeConnectService,ModerationService,ServerOwnershipService;
     public function currentAccount(): ?array {
         return query('SELECT a.id,a.username,a.created_at FROM sessions s JOIN accounts a ON a.id=s.account_id WHERE s.token_hash=? AND s.expires_at>UTC_TIMESTAMP(6)', [token_hash(session_token())])->fetch() ?: null;
     }
     public function requireAccount(): array { return $this->currentAccount() ?? fail(401, 'Sign in to your Zod account first.'); }
     private function server(): string {
-        $id = query('SELECT id FROM server_keys WHERE key_hash=? AND enabled=1', [token_hash(bearer())])->fetchColumn();
+        $id = query('SELECT k.id FROM server_keys k JOIN server_owners o ON o.server_id=k.id WHERE k.key_hash=? AND k.enabled=1', [token_hash(bearer())])->fetchColumn();
         if (!$id) fail(401, 'Server authentication required.'); return $id;
     }
     private function limit(): void {
@@ -69,14 +70,14 @@ final class ZodService {
             $row=query('SELECT * FROM accounts WHERE id=? FOR UPDATE',[$me['id']])->fetch();
             if (!$this->verifies($current,$row)) fail(401,'Your current password is incorrect.');
             query("UPDATE accounts SET password_hash=?,password_scheme='argon2id',legacy_salt=NULL WHERE id=?",[$this->hashPassword($pass),$me['id']]);
-            query('DELETE FROM native_connections WHERE account_id=?',[$me['id']]);
+            query('DELETE FROM server_auth_requests WHERE account_id=?',[$me['id']]);query('DELETE FROM native_connections WHERE account_id=?',[$me['id']]);
             query('DELETE FROM sessions WHERE account_id=?',[$me['id']]);
             query('INSERT INTO sessions (token_hash,account_id,expires_at) VALUES (?,?,UTC_TIMESTAMP(6)+INTERVAL 1 DAY)',[token_hash($token),$me['id']]);
         });
         session_cookie($token); return ['ok'=>true,'session'=>$token];
     }
     public function servers(): array {
-        $rows=query('SELECT s.*,COALESCE(md.region,\'Unspecified\') AS region,COALESCE(md.game_mode,\'Skirmish\') AS game_mode FROM servers s LEFT JOIN server_metadata md ON md.server_id=s.id JOIN server_keys k ON k.id=s.id WHERE k.enabled=1 AND s.last_seen>UTC_TIMESTAMP(6)-INTERVAL 90 SECOND ORDER BY s.name')->fetchAll();
+        $rows=query('SELECT s.*,COALESCE(md.region,\'Unspecified\') AS region,COALESCE(md.game_mode,\'Skirmish\') AS game_mode FROM servers s LEFT JOIN server_metadata md ON md.server_id=s.id JOIN server_keys k ON k.id=s.id JOIN server_owners own ON own.server_id=k.id WHERE k.enabled=1 AND s.last_seen>UTC_TIMESTAMP(6)-INTERVAL 90 SECOND ORDER BY s.name')->fetchAll();
         return array_map(fn($s)=>['id'=>$s['id'],'name'=>$s['name'],'host'=>$s['host'],'port'=>(int)$s['port'],'map'=>$s['map_name'],'players'=>(int)$s['players'],'capacity'=>(int)$s['capacity'],'started'=>(bool)$s['started'],'version'=>$s['version'],'region'=>$s['region'],'game_mode'=>$s['game_mode'],'seen'=>str_replace(' ','T',$s['last_seen']).'Z'],$rows);
     }
     public function heartbeat(array $in): array {
@@ -95,7 +96,7 @@ final class ZodService {
         transaction(function() use($me,$id,$token) {
             // Serialize ticket issuance per account, and consume tickets atomically.
             query('SELECT id FROM accounts WHERE id=? FOR UPDATE',[$me['id']]);
-            if (!query('SELECT s.id FROM servers s JOIN server_keys k ON k.id=s.id WHERE s.id=? AND k.enabled=1 AND s.last_seen>UTC_TIMESTAMP(6)-INTERVAL 90 SECOND',[$id])->fetchColumn()) fail(404,'This server is offline. Refresh the list.');
+            if (!query('SELECT s.id FROM servers s JOIN server_keys k ON k.id=s.id JOIN server_owners owned ON owned.server_id=k.id WHERE s.id=? AND k.enabled=1 AND s.last_seen>UTC_TIMESTAMP(6)-INTERVAL 90 SECOND',[$id])->fetchColumn()) fail(404,'This server is offline. Refresh the list.');
             query('DELETE FROM join_tickets WHERE account_id=?',[$me['id']]);
             query('INSERT INTO join_tickets (token_hash,account_id,server_id,expires_at) VALUES (?,?,?,UTC_TIMESTAMP(6)+INTERVAL 2 MINUTE)',[token_hash($token),$me['id'],$id]);
         });
