@@ -146,7 +146,10 @@ void ZServer::request_map_event(ZServer *p, char *data, int size, int player)
 		int map_data_size;
 
 		p->zmap.GetMapData(map_data, map_data_size);
-        auto fingerprint=p->MapFingerprint();p->server_socket.SendMessage(player,MAP_FINGERPRINT,fingerprint.c_str(),65);
+        auto fingerprint=p->MapFingerprint();
+        if(size==9&&data&&!memcmp(data,"cache-v1",9)){map_transfer_info_packet offer{};memcpy(offer.hash,fingerprint.c_str(),65);offer.bytes=map_data_size;p->server_socket.SendMessage(player,MAP_TRANSFER_INFO,(char*)&offer,sizeof(offer));return;}
+        if(size==65&&data&&data[64]==0&&fingerprint==string(data,64))map_data_size=0;
+        p->server_socket.SendMessage(player,MAP_FINGERPRINT,fingerprint.c_str(),65);
 
 		while(map_data_size > 0)
 		{
@@ -1316,6 +1319,7 @@ void ZServer::reset_map_event(ZServer *p, char *data, int size, int player)
 
 void ZServer::request_version_event(ZServer *p, char *data, int size, int player)
 {
+ auto availability=p->Availability();p->server_socket.SendMessage(player,SERVER_AVAILABILITY,(char*)&availability,sizeof(availability));
  if(p->zmap.Loaded()){auto hash=p->MapFingerprint();p->server_socket.SendMessage(player,MAP_FINGERPRINT,hash.c_str(),65);}
 
     std::string compatibility="1|"+ZBuild_SourceHash()+"|"+ZBuild_ID();

@@ -8,6 +8,7 @@ class ZClient : public ZCore
 {
 	public:
 		ZClient();
+        virtual ~ZClient();
 		
 		void SetRemoteAddress(string ipaddress);
 		void SetPlayerName(string player_name_);
@@ -16,6 +17,9 @@ class ZClient : public ZCore
 	protected:
 		int ProcessMapDownload(char *data, int size);
         std::string expected_map_hash,map_download_error,loaded_map_hash;int map_download_next=0;
+        bool map_cache_enabled=false,map_cache_hit=false;int map_download_total=0;
+        void RequestMap();bool OfferMap(char *data,int size);
+        bool ReadCachedMap(const std::string &hash,int bytes);void CacheMap(const std::string &hash,const char *data,int size);
 		ZObject* ProcessNewObject(char *data, int size);
 		void ProcessZoneInfo(char *data, int size);
 		ZObject* ProcessObjectTeam(char *data, int size);

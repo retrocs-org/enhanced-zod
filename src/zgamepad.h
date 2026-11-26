@@ -24,7 +24,7 @@ void ZGamepad_Update(bool in_frontend);
 // True once a controller has been used, so the game can hide hints that only
 // make sense for a mouse.
 bool ZGamepad_Active();
-void ZGamepad_SetEditor(bool enabled);
+void ZGamepad_SetEditor(bool enabled,bool modal=false);
 float ZGamepad_FilterAxis(Sint16 value);
 
 #endif

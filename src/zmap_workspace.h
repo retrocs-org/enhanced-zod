@@ -19,11 +19,12 @@ public:
     std::string PlayPath() const {return playPath;}
     const ZCampaign &TestCampaign() const{return testCampaign;}
     int TestMission() const{return campaignMission;}
-    bool StageCampaignTest();
+    bool StageCampaignTest(bool currentMap=true);
     void FinishCampaignTest();
-    void ResumeAfterTest(){FinishCampaignTest();if(!playPath.empty())SDL_RemovePath(playPath.c_str());playPath.clear();closed=false;down=painting=clicked=false;message="Returned from playtest. Unsaved edits and history preserved.";}
+    void ResumeAfterTest(){bool wasCampaign=!testCampaign.root.empty();FinishCampaignTest();if(wasCampaign){campaignPanel=true;flowPanel=briefingPreview=false;testReportPanel=true;}if(!playPath.empty())SDL_RemovePath(playPath.c_str());playPath.clear();closed=false;down=painting=clicked=false;message="Returned from playtest. Unsaved edits and history preserved.";}
     void Browse() {browser=true;}
     void Welcome() {dirty=false;SDL_PathInfo info;recoveryPrompt=SDL_GetPathInfo((ZAsset_Profile()+"editor-recovery.map").c_str(),&info)||SDL_GetPathInfo((ZAsset_Profile()+"editor-recovery.previous.map").c_str(),&info);message="File > New / Open / Recover autosave. Ctrl+C/V copies selected objects; Delete removes.";}
+    bool MenuOpen() const {return campaignPanel||browser||fileMenu||fileForm||helpPanel||historyPanel||validationPanel||importPanel||prefabPanel||connectionsPanel||terrainConfirm||recoveryPrompt||!pending.empty();}
     bool Render(); // true when the workspace closes
 private:
     friend struct ZFrontEndRegression;
@@ -37,6 +38,7 @@ private:
     std::set<int> selectedObjects;std::vector<map_object> copiedObjects;std::vector<map_tile> copiedTiles;int copiedWidth=0,copiedHeight=0,areaX=-1,areaY=-1,areaW=0,areaH=0,anchorX=-1,anchorY=-1,terrainMode=0;
     void CopySelection();void PasteSelection(int x,int y);void ApplyTerrain(int x,int y);void ChangeProperties(int kind,int delta);
     int selectedObject=-1;map_object clipboard{};bool hasClipboard=false,validationPanel=false,importPanel=false;
+    int focusContext=-1;
     int focusButton=-1,focusCount=0,focusIndex=0;bool focusActivate=false;
     int objectScroll=0,snap=1;std::string lastObjectSearch,placementIcon;
     std::string search,importArchive;ZCampaign importSummary;std::vector<ZContentIssue> issues;int issueScroll=0;Uint64 autosaveAt=0;
@@ -66,6 +68,8 @@ private:
     void RenderFileTools();void RenderCampaignStudio();void Field(std::string &value,int id,float x,float y,float w,int height=38);
     std::string *Editing();std::string UniqueMapPath(const std::string &name);
     void AddMission();bool SaveCampaign();
+    bool flowPanel=false,briefingPreview=false,lastTestDifferent=false;int flowScroll=0,branchMode=0,briefingScroll=0;
+    void RenderFlow();void RenderBriefingPreview();bool SetBranch(int outcome,int destination);
     bool testReportPanel=false;int testReportScroll=0;void RenderPlaytestReport();
     bool clicked=false,down=false,painting=false,dirty=false,refresh=true,grid=false,browser=false,closed=false;
     int zoneX=-1,zoneY=-1;

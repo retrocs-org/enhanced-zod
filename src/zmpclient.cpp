@@ -1,5 +1,7 @@
 #include "zperf.h"
 #include "zmpclient.h"
+#include <cerrno>
+#include <climits>
 #include "zportal.h"
 #include "zlan.h"
 #include "zhttp.h"
@@ -384,7 +386,7 @@ static bool json_int(const string &obj, const string &key, int &out)
 	size_t p = colon + 1;
 	while(p < obj.size() && (obj[p] == ' ' || obj[p] == '\t')) p++;
 	if(p >= obj.size()) return false;
-	out = atoi(obj.c_str() + p);
+	char *end=nullptr;errno=0;long value=strtol(obj.c_str()+p,&end,10);if(end==obj.c_str()+p||errno||value<INT_MIN||value>INT_MAX)return false;while(*end==' '||*end=='\t'||*end=='\r'||*end=='\n')++end;if(*end&&*end!=','&&*end!='}'&&*end!=']')return false;out=(int)value;
 	return true;
 }
 
@@ -445,12 +447,14 @@ bool ZMP_ListMatches(vector<MatchInfo> &out)
 		json_int(objs[i], "port", m.port);
 		json_int(objs[i], "players", m.players);
 		json_int(objs[i], "capacity", m.capacity);
+        json_int(objs[i],"player_slots",m.player_slots);json_int(objs[i],"spectators",m.spectators);json_int(objs[i],"bots",m.bots);json_int(objs[i],"difficulty",m.difficulty);json_int(objs[i],"speed_percent",m.speed_percent);
         size_t started=objs[i].find("\"started\"");
         if(started!=string::npos) {
             size_t colon=objs[i].find(':',started+9);
             size_t value=colon==string::npos ? string::npos : objs[i].find_first_not_of(" \r\n\t",colon+1);
             if(value!=string::npos) m.started=objs[i].compare(value,4,"true")==0 || objs[i][value]=='1';
         }
+        if(m.player_slots< -1||m.player_slots>m.capacity||m.spectators< -1||m.spectators>10000||m.bots< -1||m.bots>8||m.difficulty< -1||m.difficulty>3||(m.speed_percent!=-1&&(m.speed_percent<50||m.speed_percent>200))){g_last_error="Invalid advertised match rules";out.clear();return false;}
         string validatedHost,error;int validatedPort;
         if(!ZMP_ParseAddress(m.host+":"+to_string(m.port),validatedHost,validatedPort,error)||m.capacity<1||m.capacity>8||m.players<0||m.players>m.capacity){g_last_error="Portal returned an invalid server entry.";out.clear();return false;}
         out.push_back(m);

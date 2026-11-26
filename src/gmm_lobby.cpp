@@ -73,7 +73,7 @@ void GMMLobby::RebuildPlayers()
     ready_button.SetText(!eligible ? "Waiting for playable team..." : ready_pending ? "Confirming ready state..." : me->ready ? (countdown>0?"Cancel countdown / Not ready":"Not ready") : "I'm ready");
     ready_button.SetGreen(eligible && me->ready);
     team_button.SetText(eligible ? string("You: ")+team_type_string[me->team]+" - change team" : "Choose next open team");
-    if(!world_loaded || !me) status_label.SetText("Loading map and player assignment...");
+    if(!world_loaded || !me) status_label.SetText(transfer_progress.empty()?"Loading map and player assignment...":transfer_progress);
     else if(countdown>0) status_label.SetText("Starting in "+to_string(countdown)+"s - empty teams become bots");
     else if(countdown==0) status_label.SetText("All ready - starting match...");
     else if(humans<2 && !bots) status_label.SetText("Waiting for an opponent - invite a player or add a bot");

@@ -141,11 +141,23 @@ func (a *Agent) status() (int, bool, string, string, error) {
 	return v.Players, v.Started != 0, v.Map, v.Version, e
 }
 func (a *Agent) publish(ctx context.Context) {
-	n, started, m, version, e := a.status()
+	v, e := a.readStatus()
+	n, started, m, version := v.Players, v.Started != 0, v.Map, v.Version
+	if v.Capacity > 0 {
+		a.cfg.Capacity = v.Capacity
+	}
 	if e != nil {
 		return
 	}
-	if e = a.request(ctx, "POST", "/api/servers/heartbeat", map[string]any{"name": a.cfg.Name, "host": a.cfg.Host, "port": a.cfg.Port, "map": m, "players": n, "capacity": a.cfg.Capacity, "started": started, "version": version}, nil); e != nil {
+	payload := map[string]any{"name": a.cfg.Name, "host": a.cfg.Host, "port": a.cfg.Port, "map": m, "players": n, "capacity": a.cfg.Capacity, "started": started, "version": version}
+	if v.PlayerSlots != nil && v.Spectators != nil && v.Bots != nil && v.Difficulty != nil && v.SpeedPercent != nil {
+		payload["player_slots"] = *v.PlayerSlots
+		payload["spectators"] = *v.Spectators
+		payload["bots"] = *v.Bots
+		payload["difficulty"] = *v.Difficulty
+		payload["speed_percent"] = *v.SpeedPercent
+	}
+	if e = a.request(ctx, "POST", "/api/servers/heartbeat", payload, nil); e != nil {
 		log.Printf("public listing: %v", e)
 	}
 	a.flushResults(ctx)

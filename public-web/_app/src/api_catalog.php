@@ -50,7 +50,7 @@ function api_catalog(): array {
         ['POST','/api/account/password','Account session','Changes the password with current_password and password fields.',false],
         ['POST','/api/tickets','Account session','Creates a single-use ticket for the server identifier.',false],
         ['POST','/api/tickets/redeem','Server bearer key','Redeems ticket for the authenticated dedicated server.',false],
-        ['POST','/api/servers/heartbeat','Server bearer key','Updates the approved server listing and live lobby state.',false],
+        ['POST','/api/servers/heartbeat','Server bearer key','Updates the approved listing. Optional player_slots, spectators, bots, difficulty and speed_percent must be supplied together; legacy omissions remain unknown.',false],
         ['DELETE','/api/servers/self','Server bearer key','Removes the authenticated server from the directory.',false],
         ['POST','/api/results','Server bearer key','Records a completed public match and authenticated participant statistics.',false],
     ];

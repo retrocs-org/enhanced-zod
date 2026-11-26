@@ -71,6 +71,7 @@ public:
 	//original-game cutscenes (assets/videos), only used when the clips are present
 	void PlayLevelIntro(int index);
 	void PlayLevelResult(bool won);
+    void RecordEditorObjective(int objective);
     void RecordCampaignResult(bool won,int seconds=-1,int kills=0,int lost=0,int difficulty=1);
     bool CommunityBattle() const {return community_running;}
     void LoadCheckpoint();

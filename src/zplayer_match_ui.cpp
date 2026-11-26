@@ -1,4 +1,5 @@
 #include "zplayer.h"
+#include "gmm_player_list.h"
 #include "zprefs.h"
 #include <algorithm>
 #include <sstream>
@@ -106,9 +107,10 @@ void ZPlayer::lobby_countdown_event(ZPlayer *p,char *data,int size,int)
     p->lobby_countdown=seconds;
 }
 
+void ZPlayer::cloud_player_role_event(ZPlayer *p,char *data,int size,int){int packet[2];if(!data||size!=sizeof(packet))return;memcpy(packet,data,size);if(packet[0]<0||packet[1]<0||packet[1]>3)return;if(p->cloud_player_roles.size()<1024||p->cloud_player_roles.count(packet[0]))p->cloud_player_roles[packet[0]]=packet[1];}
 void ZPlayer::cloud_server_role_event(ZPlayer *p,char *data,int size,int){
- int role;if(!data||size!=sizeof(role))return;memcpy(&role,data,sizeof(role));if(role<0||role>3)return;p->cloud_server_role=role;
- p->AddNewsEntry(role==2?"You own this public server.":role==1?"You are a server administrator.":role==3?"You are a server moderator. Use the server console for kick/ban controls.":"Server administration is limited to the owner and delegated administrators.");
+ int role;if(!data||size!=sizeof(role))return;memcpy(&role,data,sizeof(role));if(role<0||role>3)return;p->cloud_server_role=role;for(auto *menu:p->gui_menu_list)if(auto *list=dynamic_cast<GMMPlayerList*>(menu))list->SetRole(role);
+ p->AddNewsEntry(role==2?"You own this public server.":role==1?"You are a server administrator.":role==3?"You are a server moderator. Open Player List to kick or temporarily ban players.":"Server administration is limited to the owner and delegated administrators.");
 }
 void ZPlayer::cloud_required_event(ZPlayer *p,char *data,int size,int)
 {
@@ -138,7 +140,7 @@ void ZPlayer::ReceiveObjective(const string &packet){
  std::istringstream input(packet.substr(11));string value;vector<string> fields;for(int i=0;i<5&&std::getline(input,value,'|');++i)fields.push_back(value);if(fields.size()!=5)return;
  auto number=[](const string&s,int &n){if(s.empty()||s.size()>10)return false;char *end=nullptr;long value=strtol(s.c_str(),&end,10);if(!end||*end||value< -1||value>1000000)return false;n=value;return true;};int step,total,time,x,y;
  if(!number(fields[0],step)||!number(fields[1],total)||!number(fields[2],time)||!number(fields[3],x)||!number(fields[4],y)||total>64||step<0||step>total)return;
- string text;std::getline(input,text);if(text.size()>512)return;if(objective_total&&step>objective_step){AddNewsEntry("Objective complete: "+objective_text);BattleFeedback("Objective complete: "+objective_text);}if(step!=objective_step)BattleEventLog("objective",text,step);objective_step=step;objective_total=total;objective_remaining=time;objective_x=x;objective_y=y;objective_text=text;objective_received=ztime.ztime;
+ string text;std::getline(input,text);if(text.size()>512)return;if(objective_total&&step>objective_step){for(int completed=std::max(1,objective_step);completed<step;++completed)frontend.RecordEditorObjective(completed);AddNewsEntry("Objective complete: "+objective_text);BattleFeedback("Objective complete: "+objective_text);}if(step!=objective_step)BattleEventLog("objective",text,step);objective_step=step;objective_total=total;objective_remaining=time;objective_x=x;objective_y=y;objective_text=text;objective_received=ztime.ztime;
 }
 void ZPlayer::RenderObjectiveHUD(){
  if(!objective_total||objective_text.empty())return;auto *surface=ZSDL_Surface::GetMainSoftwareSurface();if(!surface)return;

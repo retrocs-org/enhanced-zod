@@ -17,7 +17,7 @@ try {
         if (!in_array($method,['GET','HEAD'],true)) require_origin();
         $route=$method.' '.$path;
         $result=match($route) {
-            'GET /healthz'=>['ok'=>(int)query('SELECT MAX(version) FROM schema_migrations')->fetchColumn()>=7],
+            'GET /healthz'=>['ok'=>(int)query('SELECT MAX(version) FROM schema_migrations')->fetchColumn()>=8],
             'POST /api/accounts'=>$service->register(json_input()),
             'POST /api/login'=>$service->login(json_input()),
             'POST /api/logout'=>$service->logout(),

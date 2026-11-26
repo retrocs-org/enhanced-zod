@@ -248,6 +248,8 @@ struct cancel_building_queue_packet
 };
 
 #define MAX_VERSION_PACKET_CHARS 50
+struct map_transfer_info_packet {char hash[65];int bytes;};
+struct server_availability_packet {int player_slots,spectators,bots,difficulty,speed_percent,spectators_allowed;};
 struct version_packet
 {
 	char version[MAX_VERSION_PACKET_CHARS];
@@ -292,7 +294,7 @@ enum tcp_event
     CLOUD_REQUIRED, CLOUD_TICKET, CLOUD_RESULT,
     SET_LPLAYER_SYNC, // map/world transfer state: 0 receiving, 1 sent
     CLOUD_SERVER_ROLE, // private role to this client: 0 player, 1 admin, 2 owner
-    CLOUD_MODERATE, MAP_FINGERPRINT, CLOUD_NOTICE, MODERATION_FEEDBACK, STATE_SYNC_CHECK, STATE_SYNC_REPLY, BUILD_COMPATIBILITY, RESUME_SESSION,
+    CLOUD_MODERATE, MAP_FINGERPRINT, CLOUD_NOTICE, MODERATION_FEEDBACK, STATE_SYNC_CHECK, STATE_SYNC_REPLY, BUILD_COMPATIBILITY, RESUME_SESSION, SERVER_AVAILABILITY, MAP_TRANSFER_INFO, CLOUD_PLAYER_ROLE,
 	MAX_TCP_EVENTS
 };
 

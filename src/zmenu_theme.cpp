@@ -19,6 +19,7 @@ void textTransform(float scale,float x,float y) { factor=scale;offsetX=x;offsetY
 void endText() { capturing=false; }
 bool queueText(const char *value,float x,float y,float size,SDL_Color colour,int maxWidth,int maxHeight) {
  if(!capturing) return false;
+ if(zod_high_contrast&&std::max({colour.r,colour.g,colour.b})-std::min({colour.r,colour.g,colour.b})<65&&colour.r+colour.g+colour.b<550)colour={255,255,255,colour.a};
  if(value && *value) commands.push_back({value,x*factor+offsetX,y*factor+offsetY,size*factor,maxWidth*factor,maxHeight*factor,colour});
  return true;
 }

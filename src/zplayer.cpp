@@ -167,6 +167,7 @@ bool selection_info::ObjectIsSelected(ZObject *obj)
 
 ZPlayer::ZPlayer() : ZClient()
 {
+    map_cache_enabled=true;
 	gload_thread = 0;
 	graphics_loaded = false;
 	prev_w = init_w = 800;
@@ -367,7 +368,7 @@ bool ZPlayer::PollHostedJoin()
             lobby->SetError(retry ? "Reconnecting: attempt "+to_string(reconnect_attempt)+"/3 failed. Leave to cancel." : error);
         return false;
     }
-    sync_last_sequence=0;sync_strikes=0;sync_history.clear();sync_reported_hash.clear();expected_map_hash.clear();map_download_error.clear();cloud_join_ticket=std::move(result.ticket);cloud_server_role=0;cloud_portal_id=result.portalId;
+    sync_last_sequence=0;sync_strikes=0;sync_history.clear();sync_reported_hash.clear();expected_map_hash.clear();map_download_error.clear();cloud_join_ticket=std::move(result.ticket);cloud_server_role=0;cloud_player_roles.clear();cloud_portal_id=result.portalId;
     bool resumed=reconnecting;reconnecting=false;if(!resumed&&(result.host!=reconnect_host||result.port!=reconnect_port))private_rejoin_token.clear();
     hosted_remote_session=true;
     hosted_setup_available=false;
@@ -382,7 +383,12 @@ bool ZPlayer::PollHostedJoin()
     if(zod_player_name.size()) SetPlayerName(zod_player_name);
     remote_address=result.host;
     connect_attempt_time=current_time(); server_response_seen=false; server_silence_warned=false;
+    auto resumeToken=private_rejoin_token;
     bool ok=client_socket.Adopt(*result.connection);
+    // Adoption queues CONNECT_EVENT, but incoming packets are processed first.
+    // Send the old reservation proof now, before a freshly-issued token can
+    // replace it in resume_session_event.
+    if(ok&&!public_remote_session&&!resumeToken.empty())client_socket.SendMessage(RESUME_SESSION,resumeToken.c_str(),65);
     if(ok){MatchInfo visited;visited.host=result.host;visited.port=result.port;ZServerRemember(visited);}
     CloseAllMenus();
     LoadMainMenu(ok ? GMM_LOBBY : result.origin);
@@ -1259,7 +1265,7 @@ void ZPlayer::ProcessDisconnect()
 	//is already released by ClientSocket::Process() before it fires DISCONNECT_EVENT,
 	//so there's nothing to close here - just reset client state. This is also the
 	//exact path a future "Leave Game / Disconnect" menu button will reuse.
-    ZAsset_RecordDiagnostic(ZDiagnosticEvent::ConnectionLost);cloud_join_ticket.clear();cloud_server_role=0;
+    ZAsset_RecordDiagnostic(ZDiagnosticEvent::ConnectionLost);cloud_join_ticket.clear();cloud_server_role=0;cloud_player_roles.clear();
     bool was_lobby=LobbyOpen(),was_deploying=frontend.Loading();
     bool recover=hosted_remote_session && !public_remote_session && cloud_disconnect_reason.empty() && !was_deploying;
     int port=client_socket.GetPort();int team=our_team;
@@ -1580,6 +1586,8 @@ void ZPlayer::Run()
 	double socket_time;
 
     int launch_frames=0;bool launch_reported=false;
+    const bool lifecycle=SDL_getenv("ZOD_LAUNCH_CHECK")&&string(SDL_getenv("ZOD_LAUNCH_CHECK"))=="multiplayer-lifecycle";
+    int lifecycle_phase=0,lifecycle_id=-1;bool ready_reported=false,orders_reported=false,summary_reported=false;Uint64 ready_retry=0;
 	while(allow_run)
 	{
 		//whole_time = current_time();
@@ -1625,6 +1633,24 @@ void ZPlayer::Run()
 		//render_time = current_time();
 		RenderScreen();
         if(SDL_getenv("ZOD_LAUNCH_CHECK")&&!launch_reported&&graphics_loaded&&zmap.Loaded()&&!object_list.empty()&&++launch_frames>=30){printf("launch-check: battle rendered, team=%d, objects=%zu\n",(int)our_team,object_list.size());fflush(stdout);launch_reported=true;}
+        // Explicit installation-test automation. Commands use the normal client
+        // protocol and server authorization; no world state or result is forged.
+        if(lifecycle&&graphics_loaded&&launch_reported){
+            if(lifecycle_phase==0&&our_team==RED_TEAM&&zmap.Loaded()&&!object_list.empty()){
+                lifecycle_id=p_id;hosted_remote_session=true;client_socket.ClearConnection();ProcessDisconnect();lifecycle_phase=1;printf("lifecycle: interrupted\n");fflush(stdout);
+            }else if(lifecycle_phase==1&&p_id!=lifecycle_id&&our_team==RED_TEAM&&zmap.Loaded()&&!object_list.empty()&&!reconnecting){lifecycle_phase=2;printf("lifecycle: rejoined red\n");fflush(stdout);}
+            bool canReady=our_team>NULL_TEAM&&zmap.Loaded()&&!object_list.empty()&&!(our_team==RED_TEAM&&lifecycle_phase<2);
+            if(canReady&&ztime.IsPaused()&&!summary_pending&&!show_match_summary){
+                for(const auto &p:player_info)if(p.p_id==p_id&&p.ready&&!ready_reported){ready_reported=true;printf("lifecycle: ready confirmed\n");fflush(stdout);}
+                if(SDL_GetTicks()>=ready_retry){SendReady(true);ready_retry=SDL_GetTicks()+500;}
+            }
+            if(canReady&&!ztime.IsPaused()&&!orders_reported){
+                ZObject *target=nullptr;for(auto *obj:object_list){unsigned char type,id;obj->GetObjectID(type,id);if(obj->GetOwner()>NULL_TEAM&&obj->GetOwner()!=our_team&&!obj->IsDestroyed()&&type==BUILDING_OBJECT&&(id==FORT_FRONT||id==FORT_BACK)){target=obj;break;}}
+                if(target){for(auto *obj:object_list){unsigned char type,id;obj->GetObjectID(type,id);if(obj->GetOwner()!=our_team||obj->IsDestroyed()||(type!=VEHICLE_OBJECT&&type!=ROBOT_OBJECT))continue;waypoint order;order.mode=ATTACK_WP;order.ref_id=target->GetRefID();target->GetCenterCords(order.x,order.y);order.player_given=true;obj->GetWayPointDevList()={order};SendDevWayPointsOfObj(obj);}orders_reported=true;printf("lifecycle: combat orders sent\n");fflush(stdout);}
+            }
+            if(show_match_summary&&!summary_reported){summary_reported=true;printf("lifecycle: summary %s\n",match_won?"victory":"defeat");fflush(stdout);}
+        }
+
 		//render_time = current_time() - render_time;
 
 		//whole_time = current_time() - whole_time;
@@ -5646,7 +5672,7 @@ void ZPlayer::LoadMainMenu(int menu_type, bool kill_if_open, gmm_warning_flag wa
         !hosted_setup_available && (remote_address == "127.0.0.1" || remote_address == "localhost"),frontend.EditorTesting(),(public_remote_session?cloud_portal_id:string()),cloud_server_role); break;	//#79: compact start menu when no game is loaded
 	case GMM_CHANGE_TEAMS: new_menu = new GMMChangeTeams(); break;
 	case GMM_MANAGE_BOTS: new_menu = new GMMManageBots(); break;
-	case GMM_PLAYER_LIST: new_menu = new GMMPlayerList(public_remote_session&&cloud_server_role>0); break;
+	case GMM_PLAYER_LIST: new_menu = new GMMPlayerList(public_remote_session,cloud_server_role,&cloud_player_roles); break;
 	case GMM_SELECT_MAP: new_menu = new GMMSelectMap(); break;
 	case GMM_GENERATE_MAP: new_menu = new GMMGenerateMap(); break;
 	case GMM_MULTIPLAYER: new_menu = new GMMMultiplayer(); break;

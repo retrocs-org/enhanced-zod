@@ -78,17 +78,22 @@ final class ZodService {
         session_cookie($token); return ['ok'=>true,'session'=>$token];
     }
     public function servers(): array {
-        $rows=query('SELECT s.*,COALESCE(md.region,\'Unspecified\') AS region,COALESCE(md.game_mode,\'Skirmish\') AS game_mode FROM servers s LEFT JOIN server_metadata md ON md.server_id=s.id JOIN server_keys k ON k.id=s.id JOIN server_owners own ON own.server_id=k.id WHERE k.enabled=1 AND own.hosting_enabled=1 AND own.host_revoked=0 AND s.last_seen>UTC_TIMESTAMP(6)-INTERVAL 90 SECOND ORDER BY s.name')->fetchAll();
-        return array_map(fn($s)=>['id'=>$s['id'],'name'=>$s['name'],'host'=>$s['host'],'port'=>(int)$s['port'],'map'=>$s['map_name'],'players'=>(int)$s['players'],'capacity'=>(int)$s['capacity'],'started'=>(bool)$s['started'],'version'=>$s['version'],'region'=>$s['region'],'game_mode'=>$s['game_mode'],'seen'=>str_replace(' ','T',$s['last_seen']).'Z'],$rows);
+        $rows=query('SELECT s.*,av.player_slots,av.spectators,av.bots,av.difficulty,av.speed_percent,COALESCE(md.region,\'Unspecified\') AS region,COALESCE(md.game_mode,\'Skirmish\') AS game_mode FROM servers s LEFT JOIN server_availability av ON av.server_id=s.id LEFT JOIN server_metadata md ON md.server_id=s.id JOIN server_keys k ON k.id=s.id JOIN server_owners own ON own.server_id=k.id WHERE k.enabled=1 AND own.hosting_enabled=1 AND own.host_revoked=0 AND s.last_seen>UTC_TIMESTAMP(6)-INTERVAL 90 SECOND ORDER BY s.name')->fetchAll();
+        return array_map(fn($s)=>['id'=>$s['id'],'name'=>$s['name'],'host'=>$s['host'],'port'=>(int)$s['port'],'map'=>$s['map_name'],'players'=>(int)$s['players'],'capacity'=>(int)$s['capacity'],'player_slots'=>isset($s['player_slots'])?(int)$s['player_slots']:null,'spectators'=>isset($s['spectators'])?(int)$s['spectators']:null,'bots'=>isset($s['bots'])?(int)$s['bots']:null,'difficulty'=>isset($s['difficulty'])?(int)$s['difficulty']:null,'speed_percent'=>isset($s['speed_percent'])?(int)$s['speed_percent']:null,'started'=>(bool)$s['started'],'version'=>$s['version'],'region'=>$s['region'],'game_mode'=>$s['game_mode'],'seen'=>str_replace(' ','T',$s['last_seen']).'Z'],$rows);
     }
     public function heartbeat(array $in): array {
-        $id=$this->server();fields($in,['id','name','host','port','map','players','capacity','started','version','seen']);
+        $id=$this->server();fields($in,['id','name','host','port','map','players','capacity','started','version','seen','player_slots','spectators','bots','difficulty','speed_percent']);
         $name=clean_text($in['name']??null,80);$map=clean_text($in['map']??'',240,true);$version=clean_text($in['version']??'',80,true);
         $port=int_value($in['port']??null,1024,65535);$capacity=int_value($in['capacity']??null,1,8);$players=int_value($in['players']??null,0,$capacity);$started=$in['started']??false;
+        $availability=null;
+        if(array_intersect(['player_slots','spectators','bots','difficulty','speed_percent'],array_keys($in))){$availability=[int_value($in['player_slots']??null,0,$capacity),int_value($in['spectators']??null,0,10000),int_value($in['bots']??null,0,8),int_value($in['difficulty']??null,0,3),int_value($in['speed_percent']??null,50,200)];}
         if (!is_bool($started)) fail(400,'Invalid match state.');
         $source=client_ip();$host=$in['host']??'';if ($host==='') $host=$source;
         if (!is_string($host) || !filter_var($host,FILTER_VALIDATE_IP,FILTER_FLAG_IPV4) || $host!==$source) fail(400,'Advertised IPv4 address must match the announcing server.');
+        transaction(function() use($id,$name,$host,$port,$map,$players,$capacity,$started,$version,$availability): void {
         query('INSERT INTO servers (id,name,host,port,map_name,players,capacity,started,version,last_seen) VALUES (?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP(6)) ON DUPLICATE KEY UPDATE name=VALUES(name),host=VALUES(host),port=VALUES(port),map_name=VALUES(map_name),players=VALUES(players),capacity=VALUES(capacity),started=VALUES(started),version=VALUES(version),last_seen=UTC_TIMESTAMP(6)',[$id,$name,$host,$port,$map,$players,$capacity,(int)$started,$version]);
+        if($availability!==null)query('INSERT INTO server_availability(server_id,player_slots,spectators,bots,difficulty,speed_percent) VALUES(?,?,?,?,?,?) ON DUPLICATE KEY UPDATE player_slots=VALUES(player_slots),spectators=VALUES(spectators),bots=VALUES(bots),difficulty=VALUES(difficulty),speed_percent=VALUES(speed_percent)',array_merge([$id],$availability));else query('DELETE FROM server_availability WHERE server_id=?',[$id]);
+        });
         return ['expires_in'=>90];
     }
     public function removeServer(): array { query('DELETE FROM servers WHERE id=?',[$this->server()]); return ['ok'=>true]; }

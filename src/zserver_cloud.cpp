@@ -72,7 +72,7 @@ void ZServer::RefreshCloudRoles(){
  }
  for(size_t i=0;i<player_info.size();++i)if(CloudAuthorized(i)&&!player_info[i].bot_logged_in){
   int id=player_info[i].p_id,role=0;int rank=CloudRank(cloud_peers[id].account);if(rank>0)role=rank==3?2:rank==2?1:3;
-  auto previous=cloud_role_sent.find(id);if(previous==cloud_role_sent.end()||previous->second!=role){server_socket.SendMessage(i,CLOUD_SERVER_ROLE,(char*)&role,sizeof(role));cloud_role_sent[id]=role;}
+  auto previous=cloud_role_sent.find(id);if(previous==cloud_role_sent.end()||previous->second!=role){server_socket.SendMessage(i,CLOUD_SERVER_ROLE,(char*)&role,sizeof(role));cloud_role_sent[id]=role;for(auto entry:cloud_role_sent){int packet[]={entry.first,entry.second};for(size_t receiver=0;receiver<player_info.size();++receiver)if(CloudAuthorized(receiver))server_socket.SendMessage(receiver,CLOUD_PLAYER_ROLE,(char*)packet,sizeof(packet));}}
  }
  for(auto i=cloud_role_sent.begin();i!=cloud_role_sent.end();)if(!cloud_peers.count(i->first))i=cloud_role_sent.erase(i);else ++i;
 }

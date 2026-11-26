@@ -1,3 +1,10 @@
+## Accurate server availability (unreleased)
+
+- Show open player slots, spectators, active bots, difficulty and speed from authenticated host heartbeats.
+- Filter open servers using actual free slots, including teams occupied by bots; preserve unknown fields for legacy agents.
+- Validate and atomically replace live advertisements. Requires MariaDB schema 008: run `php _app/bin/migrate.php` from the installed document root before serving the updated site.
+- Update the native engine/client and dedicated-server agent together. Existing original-game media and installed `config.inc.php` remain local.
+
 ## Integrated dedicated-server dashboard (unreleased)
 
 - Bring ownership, delegated administrators/moderators, health, update status, player moderation, presets and audit history into the server console.

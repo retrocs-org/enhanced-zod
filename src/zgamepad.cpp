@@ -18,7 +18,7 @@ using namespace std;
 
 namespace
 {
-	bool g_editor=false;
+	bool g_editor=false,g_editor_menu=false;
 	const float CURSOR_SPEEDS[MAX_STICK_SPEEDS] = { 0.55f, 0.85f, 1.25f };   // screens per second at full deflection (Settings -> Stick)
 	const float SCROLL_SPEED = 24.0f;      // mouse-wheel units per second at full deflection
 	const float TRIGGER_ON = 0.55f;
@@ -139,15 +139,15 @@ namespace
 		case SDL_GAMEPAD_BUTTON_DPAD_LEFT:  action = ACT_KEY; key = SDLK_LEFT; break;
 		case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: action = ACT_KEY; key = SDLK_RIGHT; break;
 		case SDL_GAMEPAD_BUTTON_SOUTH:      // A
-			if(in_frontend&&!g_editor) { action = ACT_KEY; key = SDLK_RETURN; }
+			if(in_frontend&&(!g_editor||g_editor_menu)) { action = ACT_KEY; key = SDLK_RETURN; }
 			else action = ACT_LCLICK;
 			break;
 		case SDL_GAMEPAD_BUTTON_EAST:       // B
 			if(in_frontend) { action = ACT_KEY; key = SDLK_ESCAPE; }
 			else action = ACT_RCLICK;
 			break;
-		case SDL_GAMEPAD_BUTTON_WEST: action=ACT_KEY;key=g_editor?(SDL_Keycode)zod_keys[ZKEY_EDITOR_UNDO]:SDLK_TAB;break;
-        case SDL_GAMEPAD_BUTTON_NORTH: action=ACT_KEY;key=g_editor?(SDL_Keycode)zod_keys[ZKEY_EDITOR_REDO]:SDLK_SPACE;break;
+		case SDL_GAMEPAD_BUTTON_WEST: action=ACT_KEY;key=g_editor&&!g_editor_menu?(SDL_Keycode)zod_keys[ZKEY_EDITOR_UNDO]:SDLK_TAB;break;
+        case SDL_GAMEPAD_BUTTON_NORTH: action=ACT_KEY;key=g_editor&&!g_editor_menu?(SDL_Keycode)zod_keys[ZKEY_EDITOR_REDO]:SDLK_SPACE;break;
 		case SDL_GAMEPAD_BUTTON_START:      action = ACT_KEY; key = SDLK_ESCAPE; break;
 		case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER:
 			action = ACT_KEY; key = in_frontend?SDLK_TAB:SDLK_MINUS;
@@ -312,7 +312,7 @@ void ZGamepad_Shutdown()
 }
 
 bool ZGamepad_Active() { return g_active; }
-void ZGamepad_SetEditor(bool value){g_editor=value;}
+void ZGamepad_SetEditor(bool value,bool modal){g_editor=value;g_editor_menu=value&&modal;}
 float ZGamepad_FilterAxis(Sint16 value){return stick_value(value); }
 
 bool ZGamepad_HandleEvent(const SDL_Event &event, bool in_frontend)

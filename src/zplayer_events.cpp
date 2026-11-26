@@ -26,6 +26,7 @@ void ZPlayer::SetupEHandler()
 	ehandler.AddFunction(TCP_EVENT, END_GAME, end_game_event);
     ehandler.AddFunction(TCP_EVENT,CLOUD_REQUIRED,cloud_required_event);
     ehandler.AddFunction(TCP_EVENT, CLOUD_SERVER_ROLE, cloud_server_role_event);
+    ehandler.AddFunction(TCP_EVENT,CLOUD_PLAYER_ROLE,cloud_player_role_event);
     ehandler.AddFunction(TCP_EVENT,CLOUD_NOTICE,cloud_notice_event);
     ehandler.AddFunction(TCP_EVENT,MODERATION_FEEDBACK,moderation_feedback_event);
     ehandler.AddFunction(TCP_EVENT,STATE_SYNC_CHECK,state_sync_event);
@@ -76,6 +77,8 @@ void ZPlayer::SetupEHandler()
 	ehandler.AddFunction(TCP_EVENT, REQUEST_VERSION, request_version_event);
 	ehandler.AddFunction(TCP_EVENT, GIVE_VERSION, get_version_event);
     ehandler.AddFunction(TCP_EVENT,MAP_FINGERPRINT,map_fingerprint_event);
+    ehandler.AddFunction(TCP_EVENT,MAP_TRANSFER_INFO,map_transfer_info_event);
+    ehandler.AddFunction(TCP_EVENT,SERVER_AVAILABILITY,[](ZPlayer*,char*,int,int){});
 	
 	ehandler.AddFunction(OTHER_EVENT, CONNECT_EVENT, connect_event);
 	ehandler.AddFunction(OTHER_EVENT, DISCONNECT_EVENT, disconnect_event);
@@ -857,7 +860,6 @@ void ZPlayer::test_event(ZPlayer *p, char *data, int size, int dummy)
 
 void ZPlayer::connect_event(ZPlayer *p, char *data, int size, int dummy)
 {
-    if(!p->private_rejoin_token.empty())p->client_socket.SendMessage(RESUME_SESSION,p->private_rejoin_token.c_str(),65);
 	p->ProcessConnect(!p->deployment_handshake);
 
 	p->SendLogin();
@@ -870,11 +872,13 @@ void ZPlayer::disconnect_event(ZPlayer *p, char *data, int size, int dummy)
 
 void ZPlayer::moderation_feedback_event(ZPlayer *p,char *data,int size,int){if(!data||size<2||size>180||data[size-1]!=0||memchr(data,0,size-1))return;std::string state(data,size-1);for(auto *menu:p->gui_menu_list)if(auto *panel=dynamic_cast<GMMPlayerList*>(menu))panel->SetFeedback(state);p->AddNewsEntry("Moderation: "+state);}
 void ZPlayer::cloud_notice_event(ZPlayer *p,char *data,int size,int){if(!data||size<2||size>256||data[size-1]!=0||memchr(data,0,size-1))return;std::string text(data,size-1);for(unsigned char c:text)if(c<32||c==127)return;p->cloud_disconnect_reason=text;p->AddNewsEntry(text);}
-void ZPlayer::map_fingerprint_event(ZPlayer *p,char *data,int size,int){if(size!=65||!data||data[64]!=0)return;std::string hash(data,64);if(hash.find_first_not_of("0123456789abcdef")==std::string::npos)p->expected_map_hash=hash;}
+void ZPlayer::map_transfer_info_event(ZPlayer *p,char *data,int size,int){if(!p->OfferMap(data,size)){p->cloud_disconnect_reason="Invalid map download offer";p->client_socket.ClearConnection();p->ProcessDisconnect();return;}string progress=p->map_cache_hit?"Using verified cached map":"Downloading map: 0 / "+to_string((p->map_download_total+1023)/1024)+" KiB";p->frontend.DeploymentStage(progress);for(auto *menu:p->gui_menu_list)if(auto *lobby=dynamic_cast<GMMLobby*>(menu))lobby->SetTransferProgress(progress);}
+void ZPlayer::map_fingerprint_event(ZPlayer *p,char *data,int size,int){if(size!=65||!data||data[64]!=0)return;std::string hash(data,64);if(hash.find_first_not_of("0123456789abcdef")==std::string::npos){if(!p->expected_map_hash.empty()&&p->expected_map_hash!=hash)p->map_download_total=0;p->expected_map_hash=hash;}}
 void ZPlayer::store_map_event(ZPlayer *p, char *data, int size, int dummy)
 {
 	p->frontend.DeploymentStage("Loading terrain and map data");
 	int done = p->ProcessMapDownload(data, size);
+    if(done==0){string progress="Downloading map: "+to_string(p->map_data_size/1024)+" KiB";if(p->map_download_total>0)progress+=" / "+to_string((p->map_download_total+1023)/1024)+" KiB ("+to_string(std::min(100,p->map_data_size*100/p->map_download_total))+"%)";p->frontend.DeploymentStage(progress);for(auto *menu:p->gui_menu_list)if(auto *lobby=dynamic_cast<GMMLobby*>(menu))lobby->SetTransferProgress(progress);}
     if(done<0){p->cloud_disconnect_reason=p->map_download_error;p->frontend.DeploymentFailed(p->map_download_error,true);p->client_socket.ClearConnection();p->ProcessDisconnect();return;}
 
 	if(p->zmap.Loaded())
@@ -1575,7 +1579,7 @@ void ZPlayer::add_player_event(ZPlayer *p, char *data, int size, int dummy)
 
 void ZPlayer::delete_player_event(ZPlayer *p, char *data, int size, int dummy)
 {
-	p->ProcessDeleteLPlayer(data, size);
+	if(p->ProcessDeleteLPlayer(data,size)&&data){add_remove_player_packet packet;memcpy(&packet,data,sizeof(packet));p->cloud_player_roles.erase(packet.p_id);}
 }
 
 void ZPlayer::set_player_name_event(ZPlayer *p, char *data, int size, int dummy)

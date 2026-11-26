@@ -17,6 +17,11 @@ import (
 )
 
 type engineStatus struct {
+	PlayerSlots                *int `json:"player_slots"`
+	Spectators                 *int `json:"spectators"`
+	Bots                       *int `json:"bots"`
+	Difficulty                 *int `json:"difficulty"`
+	SpeedPercent               *int `json:"speed_percent"`
 	Players, Started, Capacity int
 	Map, Version, Round        string
 	BuildID                    string `json:"build_id"`

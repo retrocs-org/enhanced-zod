@@ -1505,7 +1505,7 @@ void ZServer::Run()
                 if(type==BUILDING_OBJECT && (id==FORT_FRONT || id==FORT_BACK) && team>NULL_TEAM && team<MAX_TEAM_TYPES) forts[team]=true;
             }
             for(const auto &player:player_info) {
-                if(player.mode==PLAYER_MODE) ++humans;
+                if(player.mode==PLAYER_MODE&&player.team>NULL_TEAM) ++humans;
                 else if(player.mode==BOT_MODE && !player.ignored && player.team>NULL_TEAM && player.team<MAX_TEAM_TYPES) bots[player.team]=true;
             }
             for(int team=1;team<MAX_TEAM_TYPES;++team) if(forts[team] && !bot_thread[team] && !bots[team]) ++capacity;
@@ -1634,7 +1634,8 @@ void ZServer::CheckStatusAndIdle()
 		if(c >= 0)
 		{
             double now=current_time();if(!cloud_boot)cloud_boot=now;
-            std::ostringstream report;report<<"{\"players\":"<<players<<",\"started\":"<<(lan_match_started?1:0)<<",\"capacity\":"<<MapPlayerCapacity()<<",\"map\":"<<ZCloud_JSON(map_name)<<",\"version\":"<<ZCloud_JSON(GAME_VERSION)<<",\"build_id\":"<<ZCloud_JSON(ZBuild_ID())<<",\"round\":"<<ZCloud_JSON(cloud_round)<<",\"intermission\":"<<(!game_on&&cloud_voting_until>now?"true":"false")<<",\"vote_remaining\":"<<std::max(0.0,cloud_voting_until-now)<<",\"sync_checks\":"<<sync_checks<<",\"sync_mismatches\":"<<sync_mismatches<<",\"tick_ms\":"<<cloud_tick_ms<<",\"uptime\":"<<now-cloud_boot<<",\"role_age\":"<<(cloud_roles.valid?std::max(0.0,now-cloud_roles_until+15):999999)<<",\"applied_revision\":"<<cloud_applied_revision<<",\"next_map\":"<<ZCloud_JSON(NextCloudMap())<<",\"maps\":[";
+            auto availability=Availability();
+            std::ostringstream report;report<<"{\"players\":"<<players<<",\"player_slots\":"<<availability.player_slots<<",\"spectators\":"<<availability.spectators<<",\"bots\":"<<availability.bots<<",\"difficulty\":"<<availability.difficulty<<",\"speed_percent\":"<<availability.speed_percent<<",\"started\":"<<(lan_match_started?1:0)<<",\"capacity\":"<<MapPlayerCapacity()<<",\"map\":"<<ZCloud_JSON(map_name)<<",\"version\":"<<ZCloud_JSON(GAME_VERSION)<<",\"build_id\":"<<ZCloud_JSON(ZBuild_ID())<<",\"round\":"<<ZCloud_JSON(cloud_round)<<",\"intermission\":"<<(!game_on&&cloud_voting_until>now?"true":"false")<<",\"vote_remaining\":"<<std::max(0.0,cloud_voting_until-now)<<",\"sync_checks\":"<<sync_checks<<",\"sync_mismatches\":"<<sync_mismatches<<",\"tick_ms\":"<<cloud_tick_ms<<",\"uptime\":"<<now-cloud_boot<<",\"role_age\":"<<(cloud_roles.valid?std::max(0.0,now-cloud_roles_until+15):999999)<<",\"applied_revision\":"<<cloud_applied_revision<<",\"next_map\":"<<ZCloud_JSON(NextCloudMap())<<",\"maps\":[";
             bool comma=false;int count=0;for(auto &path:selectable_map_list){if(++count>64)break;if(comma)report<<",";comma=true;report<<ZCloud_JSON(path);}report<<"],\"roster\":[";comma=false;
             for(auto &player:player_info){auto peer=cloud_peers.find(player.p_id);if(peer==cloud_peers.end()||peer->second.account.empty())continue;if(comma)report<<",";comma=true;report<<"{\"account\":"<<ZCloud_JSON(peer->second.account)<<",\"name\":"<<ZCloud_JSON(player.name)<<"}";}report<<"]}\n";
             std::string payload=report.str();if(payload.size()<65536)write(c,payload.data(),payload.size());
@@ -3096,6 +3097,15 @@ void ZServer::RelayObjectGroupInfo(ZObject *obj, int player)
 	free(data);
 }
 
+server_availability_packet ZServer::Availability(){
+ server_availability_packet result{0,0,0,zod_bot_difficulty,(int)(ztime.GameSpeed()*100),1};
+ bool forts[MAX_TEAM_TYPES]={},occupied[MAX_TEAM_TYPES]={},bots[MAX_TEAM_TYPES]={};
+ for(auto *object:object_list){unsigned char type,id;object->GetObjectID(type,id);int team=object->GetOwner();if(type==BUILDING_OBJECT&&(id==FORT_FRONT||id==FORT_BACK)&&!object->IsDestroyed()&&team>NULL_TEAM&&team<MAX_TEAM_TYPES)forts[team]=true;}
+ for(size_t i=0;i<player_info.size();++i){const auto &p=player_info[i];if(cloud_required&&!CloudAuthorized(i)&&p.mode!=BOT_MODE)continue;if(p.mode==PLAYER_MODE){if(p.team>NULL_TEAM&&p.team<MAX_TEAM_TYPES)occupied[p.team]=true;else ++result.spectators;}if(p.mode==BOT_MODE&&!p.ignored&&p.team>NULL_TEAM&&p.team<MAX_TEAM_TYPES)bots[p.team]=true;}
+ for(const auto &entry:rejoin_slots){const auto &slot=entry.second;if(slot.until>current_time()&&slot.round==cloud_round&&slot.team>NULL_TEAM&&slot.team<MAX_TEAM_TYPES)occupied[slot.team]=true;}
+ for(int t=1;t<MAX_TEAM_TYPES;++t){if(bots[t]){++result.bots;occupied[t]=true;}if(forts[t]&&!occupied[t])++result.player_slots;}
+ return result;
+}
 void ZServer::RelayVersion(int player)
 {
 	version_packet packet;

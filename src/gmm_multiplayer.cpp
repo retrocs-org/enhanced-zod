@@ -5,6 +5,7 @@
 #include "zserver_bookmarks.h"
 #include "znetconnect.h"
 #include "zasset_import.h"
+#include "zprefs.h"
 #include <chrono>
 #include <cctype>
 #include <algorithm>
@@ -58,7 +59,7 @@ void GMMMultiplayer::Refresh()
         RefreshResult result;
         result.ok=lan ? ZLAN_Discover(result.matches,result.error) : ZMP_ListMatches(result.matches);
         if(!result.ok && result.error.empty()) result.error=ZMP_LastError().empty()?"Match service is unreachable":ZMP_LastError();
-        if(result.ok)for(size_t i=0;i<result.matches.size()&&i<32;++i){auto &m=result.matches[i];std::string error;auto start=std::chrono::steady_clock::now();auto connection=ZNetConnect(m.host,m.port,error,250);if(connection)m.ping_ms=(int)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start).count();}
+        if(result.ok)for(size_t i=0;i<result.matches.size()&&i<32;++i){auto &m=result.matches[i];std::string error;auto start=std::chrono::steady_clock::now();auto connection=ZNetConnect(m.host,m.port,error,250);if(connection){m.ping_ms=(int)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start).count();connection.reset();ZNetCheckVersion(m.host,m.port,error,250,nullptr,nullptr,&m);}}
         return result;
     });
 }
@@ -86,7 +87,7 @@ void GMMMultiplayer::Refilter()
         if(!applied_search.empty()&&lower(m.name+" "+m.map+" "+m.game_mode+" "+m.host).find(lower(applied_search))==string::npos)continue;
         if(!applied_region.empty()&&lower(m.region).find(lower(applied_region))==string::npos)continue;
         if(max_ping&&(m.ping_ms<0||m.ping_ms>max_ping))continue;
-        if(players_filter==1&&!(m.capacity>0&&m.players<m.capacity))continue;
+        if(players_filter==1&&!(m.player_slots>=0?m.player_slots>0:m.capacity>0&&m.players<m.capacity))continue;
         if(players_filter==2&&m.players<=0)continue;
         if(players_filter==3&&m.players!=0)continue;
         if((state_filter==1&&m.started)||(state_filter==2&&!m.started))continue;
@@ -135,6 +136,7 @@ void GMMMultiplayer::Process()
 {
     PollAuthorization();
     Compatibility check;if(compatibility_task.Poll(check)&&check.address==compatibility_address&&!joining){
+        auto &a=check.availability;if(a.player_slots>=0)availability_label.SetText("Players: "+to_string(a.player_slots)+" open / Spectators: open ("+to_string(a.spectators)+")"+" / Bots: "+to_string(a.bots)+" / "+bot_difficulty_name[a.difficulty]+" "+to_string(a.speed_percent)+"%");
         preview_hint.SetText(check.preview.valid?"":"Map downloads on join");
         preview_image.Unload();if(check.preview.valid){auto &preview=check.preview;auto *surface=SDL_CreateSurface(preview.preview_width,preview.preview_height,SDL_PIXELFORMAT_ARGB8888);if(surface){for(int row=0;row<surface->h;++row)memcpy((char*)surface->pixels+row*surface->pitch,preview.pixels.data()+row*surface->w,surface->w*4);float fit=std::min(170.0f/surface->w,90.0f/surface->h);auto *small=SDL_ScaleSurface(surface,std::max(1,(int)(surface->w*fit)),std::max(1,(int)(surface->h*fit)),SDL_SCALEMODE_NEAREST);SDL_DestroySurface(surface);if(small)preview_image.LoadBaseImage(small);}}
         status_label.SetText(check.compatible?"Protocol + build compatible: "+check.version:check.error.substr(0,70));
@@ -232,12 +234,12 @@ void GMMMultiplayer::PollAuthorization(){
 
 void GMMMultiplayer::CheckCompatibility(const MatchInfo &match){
  preview_image.Unload();preview_hint.SetText("Checking map...");
- availability_label.SetText(match.capacity>0?"Players: "+to_string(std::max(0,match.capacity-std::max(0,match.players)))+" open / Spectators: ask host":"Player / spectator slots confirmed in lobby");
+ availability_label.SetText(match.player_slots>=0?"Players: "+to_string(match.player_slots)+" open / Spectators: "+to_string(match.spectators)+" / Bots: "+to_string(match.bots):"Checking player / spectator availability...");
  compatibility_task.Cancel();compatibility_address=match.host+":"+to_string(match.port);
  status_label.SetText("Map: "+(match.map.empty()?string("announced on joining"):match.map.substr(0,52)));
  detail_label.SetText("Checking engine compatibility before joining...");
  auto address=compatibility_address,host=match.host,map=match.map;int port=match.port;
- compatibility_task.Start([address,host,port,map](){Compatibility result;result.address=address;result.map=map;result.compatible=ZNetCheckVersion(host,port,result.error,2000,&result.version,&result.hash);
+ compatibility_task.Start([address,host,port,map](){Compatibility result;result.address=address;result.map=map;result.compatible=ZNetCheckVersion(host,port,result.error,2000,&result.version,&result.hash,&result.availability);
  if(map.compare(0,5,"maps/")==0&&map.find("..") ==string::npos&&map.find_first_of(":\\")==string::npos){auto path=ZAsset_OverlayPath(map);std::ifstream file(path,std::ios::binary|std::ios::ate);if(!file){file.clear();file.open(ZSDL_DataPath(map),std::ios::binary|std::ios::ate);}if(file&&file.tellg()>0&&file.tellg()<=16*1024*1024){string bytes((size_t)file.tellg(),'\0');file.seekg(0);if(file.read(&bytes[0],bytes.size()))result.localHash=ZSHA256(bytes.data(),bytes.size());}}
  if(result.compatible&&!result.hash.empty()&&result.hash==result.localHash)ZMP_ReadMapFilePreview(ZSDL_DataPath(map),result.preview);
  return result;});

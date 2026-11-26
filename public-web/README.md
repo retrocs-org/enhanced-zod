@@ -112,3 +112,7 @@ accounts as administrators. The owner is always an administrator; delegates cann
 change membership or ownership. Server roles are separate from global website
 operator permissions. Public agents check ownership before launching and fetch
 current administrator roles for in-game enforcement. Private/LAN hosting stays offline.
+
+### Server availability (schema 008)
+
+Before serving this version, run `php _app/bin/migrate.php` from the installed document root. It creates the live availability table idempotently. Update the dedicated-server agent and native engine together to publish free player slots, spectator and bot counts, difficulty and speed. Older agents remain accepted; their missing details are shown as unknown rather than guessed. No live deployment is performed by the local tests.

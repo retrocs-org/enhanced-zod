@@ -1,5 +1,8 @@
 #include "zclient.h"
 #include "zhash.h"
+#include "zasset_import.h"
+#include <fstream>
+#include <algorithm>
 #include "packet_io.h"
 #include "common.h"
 #include "zpath_debug.h"
@@ -20,6 +23,8 @@ ZClient::ZClient() : ZCore()
 	map_data = 0;
 	map_data_size = 0;
 }
+
+ZClient::~ZClient(){free(map_data);}
 
 void ZClient::SetRemoteAddress(string ipaddress)
 {
@@ -51,7 +56,7 @@ void ZClient::ProcessConnect(bool request_map)
 	client_socket.SendMessage(REQUEST_SELECTABLE_MAP_LIST, NULL, 0);
 
 	//ask for the map
-	if(request_map) client_socket.SendMessage(REQUEST_MAP, NULL, 0);
+	if(request_map) RequestMap();
 }
 
 void ZClient::ProcessDisconnect()
@@ -74,6 +79,24 @@ void ZClient::SetDesiredTeam(team_type player_team)
    desired_team = player_team;
 }
 
+void ZClient::RequestMap(){map_cache_hit=false;map_download_total=0;map_download_next=0;map_download_error.clear();free(map_data);map_data=nullptr;map_data_size=0;client_socket.SendMessage(REQUEST_MAP,map_cache_enabled?"cache-v1":nullptr,map_cache_enabled?9:0);}
+bool ZClient::ReadCachedMap(const string &hash,int bytes){
+ map_cache_hit=false;
+ if(hash.size()!=64||hash.find_first_not_of("0123456789abcdef")!=string::npos||bytes<=0||bytes>16*1024*1024)return false;
+ auto path=ZAsset_Profile()+"map-cache/"+hash+".map";std::ifstream in(path,std::ios::binary|std::ios::ate);if(!in||in.tellg()!=bytes)return false;string contents(bytes,'\0');in.seekg(0);if(!in.read(&contents[0],bytes)||ZSHA256(contents.data(),contents.size())!=hash)return false;
+ auto *copy=(char*)malloc(bytes);if(!copy)return false;memcpy(copy,contents.data(),bytes);free(map_data);map_data=copy;map_data_size=bytes;map_cache_hit=true;return true;
+}
+void ZClient::CacheMap(const string &hash,const char *data,int size){
+ if(!map_cache_enabled||hash.size()!=64||hash.find_first_not_of("0123456789abcdef")!=string::npos||size<=0||size>16*1024*1024)return;
+ auto folder=ZAsset_Profile()+"map-cache/";if(!SDL_CreateDirectory(folder.c_str()))return;auto path=folder+hash+".map";{std::ofstream out(path+".tmp",std::ios::binary);out.write(data,size);out.close();if(!out){SDL_RemovePath((path+".tmp").c_str());return;}}if(!SDL_RenamePath((path+".tmp").c_str(),path.c_str())){SDL_RemovePath((path+".tmp").c_str());return;}
+ struct Entry{string path;Uint64 size;SDL_Time time;};std::vector<Entry> entries;std::vector<string> names;SDL_EnumerateDirectory(folder.c_str(),[](void *p,const char*,const char *name){static_cast<std::vector<string>*>(p)->push_back(name);return SDL_ENUM_CONTINUE;},&names);Uint64 total=0;
+ for(auto &name:names){if(name.size()!=68||name.substr(64)!=".map"||name.substr(0,64).find_first_not_of("0123456789abcdef")!=string::npos)continue;SDL_PathInfo info;if(SDL_GetPathInfo((folder+name).c_str(),&info)&&info.type==SDL_PATHTYPE_FILE){entries.push_back({folder+name,info.size,info.modify_time});total+=info.size;}}
+ std::sort(entries.begin(),entries.end(),[](const Entry&a,const Entry&b){return a.time<b.time;});size_t count=entries.size();for(auto &entry:entries)if((count>32||total>64*1024*1024)&&entry.path!=path&&SDL_RemovePath(entry.path.c_str())){--count;total-=entry.size;}
+}
+bool ZClient::OfferMap(char *data,int size){
+ if(!map_cache_enabled||!data||size!=sizeof(map_transfer_info_packet))return false;map_transfer_info_packet offer;memcpy(&offer,data,size);if(offer.hash[64]||offer.bytes<=0||offer.bytes>16*1024*1024)return false;string hash(offer.hash,64);if(hash.find_first_not_of("0123456789abcdef")!=string::npos)return false;
+ expected_map_hash=hash;map_download_total=offer.bytes;map_cache_hit=ReadCachedMap(hash,offer.bytes);client_socket.SendMessage(REQUEST_MAP,map_cache_hit?offer.hash:nullptr,map_cache_hit?65:0);return true;
+}
 int ZClient::ProcessMapDownload(char *data, int size)
 {
 	//static char *map_data = 0;
@@ -81,14 +104,14 @@ int ZClient::ProcessMapDownload(char *data, int size)
 	int pack_num;
 	int data_size;
 	
+	if(size<4||!data){map_download_error="Incomplete map transfer packet";return -1;}
 	data_size = size - 4;
 	
 	//1 = done, 0 still going
 	
-	if(size < 4) return 1;
 	
 	memcpy(&pack_num, data, 4);
-    if(pack_num==0){map_download_next=0;map_download_error.clear();}
+    if(pack_num==0){map_download_next=0;map_download_error.clear();map_cache_hit=false;free(map_data);map_data=nullptr;map_data_size=0;}
     if(pack_num < -1 || (pack_num>=0&&pack_num!=map_download_next) || data_size<0 || map_data_size>16*1024*1024-data_size){map_download_error="Invalid map transfer sequence or size. Reconnect; check the host version if this repeats.";free(map_data);map_data=nullptr;map_data_size=0;return -1;}
     if(pack_num>=0)++map_download_next;
 
@@ -103,7 +126,9 @@ int ZClient::ProcessMapDownload(char *data, int size)
             expected_map_hash.clear();
             //load map
 			printf("map_data_size:%d\n", map_data_size);
-			zmap.Read(map_data, map_data_size);
+            if(!zmap.Read(map_data,map_data_size)){map_download_error="The host map could not be read. Ask the host to validate its level.";free(map_data);map_data=nullptr;map_data_size=0;return -1;}
+            if(!map_cache_hit)CacheMap(loaded_map_hash,map_data,map_data_size);
+            if(SDL_getenv("ZOD_LAUNCH_CHECK")){printf("map-transfer: %s verified\n",map_cache_hit?"cache":"download");fflush(stdout);}
 			
 			//free mem
 			free(map_data);
@@ -133,13 +158,14 @@ int ZClient::ProcessMapDownload(char *data, int size)
 		
 		//stuff that data in our buffer
 		map_data = (char*)malloc(data_size);
+        if(!map_data&&data_size){map_download_error="Not enough memory for the map";return -1;}
 		memcpy(map_data, data + 4, data_size);
 		map_data_size += data_size;
 	}
 	else
 	{
 		//resize and stuff that data in our buffer
-		map_data = (char*)realloc(map_data, map_data_size + data_size);
+		auto *resized=(char*)realloc(map_data,map_data_size+data_size);if(!resized&&map_data_size+data_size){map_download_error="Not enough memory for the map";return -1;}map_data=resized;
 		memcpy(map_data + map_data_size, data + 4, data_size);
 		map_data_size += data_size;
 	}
@@ -929,6 +955,6 @@ void ZClient::ProcessResetGame()
 	//object_list.clear();
 
 	//ask for the map
-	client_socket.SendMessage(REQUEST_MAP, NULL, 0);
+	RequestMap();
 }
 

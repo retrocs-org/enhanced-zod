@@ -18,6 +18,7 @@ installation_check='--installation-check' in sys.argv[4:]
 sys.argv = sys.argv[:1]
 if installation_check:
     sys.argv += ['EngineRegressions.'+name for name in [
+        'test_two_actual_clients_ready_reconnect_fight_and_finish',
         'test_actual_application_renders_campaign_offline_ai_and_network_battles',
         'test_clean_checkout_can_render_import_screen_without_game_media',
         'test_game_routes_clean_profile_to_import_before_server_startup',
@@ -72,6 +73,63 @@ class Client:
         raise AssertionError(f'timed out waiting for {name}')
 
 class EngineRegressions(unittest.TestCase):
+    def test_server_separates_player_slots_spectators_and_bots(self):
+        with self.match(bots=('blue',)) as (_,port,sockets):
+            player=Client(sockets[0]);self.identify(player,'Player',PROTOCOL['RED_TEAM'])
+            sockets.append(socket.create_connection(('127.0.0.1',port),timeout=2));watcher=Client(sockets[-1]);self.identify(watcher,'Spectator',-1)
+            deadline=time.monotonic()+5
+            while True:
+                player.send('REQUEST_VERSION');_,packets=player.until('GIVE_VERSION')
+                advertisements=[body for kind,body in packets if kind==PROTOCOL['SERVER_AVAILABILITY']]
+                self.assertTrue(advertisements)
+                slots,spectators,bots,difficulty,speed,allowed=struct.unpack('=6i',advertisements[-1])
+                if bots==1:break
+                if time.monotonic()>deadline:self.fail('Bot did not appear in availability snapshot')
+                time.sleep(.05)
+            self.assertEqual((slots,spectators,bots,difficulty,speed,allowed),(0,1,1,1,100,1))
+
+    def test_two_actual_clients_ready_reconnect_fight_and_finish(self):
+        import source_fixtures
+        with tempfile.TemporaryDirectory(prefix='zod-two-apps-') as directory:
+            root=pathlib.Path(directory);media=root/'media';source_fixtures.workspace(ROOT,media);source_fixtures.launch_media(media)
+            battle=media/'maps/lifecycle.map';source_fixtures.battle_map(battle)
+            with socket.socket() as reserve:reserve.bind(('127.0.0.1',0));port=reserve.getsockname()[1]
+            logs=[];processes=[]
+            try:
+                for role in ['server','red','blue']:
+                    profile=root/role;profile.mkdir();env=self.environment(str(profile));env.update(ZOD_DATA=str(media),ZOD_PORT=str(port),ZOD_EMPTY_EXIT_SECS='0',SDL_RENDER_DRIVER='software')
+                    args=[GAME,'-d','-m',str(battle)] if role=='server' else [GAME,'-w','-s','-u','-c','127.0.0.1','-t',role,'-n',role]
+                    if role!='server':env['ZOD_LAUNCH_CHECK']='multiplayer-lifecycle'
+                    log=(root/(role+'.log')).open('w');logs.append(log)
+                    processes.append(subprocess.Popen(args,cwd=media,env=env,stdout=log,stderr=subprocess.STDOUT))
+                    if role=='server':
+                        deadline=time.monotonic()+10
+                        while True:
+                            self.assertIsNone(processes[0].poll(),(root/'server.log').read_text()[-3000:])
+                            try:
+                                with socket.create_connection(('127.0.0.1',port),timeout=.1):break
+                            except OSError:
+                                if time.monotonic()>deadline:self.fail('Lifecycle server did not start')
+                                time.sleep(.02)
+                deadline=time.monotonic()+45
+                while True:
+                    red=(root/'red.log').read_text(errors='replace');blue=(root/'blue.log').read_text(errors='replace')
+                    for process in processes:self.assertIsNone(process.poll(),red[-2000:]+blue[-2000:])
+                    if 'lifecycle: summary victory' in red and 'lifecycle: summary defeat' in blue:break
+                    if time.monotonic()>deadline:self.fail('Two-client lifecycle did not finish:\n'+red[-3500:]+'\n'+blue[-3500:]+'\n'+(root/'server.log').read_text()[-1500:])
+                    time.sleep(.05)
+                for token in ['interrupted','rejoined red','combat orders sent']:self.assertIn('lifecycle: '+token,red)
+                self.assertIn('map-transfer: cache verified',red)
+                self.assertIn('lifecycle: combat orders sent',blue)
+                self.assertIn('lifecycle: ready confirmed',blue)
+            finally:
+                for process in reversed(processes):
+                    if process.poll() is None:process.terminate()
+                for process in reversed(processes):
+                    try:process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:process.kill();process.wait(timeout=5)
+                for log in logs:log.close()
+
     def test_actual_application_renders_campaign_offline_ai_and_network_battles(self):
         import source_fixtures
         with tempfile.TemporaryDirectory(prefix='zod-packaged-launch-') as directory:
@@ -264,7 +322,7 @@ class EngineRegressions(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='zodee-display-') as directory:
             result=subprocess.check_output([DRIVER,'display-matrix',directory],cwd=WORKSPACE,env=self.environment(directory),text=True,timeout=60)
             self.assertIn('display-matrix-ok',result)
-            self.assertEqual(len(list(pathlib.Path(directory).glob('display-*.png'))),32)
+            self.assertEqual(len(list(pathlib.Path(directory).glob('display-*.png'))),88)
 
     def test_diagnostics_excludes_raw_errors_secrets_and_personal_paths(self):
         with tempfile.TemporaryDirectory(prefix='zodee-private-user-') as directory:

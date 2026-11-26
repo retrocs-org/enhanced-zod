@@ -249,6 +249,7 @@ class ZPlayer : public ZClient
         std::string cloud_disconnect_reason,cloud_join_ticket,cloud_portal_id,private_rejoin_token;
         static void resume_session_event(ZPlayer*,char*,int,int);
         bool managed_dedicated=false;
+        static void cloud_player_role_event(ZPlayer *p,char *data,int size,int dummy);
         static void cloud_server_role_event(ZPlayer *p,char *data,int size,int dummy);
         static void cloud_required_event(ZPlayer *p,char *data,int size,int dummy);
         static void cloud_result_event(ZPlayer *p,char *data,int size,int dummy);
@@ -267,6 +268,7 @@ class ZPlayer : public ZClient
         ZMPAsync<PendingJoin> join_task,deployment_connect;bool deployment_handshake=false;Uint64 deployment_deadline=0;
         std::uint64_t join_origin_id = 0;
         bool PollHostedJoin();
+        std::map<int,int> cloud_player_roles;
         int cloud_server_role=0;
         bool reconnecting=false, hosted_remote_session=false, public_remote_session=false;
         int reconnect_attempt=0, reconnect_port=2137, reconnect_team=RED_TEAM;
@@ -384,6 +386,7 @@ class ZPlayer : public ZClient
     static void state_sync_event(ZPlayer*,char*,int,int);
     unsigned long long sync_last_sequence=0;int sync_strikes=0;std::vector<std::string> sync_history;std::string sync_reported_hash;
     static void cloud_notice_event(ZPlayer*,char*,int,int);
+        static void map_transfer_info_event(ZPlayer *p,char *data,int size,int dummy);
         static void map_fingerprint_event(ZPlayer*,char*,int,int);
 		static void store_map_event(ZPlayer *p, char *data, int size, int dummy);
 		static void add_new_object_event(ZPlayer *p, char *data, int size, int dummy);

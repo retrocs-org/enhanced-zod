@@ -750,3 +750,39 @@ Planetary Conquest is the chosen name for the proposed online-only shared
 planetary territory mode. Its menu entry is explicitly unavailable until its
 strategic API and gameplay are implemented. Future cooperative campaigns are
 under Campaigns > Cooperative, rather than the ordinary match browser.
+
+
+## Live availability and verified map delivery
+
+Schema 008 adds live server availability. Before serving the updated website, run
+`php _app/bin/migrate.php` from its installed document root. The migration is
+idempotent. Deploy the matching native engine, client and server agent together.
+No production deployment or database change is performed by local tests.
+
+Authenticated heartbeats may supply `player_slots` (0 through map capacity),
+`spectators` (0–10000), `bots` (0–8), `difficulty` (0–3) and `speed_percent`
+(50–200). Supply all five or none. A legacy heartbeat clears old details;
+missing values are returned as null rather than invented zeros. Listing and
+availability updates are atomic. Only fresh, enabled hosts appear in the directory.
+The native browser also queries bounded live rules during compatibility checks,
+including private and LAN addresses. Human slots exclude active bot teams and unexpired rejoin reservations;
+watchers are counted separately. Spectator admission still requires public-host
+cloud approval where applicable.
+
+Clients negotiate map delivery and re-hash cached content before reuse. A changed
+host map falls back to a fresh transfer. Downloads show byte/percentage progress,
+and map data must parse successfully before entering the world or the cache.
+The profile `map-cache` directory holds at most 32 verified maps and 64 MiB;
+cache files do not replace imported levels and are never committed to source.
+
+The actual-client installation scenario covers a private-session interruption,
+reserved-team recovery, cached-map reuse, ready-up, normal combat orders and
+victory/defeat summaries on two separate game processes. Private rejoin proofs
+are sent immediately after socket adoption so a newly issued token cannot
+replace the old proof before it is sent. Tokens are never included in diagnostics.
+
+Staff badges in the in-game Player List reflect current owner/admin/moderator
+roles. Revocation updates open menus; self and equal/higher staff targets are
+unavailable. The host and API still authorize every request. Temporary-ban
+notices include their expiry in UTC, and pending delivery remains explicitly
+pending rather than being presented as success.

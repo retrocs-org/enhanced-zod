@@ -94,7 +94,7 @@ function filterServers(){
   const favorites=storedServers('zod-favorite-servers'),recent=storedServers('zod-recent-servers');
   for(const row of document.querySelectorAll('.server-table tr[data-server]')){
     const players=Number(row.dataset.players),capacity=Number(row.dataset.capacity),list=value('list'),population=value('players'),state=value('state');
-    const show=row.dataset.region.toLowerCase().includes(value('region'))&&row.dataset.mode.toLowerCase().includes(value('mode'))&&row.cells[0].textContent.toLowerCase().includes(value('map'))&&(list==='all'||(list==='favorites'?favorites:recent).includes(row.dataset.server))&&(population==='any'||population==='open'&&players<capacity||population==='populated'&&players>0||population==='empty'&&players===0)&&(state==='any'||state==='battle'&&row.dataset.started==='1'||state==='lobby'&&row.dataset.started==='0');
+    const show=row.dataset.region.toLowerCase().includes(value('region'))&&row.dataset.mode.toLowerCase().includes(value('mode'))&&row.cells[0].textContent.toLowerCase().includes(value('map'))&&(list==='all'||(list==='favorites'?favorites:recent).includes(row.dataset.server))&&(population==='any'||population==='open'&&Number(row.dataset.openSlots)>0||population==='populated'&&players>0||population==='empty'&&players===0)&&(state==='any'||state==='battle'&&row.dataset.started==='1'||state==='lobby'&&row.dataset.started==='0');
     row.hidden=!show;if(show)visible++;
   }
   document.querySelector('#server-filter-status').textContent=visible+' matching server(s)';

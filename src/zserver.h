@@ -176,6 +176,7 @@ class ZServer : public ZCore
 		void RelayLPlayerReady(int player, int to_player = -1);   //matchmaking lobby
 		void CheckAutoStart();   //matchmaking lobby: start when all humans are ready (per-tick + on ready)
 		void CheckDelayedStartPause();   //#181: fire the settle-delayed start-screen pause
+		server_availability_packet Availability();
 		int MapPlayerCapacity();   //number of teams with a fort on the loaded map
 		void FillEmptySlotsWithBots();   //add bots for fort-teams with no player
 		//#249: pick the fort team a multiplayer joiner should get - honours the

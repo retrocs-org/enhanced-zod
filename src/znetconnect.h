@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 
+struct MatchInfo;
 class ZConnectedSocket {
 public:
     ~ZConnectedSocket();
@@ -22,5 +23,5 @@ std::shared_ptr<ZConnectedSocket> ZNetConnect(const std::string &host, int port,
 bool ZNetCheckCompatibility(const std::string &advertised,std::string &error);
 // Checks the advertised engine version without sending credentials or joining a team.
 bool ZNetCheckVersion(const std::string &host, int port, std::string &error,
-                      int milliseconds = 2000, std::string *serverVersion=nullptr,std::string *mapHash=nullptr);
+                      int milliseconds = 2000, std::string *serverVersion=nullptr,std::string *mapHash=nullptr,MatchInfo *availability=nullptr);
 #endif

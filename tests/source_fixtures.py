@@ -53,3 +53,11 @@ def launch_media(destination):
     for name in ['MACHGUN2.wav','RICOCH1.wav']:
         with wave.open(str(sounds/name),'wb') as out:out.setnchannels(1);out.setsampwidth(2);out.setframerate(22050);out.writeframes(b'\0\0'*2205)
     (sounds/'AD1.MID').write_bytes(b'MThd'+struct.pack('>IHHH',6,0,1,96)+b'MTrk'+struct.pack('>I',4)+b'\0\xff\x2f\0')
+
+
+def battle_map(path):
+    """Asymmetric authored combat scenario: two humans, no bots or forced result."""
+    path=pathlib.Path(path)
+    objects=[Object(6,6,1,2,0,0,0,100),Object(34,6,2,2,0,0,0,1),Object(27,16,1,4,3,0,0,100),Object(30,16,2,4,0,0,0,1)]
+    header=Header(64,48,b'Two-client lifecycle fixture',2,len(objects),0,2)
+    path.write_bytes(bytes(header)+struct.pack('=HHHHHHHH',0,0,32,48,32,0,32,48)+b''.join(bytes(x) for x in objects)+struct.pack('=H',0)*(64*48))

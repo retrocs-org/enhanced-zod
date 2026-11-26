@@ -7,6 +7,16 @@
 #include <ctime>
 #include <fstream>
 namespace {
+std::string banMessage(const ZCloudBan &ban){
+ time_t time=(time_t)ban.expires;std::tm utc{};char label[64]="";
+#ifdef _WIN32
+ bool valid=gmtime_s(&utc,&time)==0;
+#else
+ bool valid=gmtime_r(&time,&utc)!=nullptr;
+#endif
+ if(valid)strftime(label,sizeof(label),"%Y-%m-%d %H:%M UTC",&utc);
+ return "Temporarily banned: "+ban.reason+(label[0]?std::string(". Ends ")+label:std::string());
+}
 bool account(const std::string &s){return s.size()==64&&s.find_first_not_of("0123456789abcdef")==std::string::npos;}
 bool number(const std::string &s,long long &n){if(s.empty()||s.size()>18||s.find_first_not_of("0123456789")!=std::string::npos)return false;try{n=std::stoll(s);return true;}catch(...){return false;}}
 std::vector<std::string> fields(const std::string &s){std::vector<std::string> v;std::istringstream in(s);std::string part;while(std::getline(in,part,':'))v.push_back(part);return v;}
@@ -65,7 +75,7 @@ void ZServer::ApplyCloudOperations(){
    if(applied)for(size_t i=0;i<player_info.size();++i){auto peer=cloud_peers.find(player_info[i].p_id);if(peer!=cloud_peers.end()&&peer->second.account==command.target){std::string reason="Removed by server moderation: "+command.reason;server_socket.SendMessage(i,CLOUD_NOTICE,reason.c_str(),reason.size()+1);auto *handler=server_socket.GetHandler(i);if(handler)handler->Disconnect();}}
    cloud_seen_commands[command.id]=now;cloud_command_results[command.id]=applied;
   }
-  for(size_t i=0;i<player_info.size();++i){auto peer=cloud_peers.find(player_info[i].p_id);if(peer==cloud_peers.end()||peer->second.account==cloud_roles.owner)continue;auto ban=cloud_roles.bans.find(peer->second.account);if(ban!=cloud_roles.bans.end()&&ban->second.expires>std::time(nullptr)){std::string reason="Temporarily banned: "+ban->second.reason;server_socket.SendMessage(i,CLOUD_NOTICE,reason.c_str(),reason.size()+1);auto *handler=server_socket.GetHandler(i);if(handler)handler->Disconnect();}}
+  for(size_t i=0;i<player_info.size();++i){auto peer=cloud_peers.find(player_info[i].p_id);if(peer==cloud_peers.end()||peer->second.account==cloud_roles.owner)continue;auto ban=cloud_roles.bans.find(peer->second.account);if(ban!=cloud_roles.bans.end()&&ban->second.expires>std::time(nullptr)){std::string reason=banMessage(ban->second);server_socket.SendMessage(i,CLOUD_NOTICE,reason.c_str(),reason.size()+1);auto *handler=server_socket.GetHandler(i);if(handler)handler->Disconnect();}}
  }
  for(auto i=cloud_seen_commands.begin();i!=cloud_seen_commands.end();)if(now-i->second>120)i=cloud_seen_commands.erase(i);else ++i;
  bool acknowledged;if(cloud_ack_task.Poll(acknowledged)){if(acknowledged)for(auto &id:cloud_ack_batch)cloud_command_results.erase(id);cloud_ack_batch.clear();cloud_ack_after=now+3;}

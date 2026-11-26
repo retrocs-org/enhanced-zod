@@ -14,6 +14,7 @@ public:
     void SetError(const string &message);
     void SetPauseConfirmed(bool confirmed) { pause_confirmed=confirmed; }
     void SetServerRole(bool isPublic,int role){public_server=isPublic;server_role=role;}
+    void SetTransferProgress(const string &progress){transfer_progress=progress;}
     void SetCountdown(int seconds) { countdown=seconds; }
 private:
     friend class ZLobbyRegression;
@@ -26,6 +27,7 @@ private:
     bool pause_confirmed=false, saw_paused=false, world_loaded=false, sticky_error=false;
     bool ready_pending=false, requested_ready=false;
     Uint64 ready_sent_at=0, opened_at=0;
+    string transfer_progress;
     bool public_server=false;int server_role=0;
     int countdown=-1,previous_countdown=-1;Uint64 cancelled_at=0;
     vector<int> fort_teams;

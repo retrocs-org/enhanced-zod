@@ -72,6 +72,11 @@ class PHPBackend(unittest.TestCase):
         spoof={**heartbeat,'host':'8.8.8.8'};api('/api/servers/heartbeat',spoof,self.key,expected=400)
         api('/api/servers/heartbeat',heartbeat,self.key)
         self.assertTrue(api('/matches'))
+        details={**heartbeat,'player_slots':0,'spectators':3,'bots':1,'difficulty':2,'speed_percent':150}
+        api('/api/servers/heartbeat',details,self.key)
+        listing=next(x for x in api('/matches') if x['id']=='api-one');self.assertEqual([listing[k] for k in ['player_slots','spectators','bots','difficulty','speed_percent']],[0,3,1,2,150])
+        for change in [{'player_slots':3},{'spectators':-1},{'bots':9},{'difficulty':4},{'speed_percent':201}]:api('/api/servers/heartbeat',{**details,**change},self.key,expected=400)
+        api('/api/servers/heartbeat',heartbeat,self.key);self.assertIsNone(next(x for x in api('/matches') if x['id']=='api-one')['player_slots'])
         ticket=api('/api/tickets',{'Server':'api-one'},session)['ticket']
         api('/api/tickets/redeem',{'Ticket':ticket},'c'*64,expected=401)
         def redeem(_):return request('/api/tickets/redeem',{'Ticket':ticket},self.key)

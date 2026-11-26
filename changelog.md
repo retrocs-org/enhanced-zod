@@ -10,6 +10,18 @@ are retained below; new website changes belong in that separate log.
 
 ## Unreleased
 
+### Multiplayer lifecycle and authoring workflow
+
+- Fix private reconnect token ordering so a new server token cannot overwrite the reservation proof before rejoining.
+- Test two actual game clients through ready-up, interrupted private-session recovery, verified map-cache reuse, combat and victory/defeat summaries.
+- Advertise open player slots, spectators, active bots, difficulty and speed; keep unknown legacy advertisements distinct from zero.
+- Negotiate map transfers, show byte/percentage progress and reuse SHA-256 verified maps from a bounded profile cache.
+- Display live staff roles in-game, protect self/equal/higher staff targets, and show temporary-ban expiry times.
+- Connect campaign win/loss destinations visually, preview briefings/videos and test saved missions separately from current edits.
+- Record content-bound objective completions and return to the playtest report without changing campaign progress.
+- Improve controller focus in editor dialogs, high-contrast typography and display testing across all campaign/multiplayer branches.
+
+
 ### Multiplayer, offline setup and authoring polish
 
 - Exercise the actual packaged executable through embedded-level, offline AI and dedicated-client launch checks, alongside the existing lifecycle driver checks.

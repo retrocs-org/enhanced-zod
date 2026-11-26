@@ -408,3 +408,28 @@ history, progression and cinematics. Custom Campaigns lists installed packs and
 exposes Import pack; an empty list never starts the original campaign by accident.
 Back returns through Single Player to Campaigns. Cooperative contains a disabled
 Future Campaign entry until cooperative campaigns are implemented.
+
+
+### Mission flow and briefing previews
+
+Campaign Studio > **Mission flow** shows the selected mission and its win/loss
+outcomes with text labels and connecting lines. Choose **Connect win** or
+**Connect loss**, then select a destination in the mission list. **Use default**
+means advance on victory or retry on defeat; **End campaign** ends that branch.
+Existing campaign validation checks unreachable paths and loops before export.
+
+**Preview briefing** displays the selected mission's speaker, character and
+paginated briefing text. Intro and victory-video buttons use the campaign's
+configured local media. Missing media continues to use the normal text fallback.
+
+**Test saved mission** snapshots the saved mission file. **Test current edits**
+uses the current editor map for that selected mission. Neither choice overwrites
+the original map or normal campaign progress. Returning from a campaign playtest
+opens its report automatically and preserves undo history and unsaved edits.
+Reports now include objective completions and return events; a changed snapshot
+is identified separately from coverage of the saved mission.
+
+In editor dialogs, the controller's A button activates focus, B returns, the
+D-pad and shoulder buttons navigate controls. On the canvas, A retains normal
+placement behavior. Text fields retain Tab/Shift+Tab navigation, and high-contrast
+text applies to editor and in-game menu typography as well as the main menu.

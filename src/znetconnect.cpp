@@ -1,4 +1,5 @@
 #include "znetconnect.h"
+#include "zmpclient.h"
 #include "zbuild.h"
 #include "client_socket.h"
 #ifdef _WIN32
@@ -121,7 +122,7 @@ bool ZNetCheckCompatibility(const std::string &advertised,std::string &error) {
     return true;
 }
 // A disposable preflight leaves the player's current session untouched on failure.
-bool ZNetCheckVersion(const std::string &host,int port,std::string &error,int milliseconds,std::string *serverVersion,std::string *mapHash) {
+bool ZNetCheckVersion(const std::string &host,int port,std::string &error,int milliseconds,std::string *serverVersion,std::string *mapHash,MatchInfo *availability) {
     auto started=std::chrono::steady_clock::now();
     auto connection=ZNetConnect(host,port,error,milliseconds);
     if(!connection) return false;
@@ -137,6 +138,7 @@ bool ZNetCheckVersion(const std::string &host,int port,std::string &error,int mi
         probe.Process();
         for(auto *event:events) {
             if(event->event_type==OTHER_EVENT && event->event_number==DISCONNECT_EVENT)closed=true;
+            if(availability&&event->event_type==TCP_EVENT&&event->event_number==SERVER_AVAILABILITY&&event->size==sizeof(server_availability_packet)&&event->data){server_availability_packet v;memcpy(&v,event->data,sizeof(v));if(v.player_slots>=0&&v.player_slots<MAX_TEAM_TYPES&&v.spectators>=0&&v.spectators<=10000&&v.bots>=0&&v.bots<MAX_TEAM_TYPES&&v.difficulty>=0&&v.difficulty<=3&&v.speed_percent>=50&&v.speed_percent<=200){availability->player_slots=v.player_slots;availability->spectators=v.spectators;availability->bots=v.bots;availability->difficulty=v.difficulty;availability->speed_percent=v.speed_percent;}}
             if(mapHash&&event->event_type==TCP_EVENT&&event->event_number==MAP_FINGERPRINT&&event->size==65&&event->data&&event->data[64]==0){std::string hash(event->data,64);if(hash.find_first_not_of("0123456789abcdef")==std::string::npos)*mapHash=hash;}
             if(event->event_type==TCP_EVENT&&event->event_number==BUILD_COMPATIBILITY){buildReceived=true;if(event->data&&event->size>0&&event->size<=257&&event->data[event->size-1]==0&&!memchr(event->data,0,event->size-1))buildCompatible=ZNetCheckCompatibility(std::string(event->data,event->size-1),error);else error="Invalid server compatibility response.";}
             if(event->event_type==TCP_EVENT && event->event_number==GIVE_VERSION) {

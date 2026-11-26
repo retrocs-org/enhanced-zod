@@ -1,5 +1,6 @@
 #include "zmap_workspace.h"
 #include "zplaytest.h"
+#include "zmovie.h"
 #include "zmenu_theme.h"
 #include "zprefs.h"
 #include "zasset_import.h"
@@ -29,6 +30,7 @@ void ZMapWorkspace::ReleaseGraphics() {
     for(auto &entry:sprites)SDL_DestroyTexture(entry.second);sprites.clear();refresh=true;
 }
 void ZMapWorkspace::Text(const string &value,float x,float y,int size,SDL_Color color,float maxWidth) {
+    if(zod_high_contrast&&std::max({color.r,color.g,color.b})-std::min({color.r,color.g,color.b})<65&&color.r+color.g+color.b<550)color={255,255,255,color.a};
     float sx=1,sy=1;SDL_GetRenderScale(renderer,&sx,&sy);float raster=max(1.0f,sx);
     int pixels=(int)ceil(size*raster);
     string key=to_string(zod_text_percent)+":"+to_string(pixels)+":"+value;auto found=labels.find(key);
@@ -122,7 +124,7 @@ void ZMapWorkspace::Event(const SDL_Event &event) {
     }
     if(pickEventLocation){if(event.type==SDL_EVENT_KEY_DOWN&&event.key.key==SDLK_ESCAPE){pickEventLocation=false;campaignPanel=true;return;}if(event.type==SDL_EVENT_MOUSE_MOTION){mx=event.motion.x;my=event.motion.y;}if(event.type==SDL_EVENT_MOUSE_BUTTON_UP&&event.button.button==SDL_BUTTON_LEFT){int x=(int)(((event.button.x-306)/zoom+cameraX)/16),y=(int)(((event.button.y-162)/zoom+cameraY)/16);auto &h=map.GetMapBasics();if(event.button.x>=306&&event.button.x<1250&&event.button.y>=162&&event.button.y<702&&x>=0&&y>=0&&x<h.width&&y<h.height){eventX=to_string(x);eventY=to_string(y);pickEventLocation=false;campaignPanel=true;}}return;}
     if(terrainConfirm||connectionsPanel){if(event.type==SDL_EVENT_KEY_DOWN&&event.key.key==SDLK_ESCAPE){terrainConfirm=connectionsPanel=false;terrainPreview.clear();return;}if(terrainConfirm&&event.type==SDL_EVENT_KEY_DOWN&&event.key.key==SDLK_RETURN){ApplyTerrainPreview();return;}if(event.type==SDL_EVENT_MOUSE_MOTION){mx=event.motion.x;my=event.motion.y;}if(event.type==SDL_EVENT_MOUSE_BUTTON_DOWN){mx=pressX=event.button.x;my=pressY=event.button.y;}if(event.type==SDL_EVENT_MOUSE_BUTTON_UP){mx=event.button.x;my=event.button.y;clicked=true;}return;}
-    if(event.type==SDL_EVENT_KEY_DOWN&&event.key.key==SDLK_TAB){editField=-1;SDL_StopTextInput(SDL_GetKeyboardFocus());int count=max(1,focusCount),step=(event.key.mod&SDL_KMOD_SHIFT)?-1:1;if(focusButton<0&&step<0)focusButton=0;focusButton=(focusButton+step+count)%count;return;}
+    if(event.type==SDL_EVENT_KEY_DOWN&&(event.key.key==SDLK_TAB||(MenuOpen()&&editField<0&&(event.key.key==SDLK_UP||event.key.key==SDLK_DOWN)))){editField=-1;SDL_StopTextInput(SDL_GetKeyboardFocus());int count=max(1,focusCount),step=(event.key.key==SDLK_UP||(event.key.mod&SDL_KMOD_SHIFT))?-1:1;if(focusButton<0&&step<0)focusButton=0;focusButton=(focusButton+step+count)%count;return;}
     if(event.type==SDL_EVENT_KEY_DOWN&&editField<0&&(event.key.key==SDLK_RETURN||event.key.key==SDLK_KP_ENTER||event.key.key==SDLK_SPACE)&&focusButton>=0){focusActivate=true;return;}
     if(event.type==SDL_EVENT_WINDOW_FOCUS_LOST){panning=down=painting=false;autosaveAt=0;Autosave();}
     if(recoveryPrompt||helpPanel){if(event.type==SDL_EVENT_KEY_DOWN&&event.key.key==SDLK_ESCAPE){if(recoveryPrompt)recoveryDeferred=true;recoveryPrompt=helpPanel=false;return;}if(event.type==SDL_EVENT_MOUSE_MOTION){mx=event.motion.x;my=event.motion.y;}if(event.type==SDL_EVENT_MOUSE_BUTTON_DOWN){mx=pressX=event.button.x;my=pressY=event.button.y;}if(event.type==SDL_EVENT_MOUSE_BUTTON_UP){mx=event.button.x;my=event.button.y;clicked=true;}return;}
@@ -139,11 +141,11 @@ void ZMapWorkspace::Event(const SDL_Event &event) {
     if(event.type==SDL_EVENT_MOUSE_BUTTON_UP&&event.button.button==SDL_BUTTON_LEFT){mx=event.button.x;my=event.button.y;clicked=true;
         if(down&&tool==4&&selectedObject<0&&anchorX>=0){auto &h=map.GetMapBasics();int x=max(0,min((int)h.width-1,(int)(((mx-306)/zoom+cameraX)/16))),y=max(0,min((int)h.height-1,(int)(((my-162)/zoom+cameraY)/16)));areaX=min(x,anchorX);areaY=min(y,anchorY);areaW=abs(x-anchorX)+1;areaH=abs(y-anchorY)+1;selectedObjects.clear();for(int i=0;i<(int)map.GetObjectList().size();++i){auto&o=map.GetObjectList()[i];if(o.x>=areaX&&o.y>=areaY&&o.x<areaX+areaW&&o.y<areaY+areaH)selectedObjects.insert(i);}if(!selectedObjects.empty())selectedObject=*selectedObjects.begin();anchorX=anchorY=-1;}
         down=painting=false;}
-    if(event.type==SDL_EVENT_MOUSE_WHEEL) {if(historyPanel||fileForm||fileMenu||importPanel||prefabPanel||connectionsPanel||terrainConfirm||(campaignPanel&&(eventPanel||compatibilityPanel))){}else if(campaignPanel&&timelinePanel)timelineScroll=max(0,min(timelineScroll-(int)event.wheel.y,max(0,(int)authorCampaign.missions[campaignMission].objectives.size()-8)));else if(validationPanel)issueScroll=max(0,min(issueScroll-(int)event.wheel.y,max(0,(int)issues.size()-8)));else if(campaignPanel)missionScroll=max(0,min(missionScroll-(int)event.wheel.y,max(0,(int)authorCampaign.missions.size()-6)));else if(browser)scroll=max(0,min(scroll-(int)event.wheel.y,max(0,(int)files.size()-7)));else if(mx>=306)zoom=max(0.25f,min(4.0f,zoom*(event.wheel.y>0?1.2f:1/1.2f)));else page=max(0,min(page-(int)event.wheel.y,(MAX_PLANET_TILES-1)/96));}
+    if(event.type==SDL_EVENT_MOUSE_WHEEL) {if(historyPanel||fileForm||fileMenu||importPanel||prefabPanel||connectionsPanel||terrainConfirm||(campaignPanel&&(eventPanel||compatibilityPanel))){}else if(campaignPanel&&briefingPreview)briefingScroll=max(0,briefingScroll-(int)event.wheel.y);else if(campaignPanel&&flowPanel)flowScroll=max(0,flowScroll-(int)event.wheel.y);else if(campaignPanel&&timelinePanel)timelineScroll=max(0,min(timelineScroll-(int)event.wheel.y,max(0,(int)authorCampaign.missions[campaignMission].objectives.size()-8)));else if(validationPanel)issueScroll=max(0,min(issueScroll-(int)event.wheel.y,max(0,(int)issues.size()-8)));else if(campaignPanel)missionScroll=max(0,min(missionScroll-(int)event.wheel.y,max(0,(int)authorCampaign.missions.size()-4)));else if(browser)scroll=max(0,min(scroll-(int)event.wheel.y,max(0,(int)files.size()-7)));else if(mx>=306)zoom=max(0.25f,min(4.0f,zoom*(event.wheel.y>0?1.2f:1/1.2f)));else page=max(0,min(page-(int)event.wheel.y,(MAX_PLANET_TILES-1)/96));}
     if(event.type==SDL_EVENT_TEXT_INPUT)if(auto *field=Editing()){if(field->size()+strlen(event.text.text)<4096)*field+=event.text.text;}
     if(event.type==SDL_EVENT_KEY_DOWN) {
         auto key=event.key.key;bool ctrl=(event.key.mod&(SDL_KMOD_CTRL|SDL_KMOD_GUI))!=0;
-        if(key==SDLK_ESCAPE) {if(historyPanel){historyPanel=false;return;}if(editField>=0){editField=-1;SDL_StopTextInput(SDL_GetKeyboardFocus());}else if(campaignPanel&&eventPanel)eventPanel=false;else if(campaignPanel&&compatibilityPanel)compatibilityPanel=false;else if(campaignPanel&&timelinePanel)timelinePanel=false;else if(campaignPanel&&metadataPanel)metadataPanel=false;else if(!pending.empty())pending.clear();else if(fileForm){fileForm=0;fileMenu=true;}else if(fileMenu)fileMenu=false;else if(validationPanel)validationPanel=false;else if(prefabPanel)prefabPanel=false;else if(importPanel)importPanel=false;else if(campaignPanel)campaignPanel=false;else if(browser)browser=false;else Request("@close");return;}
+        if(key==SDLK_ESCAPE) {if(historyPanel){historyPanel=false;return;}if(editField>=0){editField=-1;SDL_StopTextInput(SDL_GetKeyboardFocus());}else if(campaignPanel&&eventPanel)eventPanel=false;else if(campaignPanel&&compatibilityPanel)compatibilityPanel=false;else if(campaignPanel&&timelinePanel)timelinePanel=false;else if(campaignPanel&&briefingPreview)briefingPreview=false;else if(campaignPanel&&flowPanel){flowPanel=false;branchMode=0;}else if(campaignPanel&&metadataPanel)metadataPanel=false;else if(!pending.empty())pending.clear();else if(fileForm){fileForm=0;fileMenu=true;}else if(fileMenu)fileMenu=false;else if(validationPanel)validationPanel=false;else if(prefabPanel)prefabPanel=false;else if(importPanel)importPanel=false;else if(campaignPanel)campaignPanel=false;else if(browser)browser=false;else Request("@close");return;}
         if(ctrl&&campaignPanel&&(key==SDLK_Z||key==SDLK_Y)){UndoCampaign(key==SDLK_Y||(event.key.mod&SDL_KMOD_SHIFT));return;}
         if(ctrl&&campaignPanel&&key==SDLK_S){if(eventPanel)StoreEvent(eventIndex<0);else SaveCampaign();return;}
         if(auto *field=Editing()) {
@@ -172,6 +174,8 @@ void ZMapWorkspace::Event(const SDL_Event &event) {
 }
 bool ZMapWorkspace::Render() {
     struct FocusFrame {ZMapWorkspace *self;~FocusFrame(){self->focusCount=self->focusIndex;self->focusActivate=false;}} focusFrame{this};
+    int context=tool+fileForm*8+campaignPanel*64+flowPanel*128+briefingPreview*256+timelinePanel*512+eventPanel*1024+testReportPanel*2048+metadataPanel*4096+fileMenu*8192+browser*16384+helpPanel*32768+validationPanel*65536+historyPanel*131072+importPanel*262144+prefabPanel*524288+connectionsPanel*1048576+terrainConfirm*2097152+recoveryPrompt*4194304+(!pending.empty())*8388608+compatibilityPanel*16777216;
+    if(focusContext!=context){focusContext=context;focusButton=-1;focusActivate=false;}
     focusIndex=0;modalLayer=0;hoverTip.clear();Autosave();
     string picked;if(ZCampaign_PollPack(picked)){importArchive=picked;string error;if(ZCampaign_InspectPack(picked,importSummary,error)){importPanel=true;campaignPanel=false;editField=-1;}else message=error;}
     if(!palette)LoadPalette();
@@ -349,12 +353,14 @@ void ZMapWorkspace::AddMission(){
 }
 void ZMapWorkspace::RenderCampaignStudio(){
     modalLayer=1;
+    if(briefingPreview){RenderBriefingPreview();return;}
+    if(flowPanel){RenderFlow();return;}
     if(testReportPanel){RenderPlaytestReport();return;}
     if(eventPanel){RenderEvents();return;}
     if(timelinePanel){RenderTimeline();return;}
     if(compatibilityPanel){Rect(180,180,920,530,{24,32,39,255});Text("CAMPAIGN COMPATIBILITY",208,202,28,amber);Text("Minimum engine version",208,254,20);Field(authorCampaign.engineMin,43,208,286,864);Text("Maximum engine version (optional)",208,346,20);Field(authorCampaign.engineMax,44,208,378,864);Text("Required packs: id@minimum-version, separated by commas",208,438,20);Field(dependencyText,45,208,470,864,70);Text("Missing packs, version mismatches and cycles block installation.",208,570,18);if(Button("Save requirements",208,638,400,true)&&SaveCampaign()){compatibilityPanel=false;editField=-1;}if(Button("Back",772,638,300)){compatibilityPanel=false;editField=-1;}return;}
     if(metadataPanel){Rect(180,180,920,530,{24,32,39,255});Text("CAMPAIGN DETAILS",208,202,28,amber);Text("Description",208,254,20);Field(authorCampaign.description,40,208,286,864,108);Text("Cover image (relative path inside campaign folder)",208,412,20);Field(authorCampaign.cover,41,208,446,864);if(Button("Difficulty: "+authorCampaign.difficulty,208,510,410)){const string levels[]={"Easy","Normal","Hard","Expert"};int i=0;for(;i<4&&levels[i]!=authorCampaign.difficulty;++i);authorCampaign.difficulty=levels[(i+1)%4];}Text("Pack version",652,494,18);Field(authorCampaign.version,42,652,520,420);if(Button("Compatibility",208,574,420)){dependencyText.clear();for(auto &entry:authorCampaign.requires){if(!dependencyText.empty())dependencyText+=", ";dependencyText+=entry;}compatibilityPanel=true;}if(Button("Open project folder",652,574,420))SDL_OpenURL(("file://"+authorCampaign.root).c_str());if(Button("Save details",208,638,300,true)&&SaveCampaign()){metadataPanel=false;editField=-1;}if(Button("Back",772,638,300)){metadataPanel=false;editField=-1;}return;}
-Rect(150,150,980,600,{24,32,39,255});Text("CAMPAIGN STUDIO",176,170,28,amber);Text("Test uses the current map for the selected mission.",500,184,16);
+Rect(150,150,980,600,{24,32,39,255});Text("CAMPAIGN STUDIO",176,170,28,amber);
     Field(authorCampaign.root.empty()?campaignTitle:authorCampaign.title,1,176,220,928);
     if(authorCampaign.root.empty()){
         if(Button("Create campaign",176,284,300,true)){string error;if(ZCampaign_Create(campaignTitle,authorCampaign,error)){authorCampaign.author=zod_player_name;lastSavedCampaign={};campaignUndo.clear();campaignRedo.clear();message="New campaign project created. Add the current map to begin.";}else message=error;editField=-1;}
@@ -363,18 +369,19 @@ Rect(150,150,980,600,{24,32,39,255});Text("CAMPAIGN STUDIO",176,170,28,amber);Te
         for(const auto &project:projects){string marker;if(row<4&&ZCampaign_SafeAsset(project.root,".zod-authoring",marker)){if(Button("Edit project: "+project.title,176,402+row*54,928)){AdoptCampaign(project);campaignMission=0;editField=-1;}++row;}}
         if(!row)Text("Share the resulting campaign folder to distribute your campaign.",176,442,22);
     } else {
+        if(Button("Mission flow",450,168,210)){flowPanel=true;editField=-1;SDL_StopTextInput(SDL_GetKeyboardFocus());branchMode=0;flowScroll=max(0,campaignMission-4);}
         if(Button("Test report",674,168,164)){testReportPanel=true;testReportScroll=0;}
         if(Button("Undo",850,168,116))UndoCampaign(false);if(Button("Redo",978,168,126))UndoCampaign(true);
         if(Button("Add current map",176,278,210,true))AddMission();
-        if(Button("Save",404,278,100)){editField=-1;SaveCampaign();}if(Button("Test run",514,278,110,true))StageCampaignTest();
+        if(Button("Save",404,278,100)){editField=-1;SaveCampaign();}if(Button("Test edits",514,278,110,true))StageCampaignTest();
         if(Button("Export + check",632,278,210)){string output,error;if(!SaveCampaign())return;issues=ZContent_ValidateCampaign(authorCampaign,true);if(ZContent_HasErrors(issues)){issueScroll=0;validationPanel=true;campaignPanel=false;message="Resolve validation errors before exporting";return;}if(ZCampaign_Export(authorCampaign,output,error)){string report;if(!ZCampaign_CheckPortable(output,report,error)){message=report;return;}message=report+" / Exported "+output;SDL_OpenURL(("file://"+ZAsset_Profile()+"campaign-exports").c_str());}else message=error;}
         if(Button("Update map",860,278,244)&&campaignMission<(int)authorCampaign.missions.size()) {
             string target;if(SaveCampaign()&&ZCampaign_SafeAsset(authorCampaign.root,authorCampaign.missions[campaignMission].map,target)){
                 string temp=target+".tmp";if(map.Write(temp.c_str())&&SDL_RenamePath(temp.c_str(),target.c_str()))message="Campaign mission map updated";else message="Could not update campaign map";
             }
         }
-        int count=authorCampaign.missions.size();missionScroll=max(0,min(missionScroll,max(0,count-5)));
-        for(int i=0;i<5&&i+missionScroll<count;++i){int index=i+missionScroll;if(Button(to_string(index+1)+". "+authorCampaign.missions[index].title.substr(0,18),176,342+i*44,270,campaignMission==index)){campaignMission=index;editField=-1;}}
+        int count=authorCampaign.missions.size();missionScroll=max(0,min(missionScroll,max(0,count-4)));
+        for(int i=0;i<4&&i+missionScroll<count;++i){int index=i+missionScroll;if(Button(to_string(index+1)+". "+authorCampaign.missions[index].title.substr(0,18),176,342+i*44,270,campaignMission==index)){campaignMission=index;editField=-1;}}
         if(count&&Button("Events",176,532,270)){eventPanel=true;LoadEvent(-1);editField=-1;}
         if(count&&Button("Objectives",176,574,142)){timelinePanel=true;timelineIndex=-1;timelineScroll=0;editField=-1;}
         if(Button("Details",330,574,116)){metadataPanel=true;editField=-1;}
@@ -474,16 +481,17 @@ void ZMapWorkspace::ChangeProperties(int kind,int delta){if(selectedObjects.empt
 
 namespace {void remove_editor_tree(const string &root){int count=0;char **entries=SDL_GlobDirectory(root.c_str(),"*",0,&count);for(int i=0;entries&&i<count;++i){string file=root+"/"+entries[i];SDL_PathInfo info;if(SDL_GetPathInfo(file.c_str(),&info)&&info.type==SDL_PATHTYPE_DIRECTORY)remove_editor_tree(file);else SDL_RemovePath(file.c_str());}SDL_free(entries);SDL_RemovePath((root+"/.zod-authoring").c_str());SDL_RemovePath(root.c_str());}}
 void ZMapWorkspace::FinishCampaignTest(){if(testCampaign.root.empty())return;remove_editor_tree(testCampaign.root);testCampaign={};SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(),"ZOD_EDITOR_TEST_MANIFEST");SDL_UnsetEnvironmentVariable(SDL_GetEnvironment(),"ZOD_EDITOR_TEST_SOURCE");}
-bool ZMapWorkspace::StageCampaignTest(){
+bool ZMapWorkspace::StageCampaignTest(bool currentMap){
  if(authorCampaign.missions.empty()||campaignMission<0||campaignMission>=(int)authorCampaign.missions.size()){message="Add and select a mission before testing";return false;}
  if(!SaveCampaign())return false;FinishCampaignTest();string error;if(!ZCampaign_Create("Editor test "+to_string(SDL_GetTicksNS()),testCampaign,error)){message=error;return false;}
  string hidden=ZCampaign_Root()+"/."+testCampaign.id;
  if(!SDL_RenamePath(testCampaign.root.c_str(),hidden.c_str())){FinishCampaignTest();message="Could not isolate test campaign";return false;}testCampaign.root=hidden;
  testCampaign.title=authorCampaign.title+" / Playtest";testCampaign.author=authorCampaign.author;testCampaign.description=authorCampaign.description;testCampaign.missions=authorCampaign.missions;
  for(size_t i=0;i<testCampaign.missions.size();++i){auto &mission=testCampaign.missions[i];string source;string name="mission-"+to_string(i)+".map";string destination=hidden+"/"+name;
-  bool ok=i==(size_t)campaignMission?map.Write(destination.c_str()):ZCampaign_SafeAsset(authorCampaign.root,mission.map,source)&&SDL_CopyFile(source.c_str(),destination.c_str());if(!ok){message="Could not snapshot mission "+to_string(i+1);FinishCampaignTest();return false;}mission.map=name;
+  bool ok=currentMap&&i==(size_t)campaignMission?map.Write(destination.c_str()):ZCampaign_SafeAsset(authorCampaign.root,mission.map,source)&&SDL_CopyFile(source.c_str(),destination.c_str());if(!ok){message="Could not snapshot mission "+to_string(i+1);FinishCampaignTest();return false;}mission.map=name;
   for(string *video:{&mission.video,&mission.victoryVideo})if(!video->empty()&&video->compare(0,9,"original:")!=0){if(!ZCampaign_SafeAsset(authorCampaign.root,*video,source)){message="Missing test video: "+*video;FinishCampaignTest();return false;}string relative="video-"+to_string(i)+(video==&mission.video?"-intro.mp4":"-victory.mp4");if(!SDL_CopyFile(source.c_str(),(hidden+"/"+relative).c_str())){message="Could not snapshot test video";FinishCampaignTest();return false;}string subtitle=video->substr(0,video->find_last_of('.'))+".srt",sidecar;if(ZCampaign_SafeAsset(authorCampaign.root,subtitle,sidecar))SDL_CopyFile(sidecar.c_str(),(hidden+"/"+relative.substr(0,relative.find_last_of('.'))+".srt").c_str());*video=relative;}
  }
+ lastTestDifferent=ZPlaytest_Fingerprint(testCampaign,campaignMission)!=ZPlaytest_Fingerprint(authorCampaign,campaignMission);
  if(!ZCampaign_Write(testCampaign,error)){message=error;FinishCampaignTest();return false;}issues=ZContent_ValidateCampaign(testCampaign,true);if(ZContent_HasErrors(issues)){FinishCampaignTest();issueScroll=0;validationPanel=true;campaignPanel=false;message="Resolve campaign validation errors before testing";return false;}
  SDL_SetEnvironmentVariable(SDL_GetEnvironment(),"ZOD_EDITOR_TEST_SOURCE",(authorCampaign.root+"/campaign.ini").c_str(),true);
  SDL_SetEnvironmentVariable(SDL_GetEnvironment(),"ZOD_EDITOR_TEST_MANIFEST",(hidden+"/campaign.ini").c_str(),true);
@@ -555,10 +563,46 @@ void ZMapWorkspace::RenderHistory(){
 }
 
 void ZMapWorkspace::RenderPlaytestReport(){
- Rect(150,150,980,600,{24,32,39,255});Text("CAMPAIGN PLAYTEST COVERAGE",176,172,28,amber);Text("Saved content only. Changes require another test; video entries are attempts.",176,218,18);
+ Rect(150,150,980,600,{24,32,39,255});Text("CAMPAIGN PLAYTEST COVERAGE",176,172,28,amber);Text(lastTestDifferent?"Last test used changed map content. Save/update the mission to record matching coverage.":"Coverage includes objective completions and outcomes. Video entries record attempts.",176,218,17);
  auto records=ZPlaytest_Read(authorCampaign);int count=authorCampaign.missions.size();testReportScroll=max(0,min(testReportScroll,max(0,count-8)));
  for(int row=0;row<8&&row+testReportScroll<count;++row){int index=row+testReportScroll;auto &m=authorCampaign.missions[index];auto key=ZPlaytest_Fingerprint(authorCampaign,index);string status;for(auto &record:records)if(record.uid==m.uid&&record.fingerprint==key){if(!status.empty())status+=" / ";status+=record.event;if(record.next!="-")status+=" -> "+record.next;}if(status.empty())status="Not tested for current content";Text((to_string(index+1)+". "+m.title).substr(0,50),176,260+row*46,20,amber);Text(status.substr(0,105),176,284+row*46,15);}
  if(Button("Earlier",176,654,160))testReportScroll=max(0,testReportScroll-8);if(Button("Later",348,654,160))testReportScroll=min(max(0,count-8),testReportScroll+8);
  if(Button("Export text report",532,654,300)){string folder=ZAsset_Profile()+"diagnostics";SDL_CreateDirectory(folder.c_str());auto path=folder+"/playtest-"+authorCampaign.id+".txt";std::ofstream out(path);out<<ZPlaytest_Report(authorCampaign);out.close();message=out?"Playtest report saved in profile diagnostics":"Could not save playtest report";}
  if(Button("Back",920,654,184))testReportPanel=false;
+}
+
+bool ZMapWorkspace::SetBranch(int outcome,int destination){
+ if(campaignMission<0||campaignMission>=(int)authorCampaign.missions.size()||outcome<1||outcome>2||destination< -2||destination>=(int)authorCampaign.missions.size())return false;
+ auto &mission=authorCampaign.missions[campaignMission];(outcome==1?mission.nextWin:mission.nextLoss)=destination;branchMode=0;return SaveCampaign();
+}
+void ZMapWorkspace::RenderFlow(){
+ Rect(150,125,980,635,{24,32,39,255});Text("MISSION FLOW",176,148,28,amber);
+ int count=authorCampaign.missions.size();if(!count){Text("Add a mission to begin.",176,220,22);if(Button("Back",910,690,186))flowPanel=false;return;}
+ campaignMission=max(0,min(campaignMission,count-1));flowScroll=max(0,min(flowScroll,max(0,count-9)));
+ Text(branchMode?"Choose a destination on the left, or use Default / End.":"Select a mission. Connect its win and loss outcomes.",176,196,18);
+ for(int row=0;row<9&&row+flowScroll<count;++row){int index=row+flowScroll;if(Button(to_string(index+1)+". "+authorCampaign.missions[index].title.substr(0,28),176,236+row*43,330,campaignMission==index)){if(branchMode)SetBranch(branchMode,index);else campaignMission=index;}}
+ auto &mission=authorCampaign.missions[campaignMission];auto label=[&](int branch,bool win){int target=branch==-1?(win?campaignMission+1:campaignMission):branch;if(target==-2||target==count)return string("End campaign");return target>=0&&target<count?to_string(target+1)+". "+authorCampaign.missions[target].title.substr(0,25):string("Invalid destination");};
+ Text(to_string(campaignMission+1)+". "+mission.title,538,244,22,amber,550);
+ Rect(540,310,210,60,{40,52,61,255});Text("Selected mission",552,330,20);
+ SDL_SetRenderDrawColor(renderer,95,195,130,255);SDL_RenderLine(renderer,750,330,790,290);SDL_SetRenderDrawColor(renderer,230,140,105,255);SDL_RenderLine(renderer,750,350,790,398);
+ Text("WIN",792,272,17,{95,195,130,255});Text(label(mission.nextWin,true),792,298,18,{218,226,232,255},300);
+ Text("LOSS",792,380,17,{230,140,105,255});Text(label(mission.nextLoss,false),792,406,18,{218,226,232,255},300);
+ if(Button("Connect win",538,458,266,branchMode==1))branchMode=1;if(Button("Connect loss",820,458,284,branchMode==2))branchMode=2;
+ if(branchMode){if(Button("Use default",538,508,266))SetBranch(branchMode,-1);if(Button("End campaign",820,508,284))SetBranch(branchMode,-2);}
+ if(Button("Preview briefing",538,566,566)){briefingPreview=true;briefingScroll=0;}
+ if(Button("Test saved mission",538,618,266,true))StageCampaignTest(false);if(Button("Test current edits",820,618,284))StageCampaignTest(true);
+ if(Button("Earlier",176,660,154))flowScroll=max(0,flowScroll-9);if(Button("Later",344,660,162))flowScroll=min(max(0,count-9),flowScroll+9);
+ if(Button("Back",918,704,186)){flowPanel=false;branchMode=0;}
+ Text("Default: win advances; loss retries. Testing preserves normal progress.",176,714,17);
+}
+void ZMapWorkspace::RenderBriefingPreview(){
+ Rect(150,125,980,635,{24,32,39,255});Text("BRIEFING PREVIEW",176,150,28,amber);
+ if(campaignMission<0||campaignMission>=(int)authorCampaign.missions.size()){briefingPreview=false;return;}auto &m=authorCampaign.missions[campaignMission];
+ Text(m.title,176,206,26,amber,928);Text(m.speaker.empty()?"No speaker selected":m.speaker,176,252,21);Text("Character: "+m.character,176,284,17);
+ std::vector<string> lines;std::istringstream paragraphs(m.briefing);string paragraph;while(std::getline(paragraphs,paragraph)){std::istringstream words(paragraph);string row,word;while(words>>word){if(!row.empty()&&row.size()+word.size()>90){lines.push_back(row);row.clear();}if(!row.empty())row+=' ';row+=word;}lines.push_back(row);}
+ briefingScroll=max(0,min(briefingScroll,max(0,(int)lines.size()-9)));for(int i=0;i<9&&i+briefingScroll<(int)lines.size();++i)Text(lines[i+briefingScroll],176,328+i*28,21,{218,226,232,255},928);
+ auto video=[&](const string &name){if(name.empty()){message="No video configured. The mission uses its text briefing.";return;}if(name.compare(0,9,"original:")==0)ZMovie_PlayClip(name.substr(9));else{string path;if(ZCampaign_SafeAsset(authorCampaign.root,name,path))ZMovie_Play(path);else message="Video is missing from the campaign folder.";}};
+ if(Button("Intro video",176,610,280))video(m.video);if(Button("Victory video",474,610,280))video(m.victoryVideo);
+ if(Button("Earlier text",176,666,220))briefingScroll=max(0,briefingScroll-9);if(Button("More text",414,666,220))briefingScroll=min(max(0,(int)lines.size()-9),briefingScroll+9);
+ if(Button("Back",884,690,220))briefingPreview=false;
 }
