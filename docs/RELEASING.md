@@ -257,3 +257,30 @@ at different speeds. Unreachable player orders produce rate-limited feedback
 only to their own team. Failed asynchronous player routes clear their rejected
 order so the unit becomes idle again. These deterministic checks complement physical controller,
 Retina display and crowded live-match testing before a public release.
+
+## Native installation lifecycle check
+
+Run this against the staged package on **each** target OS, using a regression
+driver built from the same source and for that platform. The command runs
+isolated loader checks, first-run/import-screen checks, an authored-level import and campaign
+save/reload, a real two-player startup, version rejection and reconnect tests.
+It does not download or use original Z media or contact the public portal.
+
+```sh
+python3 scripts/release.py installation-check \
+  --package build-reliability/zod-enhanced.app \
+  --package-binary Contents/MacOS/zod-enhanced \
+  --driver build-reliability/zod_engine_regressions
+```
+
+On Windows and Linux, use the extracted runtime directory and its relative game
+executable (`zod-enhanced.exe` or `zod-enhanced`) instead. Run on the corresponding
+OS; a macOS pass does not certify Windows or Linux. A successful run writes
+`INSTALL-CHECK-<package>.json` beside the package, with OS, architecture, checks
+and SHA-256 hashes of its files. Failed reruns remove the previous pass receipt;
+changes to the package during testing fail the check. Run again after rebuilding
+or re-signing. Keep this receipt with release QA evidence.
+
+These automated checks use authored fixtures and SDL's dummy renderer. Before
+publishing, also verify original-disc import, actual display/fullscreen behavior,
+audible music/effects and an interactive remote-server join on each target OS.

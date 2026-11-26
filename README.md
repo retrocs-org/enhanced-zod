@@ -609,3 +609,18 @@ history with a new export.
 Campaign scripting, compatibility requirements and editor tools are documented in
 [Campaigns](docs/Campaigns.md). See [Local testing and battle recordings](docs/Local-Testing.md)
 for replay controls, accessibility presets and the isolated stress runner.
+
+### Joining, reconnecting and editor preflight
+
+Multiplayer joins check the server's engine version before replacing the current
+connection. Incompatible versions and unresponsive game ports show actionable
+errors. Dropped private multiplayer connections retry up to three times; Leave
+cancels recovery. Rejoining requests the previous team if it is still available.
+Public games require a fresh website join ticket instead of silently reusing one.
+
+The editor's Validate action checks starting forts, object types and teams,
+territory bounds and land access. Land-access notes are advisory because bridges
+and destructible terrain can change routes. Campaign validation also catches
+missing media, invalid objective targets and stationary escort targets before
+playtesting/export. See [native installation QA](docs/RELEASING.md#native-installation-lifecycle-check)
+for release checks on macOS, Windows and Linux.

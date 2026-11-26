@@ -331,13 +331,17 @@ void ZPlayer::JoinHostedMatch(const string &host, int port, int team, ZGuiMainMe
     std::uint64_t id=menu->GetInstanceId(); join_origin_id=id;
     join_task.Start([host,port,team,origin,id]() {
         PendingJoin result; result.host=host; result.port=port; result.team=team; result.origin=origin; result.menu_id=id;
-        try { result.connection=ZNetConnect(host,port,result.error); }
+        try { if(ZNetCheckVersion(host,port,result.error)) result.connection=ZNetConnect(host,port,result.error); }
         catch(...) { result.error="Could not open connection. Please retry."; }
         return result;
     });
 }
 bool ZPlayer::PollHostedJoin()
 {
+    if(reconnecting && !join_task.Pending() && SDL_GetTicks()>=reconnect_after) {
+        if(gui_menu_list.empty() || gui_menu_list.front()->GetMenuType()!=GMM_LOBBY)reconnecting=false;
+        else {++reconnect_attempt;JoinHostedMatch(reconnect_host,reconnect_port,reconnect_team,gui_menu_list.front());}
+    }
     PendingJoin result;
     if(!join_task.Poll(result)) return false;
     join_origin_id=0;
@@ -349,20 +353,26 @@ bool ZPlayer::PollHostedJoin()
         return false;
     }
     if(!result.connection) {
+        bool retry=reconnecting && reconnect_attempt<3 && result.error.find("Version mismatch")==string::npos;
+        if(reconnecting) {reconnecting=retry;reconnect_after=SDL_GetTicks()+1000*reconnect_attempt;}
         string error="Could not join "+result.host+":"+to_string(result.port)+": "+result.error;
         for(auto *menu:gui_menu_list) if(menu->GetInstanceId()==result.menu_id) {
             if(auto *browser=dynamic_cast<GMMMultiplayer*>(menu)) browser->SetError(error);
             if(auto *setup=dynamic_cast<GMMMultiplayerCreate*>(menu)) setup->SetError(error);
         }
+        if(result.origin==GMM_LOBBY)for(auto *menu:gui_menu_list)if(auto *lobby=dynamic_cast<GMMLobby*>(menu))
+            lobby->SetError(retry ? "Reconnecting: attempt "+to_string(reconnect_attempt)+"/3 failed. Leave to cancel." : error);
         return false;
     }
+    bool resumed=reconnecting;reconnecting=false;
+    hosted_remote_session=true;
     hosted_setup_available=false;
     for(auto *menu:gui_menu_list) if(menu->GetInstanceId()==result.menu_id)
         if(auto *setup=dynamic_cast<GMMMultiplayerCreate*>(menu)) {
             hosted_setup=setup->GetSetupPreferences(); hosted_setup_available=true;
         }
     // Replace the old session only after the new TCP connection succeeds.
-    lobby_countdown=-1; lobby_pause_confirmed=false; cloud_disconnect_reason.clear(); managed_dedicated=false;
+    lobby_countdown=-1; lobby_pause_confirmed=false; cloud_disconnect_reason.clear(); managed_dedicated=false; public_remote_session=false;
     ReturnToMenu(); client_socket.ClearConnection(); player_info.clear(); p_id=-1; game_map_name.clear();
     if(result.team>=NULL_TEAM && result.team<MAX_TEAM_TYPES) SetDesiredTeam((team_type)result.team);
     if(zod_player_name.size()) SetPlayerName(zod_player_name);
@@ -371,6 +381,7 @@ bool ZPlayer::PollHostedJoin()
     bool ok=client_socket.Adopt(*result.connection);
     CloseAllMenus();
     LoadMainMenu(ok ? GMM_LOBBY : result.origin);
+    if(resumed && ok)for(auto *menu:gui_menu_list)if(auto *lobby=dynamic_cast<GMMLobby*>(menu))lobby->SetPauseConfirmed(true);
     if(!ok) for(auto *menu:gui_menu_list) {
         if(auto *browser=dynamic_cast<GMMMultiplayer*>(menu)) browser->SetError("Connection could not be attached. Please retry.");
         if(auto *setup=dynamic_cast<GMMMultiplayerCreate*>(menu)) setup->SetError("Connection could not be attached. Please retry.");
@@ -388,6 +399,7 @@ bool ZPlayer::PollHostedJoin()
 //behaviour is unchanged (important: the menu/SDL isn't up at that point).
 bool ZPlayer::ConnectToServer(string address, int port)
 {
+    reconnecting=false;hosted_remote_session=false;public_remote_session=false;
 	if(client_socket.GetHandler())
 	{
 		ReturnToMenu();
@@ -1243,13 +1255,23 @@ void ZPlayer::ProcessDisconnect()
 	//so there's nothing to close here - just reset client state. This is also the
 	//exact path a future "Leave Game / Disconnect" menu button will reuse.
     bool was_lobby=LobbyOpen(),was_deploying=frontend.Loading();
+    bool recover=hosted_remote_session && !public_remote_session && cloud_disconnect_reason.empty() && !was_deploying;
+    int port=client_socket.GetPort();int team=our_team;
+    reconnecting=false;
 	AddNewsEntry("Connection to the game server lost.");
 	ReturnToMenu();
+    if(recover) {
+        reconnect_host=remote_address;reconnect_port=port;reconnect_team=team;
+        reconnect_attempt=0;reconnect_after=SDL_GetTicks()+500;reconnecting=true;
+        CloseAllMenus();LoadMainMenu(GMM_LOBBY);
+        for(auto *menu:gui_menu_list)if(auto *lobby=dynamic_cast<GMMLobby*>(menu))lobby->SetError("Connection interrupted. Reconnecting (up to 3 attempts). Leave to cancel.");
+        return;
+    }
     if(was_deploying)frontend.DeploymentFailed("Connection lost during deployment. Retry to reconnect.",true);
-    if(was_lobby) {
+    if(was_lobby || hosted_remote_session) {
         CloseAllMenus(); LoadMainMenu(GMM_MULTIPLAYER);
         for(auto *menu:gui_menu_list) if(auto *browser=dynamic_cast<GMMMultiplayer*>(menu))
-            browser->SetError(cloud_disconnect_reason.empty() ? "Connection lost before match startup. Refresh or join again." : cloud_disconnect_reason);
+            browser->SetError(cloud_disconnect_reason.empty() ? (public_remote_session ? "Connection lost. Get a fresh join ticket from the website, then join again." : "Connection lost. Refresh the server list or join again.") : cloud_disconnect_reason);
     }
 }
 
@@ -4888,6 +4910,7 @@ bool ZPlayer::MainMenuAbsorbLUnClick()
             if(the_flags.toggle_ready && !SendReady(the_flags.ready_value))
                 if(auto *lobby=dynamic_cast<GMMLobby*>(*i)) lobby->SetError("Ready could not be sent. Leave and reconnect.");
             if(the_flags.leave_match) {
+                reconnecting=false;hosted_remote_session=false;public_remote_session=false;
                 client_socket.ClearConnection(); hosted_setup_available=false; lobby_countdown=-1;
                 ReturnToMenu(); CloseAllMenus(); LoadMainMenu(GMM_MULTIPLAYER); return true;
             }

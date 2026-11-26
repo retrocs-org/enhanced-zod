@@ -186,6 +186,21 @@ struct ZFrontEndRegression {
         else {frontend.custom_dir=ZAsset_Profile()+"workspace-maps";SDL_CreateDirectory(frontend.custom_dir.c_str());REQUIRE(frontend.LaunchEditor({"maps/p02_bb_orig01.map"}));auto &editor=*frontend.workspace;editor.campaignPanel=editor.timelinePanel=true;editor.authorCampaign.title="Desert Rebellion";ZCampaignMission mission;mission.objectives={{"message","Secure the crossing",0,0},{"capture","Capture the first territory",0,0},{"defend","Hold the factory",3,90}};editor.authorCampaign.missions={mission};}
         frontend.Render();SDL_SetRenderTarget(ZVideo_GetRenderer(),frontend.target);SDL_Surface *captured=SDL_RenderReadPixels(ZVideo_GetRenderer(),nullptr);REQUIRE(captured);REQUIRE(IMG_SavePNG(captured,image.c_str()));SDL_DestroySurface(captured);SDL_SetRenderTarget(ZVideo_GetRenderer(),nullptr);frontend.FreeGraphics();SDL_Quit();
     }
+    static bool snapshot_validation(){
+        ZMap map;map.MakeNewMap("Validation",DESERT,32,32);
+        auto &info=ZMap::GetMapPaletteTileInfo(DESERT,0);bool original=info.is_passable;info.is_passable=true;
+        map_object fort{};fort.object_type=BUILDING_OBJECT;fort.object_id=FORT_FRONT;fort.owner=RED_TEAM;fort.x=3;fort.y=3;map.GetObjectList().push_back(fort);fort.owner=BLUE_TEAM;fort.x=24;fort.y=24;map.GetObjectList().push_back(fort);
+        auto contains=[&](const string &text){for(auto &issue:ZContent_ValidateMap(map))if(issue.text.find(text)!=string::npos)return true;return false;};
+        REQUIRE(!ZContent_HasErrors(ZContent_ValidateMap(map)));
+        map.GetObjectList()[1].owner=100;REQUIRE(contains("invalid team"));map.GetObjectList()[1].owner=BLUE_TEAM;
+        map.GetObjectList()[1].object_id=255;REQUIRE(contains("invalid type"));map.GetObjectList()[1].object_id=FORT_FRONT;
+        auto &wall=ZMap::GetMapPaletteTileInfo(DESERT,1);bool passable=wall.is_passable;wall.is_passable=false;
+        for(int y=0;y<32;++y)map.GetTile(y*32+16).tile=1;
+        REQUIRE(contains("Fort may be unreachable"));map_zone zone{};zone.x=20;zone.y=20;zone.w=5;zone.h=5;map.GetZoneList().push_back(zone);REQUIRE(contains("Territory may be unreachable"));
+        for(int y=20;y<25;++y)for(int x=20;x<25;++x)map.GetTile(y*32+x).tile=1;
+        REQUIRE(contains("Territory has no passable land"));
+        info.is_passable=original;wall.is_passable=passable;return true;
+    }
     static void content_polish(const string &root){
         REQUIRE(SDL_Init(SDL_INIT_VIDEO));ZCampaign campaign;string error;REQUIRE(ZCampaign_Create("Pack test",campaign,error));
         REQUIRE(SDL_CopyFile("maps/p02_bb_orig01.map",(campaign.root+"/one.map").c_str()));
@@ -196,7 +211,7 @@ struct ZFrontEndRegression {
         REQUIRE(ZContent_HasErrors(ZContent_ValidateCampaign(campaign,true)));
         string rejected;REQUIRE(!ZCampaign_Export(campaign,rejected,error));REQUIRE(rejected.empty());
         campaign.missions[0].video.clear();campaign.missions[0].objectives.push_back({"capture","Invalid territory",999,0});REQUIRE(ZCampaign_Write(campaign,error));REQUIRE(ZContent_HasErrors(ZContent_ValidateCampaign(campaign,true)));
-        campaign.missions[0].objectives.pop_back();REQUIRE(ZCampaign_Write(campaign,error));auto issues=ZContent_ValidateCampaign(campaign);REQUIRE(!ZContent_HasErrors(issues));
+        campaign.missions[0].objectives.pop_back();campaign.missions[0].objectives.push_back({"escort","Escort a building",0,0});REQUIRE(ZCampaign_Write(campaign,error));REQUIRE(ZContent_HasErrors(ZContent_ValidateCampaign(campaign,true)));campaign.missions[0].objectives.pop_back();REQUIRE(ZCampaign_Write(campaign,error));auto issues=ZContent_ValidateCampaign(campaign);REQUIRE(!ZContent_HasErrors(issues));
         string archive;REQUIRE(ZCampaign_Export(campaign,archive,error));ZCampaign summary;REQUIRE(ZCampaign_InspectPack(archive,summary,error));REQUIRE(summary.description==campaign.description&&summary.missions[0].objectives.size()==2);
         REQUIRE(!ZCampaign_ImportPack(archive,error));REQUIRE(error.find("already installed")!=string::npos);
         REQUIRE(SDL_RenamePath(campaign.root.c_str(),(root+"/author-backup").c_str()));REQUIRE(ZCampaign_ImportPack(archive,error));auto installed=ZCampaign_List();REQUIRE(installed.size()==1);string marker;REQUIRE(!ZCampaign_SafeAsset(installed[0].root,".zod-authoring",marker));
@@ -207,6 +222,7 @@ struct ZFrontEndRegression {
         runtime={};runtime.objectives={{"capture","Capture territory",0,0}};world.zoneOwners={2};REQUIRE(runtime.Update(world,messages)==0);world.zoneOwners={1};REQUIRE(runtime.Update(world,messages)==1);
         ZMissionObjective objective;REQUIRE(!ZMission_Parse("survive|0|-1|Invalid",objective));REQUIRE(!ZMission_Parse("execute|0|0|Invalid",objective));
         ZMap empty;empty.MakeNewMap("Invalid",DESERT,32,32);REQUIRE(ZContent_HasErrors(ZContent_ValidateMap(empty)));
+        REQUIRE(snapshot_validation());
         zod_effects_volume=12;zod_music_volume=34;ZPrefs_ResetCategory(0);REQUIRE(zod_effects_volume==12&&zod_music_volume==34);ZPrefs_ResetCategory(1);REQUIRE(zod_effects_volume==100&&zod_music_volume==100);
         SDL_Quit();std::cout<<"content-polish-ok";
     }
@@ -814,6 +830,24 @@ public:
         auto player=std::make_unique<ZPlayer>();auto &p=*player;p.init_w=1280;p.init_h=800;REQUIRE(!p.PlayReplay(root+"/missing.zreplay")&&!p.frontend.Loading()&&p.frontend.Visible());REQUIRE(p.PlayReplay(file));p.ProcessReplay();REQUIRE(p.replay_active&&p.replay_ended&&p.replay_paused&&p.zmap.Loaded());auto *display=SDL_CreateSurface(1280,800,SDL_PIXELFORMAT_ARGB8888);REQUIRE(display);ZSDL_Surface::SetMainSoftwareSurface(display);SDL_FillSurfaceRect(display,nullptr,0xff0e171e);auto *renderer=ZVideo_GetRenderer();ZMenuTheme::beginText(renderer);p.RenderReplay();p.RenderBattleFeedback();ZMenuTheme::endText();auto *texture=SDL_CreateTextureFromSurface(renderer,display);REQUIRE(texture);SDL_RenderTexture(renderer,texture,nullptr,nullptr);ZMenuTheme::presentText(renderer,1280,800);auto *capture=SDL_RenderReadPixels(renderer,nullptr);REQUIRE(capture&&IMG_SavePNG(capture,(root+"/replay-controls.png").c_str()));SDL_DestroySurface(capture);SDL_DestroyTexture(texture);ZSDL_Surface::SetMainSoftwareSurface(nullptr);SDL_DestroySurface(display);p.NotifyBattle("Under fire",320,400,true);p.NotifyBattle("Under fire",330,410,true);REQUIRE(p.battle_notifications.size()==1);REQUIRE(p.ClickNotification(20,140));REQUIRE(p.notification_click);p.SeekReplay(0);p.ProcessReplay();REQUIRE(p.zmap.Loaded()&&!p.replay_seeking);p.ReplayClick(22,50);REQUIRE(!p.replay_paused);p.ReplayClick(340,50);REQUIRE(p.replay_speed==2);p.LoadMainMenu(GMM_SAVE_GAME);REQUIRE(p.gui_menu_list.empty());zod_damage_alerts=false;auto count=p.battle_notifications.size();p.NotifyBattle("Ignored damage",100,100,true);REQUIRE(p.battle_notifications.size()==count);zod_damage_alerts=true;zod_production_alerts=false;p.NotifyBattle("Ignored production",100,100,false);REQUIRE(p.battle_notifications.size()==count);zod_production_alerts=true;for(int i=0;i<40;++i)p.NotifyBattle("Notice "+to_string(i),i*160,200,false);REQUIRE(p.battle_notifications.size()==32);REQUIRE(p.ClickNotification(20,230)&&p.notification_history);REQUIRE(p.ClickNotification(160,320)&&p.notification_history_page==1);p.init_w=640;p.ReplayClick(560,50);REQUIRE(!p.replay_active&&!p.zmap.Loaded());std::cout<<"replay-feedback-ok";
     }
 
+    static void multiplayer_reconnect(int port){
+        REQUIRE(SDL_Init(SDL_INIT_VIDEO));ZMap::ServerInit();
+        auto player=std::make_unique<ZPlayer>();auto &p=*player;
+        p.LoadMainMenu(GMM_MULTIPLAYER);p.JoinHostedMatch("127.0.0.1",port,RED_TEAM,p.gui_menu_list.front());
+        auto wait=[&](){auto deadline=SDL_GetTicks()+10000;while((p.join_task.Pending()||p.reconnecting)&&SDL_GetTicks()<deadline){p.PollHostedJoin();SDL_Delay(5);}REQUIRE(!p.join_task.Pending()&&!p.reconnecting);};
+        wait();REQUIRE(p.client_socket.GetHandler()&&p.hosted_remote_session);p.ehandler.ProcessEvents();
+        p.SetPlayerTeam(RED_TEAM);p.client_socket.ClearConnection();p.ProcessDisconnect();
+        REQUIRE(p.reconnecting&&p.reconnect_team==RED_TEAM&&p.reconnect_port==port);wait();
+        REQUIRE(p.client_socket.GetHandler()&&p.LobbyOpen());p.ehandler.ProcessEvents();
+        // Public tickets must never be silently reused by recovery.
+        p.public_remote_session=true;p.client_socket.ClearConnection();p.ProcessDisconnect();REQUIRE(!p.reconnecting);
+        // A cancelled reconnect cannot adopt a late worker result into a new menu.
+        p.public_remote_session=false;p.hosted_remote_session=true;p.ProcessDisconnect();REQUIRE(p.reconnecting);
+        p.reconnect_after=0;p.PollHostedJoin();p.CloseAllMenus();p.LoadMainMenu(GMM_MULTIPLAYER);wait();REQUIRE(!p.client_socket.GetHandler());
+        // Unavailable endpoints stop after three attempts rather than looping forever.
+        p.reconnecting=true;p.reconnect_attempt=0;p.reconnect_after=0;p.reconnect_port=0;p.LoadMainMenu(GMM_LOBBY);wait();REQUIRE(p.reconnect_attempt==3&&!p.client_socket.GetHandler());
+        player.reset();SDL_Quit();std::cout<<"multiplayer-reconnect-ok";
+    }
     static void reconnect_failure(int port){
         REQUIRE(SDL_Init(SDL_INIT_VIDEO));auto player=std::make_unique<ZPlayer>();auto &p=*player;p.SetRemoteAddress("127.0.0.1");REQUIRE(!p.client_socket.Start("256.256.256.256",port));
         ZFrontEndRegression::start_deployment(p.frontend);
@@ -1169,6 +1203,7 @@ static void battle_menu(const string &image) {
 }
 static void dial_server(const string &host,int port) {
     string error;
+    if(!ZNetCheckVersion(host,port,error,1500))throw std::runtime_error(error);
     auto socket=ZNetConnect(host,port,error,2000);
     if(!socket) throw std::runtime_error(error);
     list<Event*> events;
@@ -1243,6 +1278,7 @@ int main(int argc, char **argv) {
         else if(std::string(argv[1]) == "content-health"){REQUIRE(argc==3);REQUIRE(SDL_Init(0));ZAsset_RecordDiagnostic(ZDiagnosticEvent::DeploymentFailed);std::string report;REQUIRE(ZAsset_ExportDiagnostics(report,argv[2]));std::cout<<report;SDL_Quit();}
         else if(std::string(argv[1]) == "asset-ready") { std::cout<<(ZAsset_RuntimeReady()?"ready":"missing"); }
         else if(std::string(argv[1]) == "records-preview"||std::string(argv[1]) == "gallery-preview"||std::string(argv[1]) == "campaigns-preview"||std::string(argv[1]) == "settings-preview"||std::string(argv[1]) == "timeline-preview"){REQUIRE(argc==3);ZFrontEndRegression::polish_preview(argv[1],argv[2]);}
+        else if(std::string(argv[1]) == "multiplayer-reconnect"){REQUIRE(argc==3);ZPlayerUIRegression::multiplayer_reconnect(std::stoi(argv[2]));}
         else if(std::string(argv[1]) == "reconnect-failure"){REQUIRE(argc==3);ZPlayerUIRegression::reconnect_failure(std::stoi(argv[2]));}
         else if(std::string(argv[1]) == "objectives-summary"){ZPlayerUIRegression::objectives_and_summary();}
         else if(std::string(argv[1]) == "polish"){REQUIRE(argc==3);ZFrontEndRegression::polish(argv[2]);}

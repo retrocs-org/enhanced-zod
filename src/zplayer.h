@@ -261,6 +261,10 @@ class ZPlayer : public ZClient
         ZMPAsync<PendingJoin> join_task,deployment_connect;bool deployment_handshake=false;Uint64 deployment_deadline=0;
         std::uint64_t join_origin_id = 0;
         bool PollHostedJoin();
+        bool reconnecting=false, hosted_remote_session=false, public_remote_session=false;
+        int reconnect_attempt=0, reconnect_port=2137, reconnect_team=RED_TEAM;
+        Uint64 reconnect_after=0;
+        string reconnect_host;
 		void ProcessVerbalWarnings();
 		void CollectSelectables();
 		// Cursor drift up to this many logical pixels still counts as a click.

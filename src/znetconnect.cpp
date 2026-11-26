@@ -1,4 +1,5 @@
 #include "znetconnect.h"
+#include "client_socket.h"
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -107,4 +108,40 @@ std::shared_ptr<ZConnectedSocket> ZNetConnect(const std::string &host, int port,
     }
     error=Clock::now()>=deadline ? "Connection timed out" : "Connection refused or host unreachable";
     return {};
+}
+
+// A disposable preflight leaves the player's current session untouched on failure.
+bool ZNetCheckVersion(const std::string &host,int port,std::string &error,int milliseconds) {
+    auto started=std::chrono::steady_clock::now();
+    auto connection=ZNetConnect(host,port,error,milliseconds);
+    if(!connection) return false;
+    std::list<Event*> events;
+    ClientSocket probe; probe.SetEventList(&events);
+    if(!probe.Adopt(*connection) || !probe.SendMessage(REQUEST_VERSION,nullptr,0)) {
+        for(auto *event:events)delete event;
+        error="Could not request server version. Check the server address and port.";return false;
+    }
+    auto deadline=started+std::chrono::milliseconds(milliseconds);
+    bool received=false,compatible=false,closed=false;
+    while(!received && !closed && std::chrono::steady_clock::now()<deadline) {
+        probe.Process();
+        for(auto *event:events) {
+            if(event->event_type==OTHER_EVENT && event->event_number==DISCONNECT_EVENT)closed=true;
+            if(event->event_type==TCP_EVENT && event->event_number==GIVE_VERSION) {
+                received=true;
+                if(event->size!=sizeof(version_packet) || !event->data || !memchr(event->data,0,sizeof(version_packet)))
+                    error="Server sent an invalid version response.";
+                else {
+                    std::string version(event->data);
+                    compatible=version==GAME_VERSION;
+                    if(!compatible)error="Version mismatch: server "+version+", your game "+GAME_VERSION+". Install the same version before joining.";
+                }
+            }
+            delete event;
+        }
+        events.clear();
+        if(!received && !closed)std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    if(!received)error=closed?"Server closed the version check. Check its game port.":"Server version check timed out. Check the game port and firewall.";
+    return compatible;
 }

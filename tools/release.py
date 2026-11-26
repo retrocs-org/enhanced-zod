@@ -320,8 +320,9 @@ def publish(root,out,config,target,confirmed,draft=True):
 
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command',choices=['plan','build','check','provenance','prepare','verify','publish','source','collect','status'])
+    parser.add_argument('command',choices=['plan','build','check','provenance','prepare','verify','publish','source','collect','status','installation-check'])
     parser.add_argument('--input',type=Path,action='append',default=[]);parser.add_argument('--output',type=Path);parser.add_argument('--build-dir',type=Path,default=Path('build-app' if sys.platform=='darwin' else 'build'))
+    parser.add_argument('--package',type=Path);parser.add_argument('--package-binary');parser.add_argument('--driver',type=Path)
     parser.add_argument('--artifact',action='append',default=[],metavar='PLATFORM=PATH');parser.add_argument('--binary',action='append',default=[])
     parser.add_argument('--config',type=Path,default=ROOT/'examples/release-config.json');parser.add_argument('--to',help='Comma-separated gitlab,github destinations');parser.add_argument('--dry-run',action='store_true');parser.add_argument('--notes',type=Path);parser.add_argument('--allow-dirty',action='store_true')
     parser.add_argument('--target',choices=['github','gitlab'],default='github');parser.add_argument('--confirm-publish',action='store_true');parser.add_argument('--confirm-push',action='store_true');parser.add_argument('--public',action='store_true')
@@ -335,6 +336,10 @@ def main(argv=None):
             subprocess.run([str(importer),'-m','pip','install','-r',str(root/'packaging/importer/requirements.txt')],check=True)
         subprocess.run(['cmake','-S',str(root),'-B',str(build),'-DCMAKE_BUILD_TYPE=Release',*(['-DZOD_MACOS_APP=ON'] if sys.platform=='darwin' else [])],check=True)
         subprocess.run(['cmake','--build',str(build),'--parallel','4',*(['--target','app'] if sys.platform=='darwin' else [])],check=True)
+    elif args.command=='installation-check':
+        need(args.package is not None and args.package_binary and args.driver is not None,'installation-check needs --package, --package-binary and --driver')
+        from installation_check import check as check_installation
+        check_installation(args.package,args.package_binary,args.driver)
     elif args.command=='check':
         record_build(root,build,[str(Path(x) if Path(x).is_absolute() else root/x) for x in args.binary],False)
         subprocess.run(['ctest','--test-dir',str(build),'--output-on-failure'],check=True)

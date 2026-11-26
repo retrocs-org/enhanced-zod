@@ -109,7 +109,7 @@ void ZPlayer::lobby_countdown_event(ZPlayer *p,char *data,int size,int)
 void ZPlayer::cloud_required_event(ZPlayer *p,char *data,int size,int)
 {
     int required=0;if(size!=sizeof(required)||!data)return;memcpy(&required,data,size);if(required!=0 && required!=1)return;
-    p->managed_dedicated=true;if(required==0)return;
+    p->managed_dedicated=true;p->public_remote_session=required==1;if(required==0)return;
     const char *ticket=getenv("ZOD_JOIN_TICKET");
     if(ticket && strlen(ticket)==64) p->client_socket.SendMessage(CLOUD_TICKET,ticket,65);
     else {

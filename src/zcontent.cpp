@@ -16,6 +16,15 @@ vector<ZContentIssue> ZContent_ValidateMap(ZMap &map){
   if(o.x>=h.width||o.y>=h.height){out.push_back({true,"Object outside map bounds",o.x,o.y});continue;}
   if(o.object_type==BUILDING_OBJECT&&(o.object_id==FORT_FRONT||o.object_id==FORT_BACK)){red|=o.owner==RED_TEAM;enemy|=o.owner>NULL_TEAM&&o.owner!=RED_TEAM;forts.push_back({o.x,o.y});}
  }
+ for(const auto &o:map.GetObjectList()){
+  if(o.owner<NULL_TEAM||o.owner>=MAX_TEAM_TYPES)out.push_back({true,"Object has an invalid team",o.x,o.y});
+  bool valid=o.object_type<MAX_MAP_OBJECT_TYPES;
+  if(o.object_type==BUILDING_OBJECT)valid=o.object_id<MAX_BUILDING_TYPES;
+  if(o.object_type==ROBOT_OBJECT)valid=o.object_id<MAX_ROBOT_TYPES;
+  if(o.object_type==VEHICLE_OBJECT)valid=o.object_id<MAX_VEHICLE_TYPES;
+  if(o.object_type==CANNON_OBJECT)valid=o.object_id<MAX_CANNON_TYPES;
+  if(!valid)out.push_back({true,"Object has an invalid type",o.x,o.y});
+ }
  if(!red)out.push_back({true,"Place a red player fort"});if(!enemy)out.push_back({true,"Place at least one opposing fort"});
  if(map.GetZoneList().empty())out.push_back({false,"No territory zones; factories cannot change territory ownership"});
  for(auto &z:map.GetZoneList())if(!z.w||!z.h||z.x+z.w>h.width||z.y+z.h>h.height)out.push_back({true,"Territory outside map bounds",z.x,z.y});
@@ -27,7 +36,22 @@ vector<ZContentIssue> ZContent_ValidateMap(ZMap &map){
    queue<int> q;q.push(start);component[start]=regions;
    while(!q.empty()){int p=q.front();q.pop();int px=p%h.width,py=p/h.width;for(auto step:vector<pair<int,int>>{{1,0},{-1,0},{0,1},{0,-1}}){int nx=px+step.first,ny=py+step.second;if(nx<0||ny<0||nx>=h.width||ny>=h.height)continue;int n=ny*h.width+nx;if(component[n]<0&&ZMap::GetMapPaletteTileInfo((planet_type)h.terrain_type,map.GetTile(n).tile).is_passable){component[n]=regions;q.push(n);}}}++regions;
   }
-  int first=-1;for(auto f:forts){int region=-1;for(int dy=-1;dy<=5&&region<0;++dy)for(int dx=-1;dx<=5&&region<0;++dx){int x=f.first+dx,y=f.second+dy;if(x>=0&&y>=0&&x<h.width&&y<h.height)region=component[y*h.width+x];}if(region<0)out.push_back({false,"Fort has no nearby passable terrain",f.first,f.second});else if(first<0)first=region;else if(first!=region)out.push_back({false,"Fort may be unreachable by land; check bridges and routes",f.first,f.second});}
+  // A fort can touch more than one region. Compare every approach, rather than
+  // the first passable tile (which may be an isolated decorative patch).
+  auto approaches=[&](int px,int py){set<int> found;for(int dy=-1;dy<=5;++dy)for(int dx=-1;dx<=5;++dx){int x=px+dx,y=py+dy;if(x>=0&&y>=0&&x<h.width&&y<h.height&&component[y*h.width+x]>=0)found.insert(component[y*h.width+x]);}return found;};
+  set<int> playerRegions;
+  for(const auto &o:map.GetObjectList())if(o.object_type==BUILDING_OBJECT&&(o.object_id==FORT_FRONT||o.object_id==FORT_BACK)&&o.owner==RED_TEAM){auto regions=approaches(o.x,o.y);playerRegions.insert(regions.begin(),regions.end());}
+  for(auto f:forts){auto regions=approaches(f.first,f.second);bool reachable=false;for(int region:regions)reachable|=playerRegions.count(region)>0;
+   if(regions.empty())out.push_back({false,"Fort has no nearby passable terrain",f.first,f.second});
+   else if(!playerRegions.empty()&&!reachable)out.push_back({false,"Fort may be unreachable by land; check bridges and routes",f.first,f.second});
+  }
+  for(auto &z:map.GetZoneList()){
+   if(!z.w||!z.h||z.x+z.w>h.width||z.y+z.h>h.height)continue;
+   bool passable=false,reachable=false;
+   for(int y=z.y;y<z.y+z.h;++y)for(int x=z.x;x<z.x+z.w;++x){int region=component[y*h.width+x];passable|=region>=0;reachable|=playerRegions.count(region)>0;}
+   if(!passable)out.push_back({false,"Territory has no passable land; check capture access",z.x,z.y});
+   else if(!playerRegions.empty()&&!reachable)out.push_back({false,"Territory may be unreachable from the player fort; check bridges and routes",z.x,z.y});
+  }
  }
  return out;
 }
@@ -44,7 +68,9 @@ vector<ZContentIssue> ZContent_ValidateCampaign(const ZCampaign &campaign,bool d
   for(const auto &objective:m.objectives){ZMissionObjective checked;if(!ZMission_Parse(ZMission_Encode(objective),checked))out.push_back({true,prefix+"invalid objective"});if(objective.kind=="survive"&&objective.seconds>0)waiting=true;}
   if(!m.objectives.empty()&&!waiting&&std::all_of(m.objectives.begin(),m.objectives.end(),[](const ZMissionObjective &o){return o.kind=="message";}))out.push_back({false,prefix+"only message objectives; mission will finish after its messages"});
   if(!ZCampaign_SafeAsset(parsed.root,m.map,path)||!map.Read(path.c_str()))out.push_back({true,"Mission "+to_string(i+1)+": invalid map"});
-  else {int reinforcements=0;for(const auto &event:m.events){auto prefix="Mission "+to_string(i+1)+": ";if(event.trigger=="capture"&&event.target>=(int)map.GetZoneList().size())out.push_back({true,prefix+"event territory does not exist"});if(event.trigger=="destroy"&&event.target>=(int)map.GetObjectList().size())out.push_back({true,prefix+"event object does not exist"});if(event.kind=="reinforce"){reinforcements+=event.count;bool unit=(event.type==ROBOT_OBJECT&&event.id<MAX_ROBOT_TYPES)||(event.type==VEHICLE_OBJECT&&event.id<MAX_VEHICLE_TYPES)||(event.type==CANNON_OBJECT&&event.id<MAX_CANNON_TYPES);if(!unit||event.x>=map.GetMapBasics().width||event.y>=map.GetMapBasics().height)out.push_back({true,prefix+"invalid reinforcement type or location"});}}if(reinforcements>256)out.push_back({true,"Too many scripted reinforcements"});for(const auto &o:m.objectives){if(o.kind=="escort"&&(o.target>=(int)map.GetObjectList().size()||o.seconds>=(int)map.GetZoneList().size()||map.GetObjectList()[o.target].owner!=RED_TEAM))out.push_back({true,"Escort needs a red map object and destination territory"});if(o.kind=="capture"&&o.target>=(int)map.GetZoneList().size())out.push_back({true,"Mission "+to_string(i+1)+": capture target territory does not exist"});if(o.kind=="defend"&&(o.target>=(int)map.GetObjectList().size()||map.GetObjectList()[o.target].object_type!=BUILDING_OBJECT||map.GetObjectList()[o.target].owner!=RED_TEAM))out.push_back({true,"Mission "+to_string(i+1)+": defend target must be a red building"});}
+  else {int reinforcements=0;for(const auto &event:m.events){auto prefix="Mission "+to_string(i+1)+": ";if(event.trigger=="capture"&&event.target>=(int)map.GetZoneList().size())out.push_back({true,prefix+"event territory does not exist"});if(event.trigger=="destroy"&&event.target>=(int)map.GetObjectList().size())out.push_back({true,prefix+"event object does not exist"});if(event.kind=="reinforce"){reinforcements+=event.count;bool unit=(event.type==ROBOT_OBJECT&&event.id<MAX_ROBOT_TYPES)||(event.type==VEHICLE_OBJECT&&event.id<MAX_VEHICLE_TYPES)||(event.type==CANNON_OBJECT&&event.id<MAX_CANNON_TYPES);if(!unit||event.x>=map.GetMapBasics().width||event.y>=map.GetMapBasics().height)out.push_back({true,prefix+"invalid reinforcement type or location"});}}if(reinforcements>256)out.push_back({true,"Too many scripted reinforcements"});for(const auto &o:m.objectives){if(o.kind=="escort"&&(o.target>=(int)map.GetObjectList().size()||o.seconds>=(int)map.GetZoneList().size()||map.GetObjectList()[o.target].owner!=RED_TEAM))out.push_back({true,"Escort needs a red map object and destination territory"});if(o.kind=="escort"&&o.target>=0&&o.target<(int)map.GetObjectList().size()){
+    const auto &target=map.GetObjectList()[o.target];if(target.object_type!=ROBOT_OBJECT&&target.object_type!=VEHICLE_OBJECT)out.push_back({true,prefix+"escort target must be a movable robot or vehicle",target.x,target.y});
+   }if(o.kind=="capture"&&o.target>=(int)map.GetZoneList().size())out.push_back({true,"Mission "+to_string(i+1)+": capture target territory does not exist"});if(o.kind=="defend"&&(o.target>=(int)map.GetObjectList().size()||map.GetObjectList()[o.target].object_type!=BUILDING_OBJECT||map.GetObjectList()[o.target].owner!=RED_TEAM))out.push_back({true,"Mission "+to_string(i+1)+": defend target must be a red building"});}
   for(auto issue:ZContent_ValidateMap(map)){issue.text="Mission "+to_string(i+1)+": "+issue.text;out.push_back(issue);}}
   for(auto video:{m.video,m.victoryVideo})if(!video.empty()&&video.compare(0,9,"original:")!=0&&!ZCampaign_SafeAsset(parsed.root,video,path))out.push_back({distribution,"Mission "+to_string(i+1)+": missing video "+video+(distribution?"; remove the reference or add the file before export":" (briefing fallback)")});
  }

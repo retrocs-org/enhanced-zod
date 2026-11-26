@@ -14,7 +14,18 @@ import threading
 import unittest
 
 GAME, DRIVER, ROOT = map(str, sys.argv[1:4])
+installation_check='--installation-check' in sys.argv[4:]
 sys.argv = sys.argv[:1]
+if installation_check:
+    sys.argv += ['EngineRegressions.'+name for name in [
+        'test_clean_checkout_can_render_import_screen_without_game_media',
+        'test_game_routes_clean_profile_to_import_before_server_startup',
+        'test_fresh_profile_imported_authored_level_can_start_save_and_reload',
+        'test_complete_two_player_match_startup',
+        'test_direct_connection_adopts_real_socket_and_reports_refusal',
+        'test_version_preflight_rejects_incompatible_or_silent_servers',
+        'test_private_multiplayer_reconnects_and_cancel_stops_retries',
+    ]]
 WORKSPACE=ROOT
 _fixture_workspace=None
 if not (pathlib.Path(ROOT)/'maps/p02_bb_orig01.map').is_file() or os.environ.get('ZOD_TEST_SOURCE_ONLY')=='1':
@@ -570,6 +581,29 @@ class EngineRegressions(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertLess(time.monotonic() - start, 3)
         self.assertIn('refused', result.stderr.lower())
+
+    def test_version_preflight_rejects_incompatible_or_silent_servers(self):
+        for payload,expected in [(b'9.9-incompatible\0'.ljust(50,b'\0'),'Version mismatch'),(b'broken','invalid version'),(None,'timed out')]:
+            with socket.socket() as listener:
+                listener.bind(('127.0.0.1',0));listener.listen();port=listener.getsockname()[1]
+                def respond():
+                    connection,_=listener.accept()
+                    with connection:
+                        client=Client(connection);kind,_=client.packet()
+                        self.assertEqual(kind,PROTOCOL['REQUEST_VERSION'])
+                        if payload is not None:
+                            connection.sendall(struct.pack('=ii',len(payload),PROTOCOL['GIVE_VERSION'])+payload)
+                        else:time.sleep(1.8)
+                thread=threading.Thread(target=respond,daemon=True);thread.start()
+                result=subprocess.run([DRIVER,'dial','127.0.0.1',str(port)],capture_output=True,text=True,timeout=5)
+                thread.join(3);self.assertFalse(thread.is_alive());self.assertNotEqual(result.returncode,0)
+                self.assertIn(expected,result.stderr)
+
+    def test_private_multiplayer_reconnects_and_cancel_stops_retries(self):
+        with self.match() as (_,port,_):
+            with tempfile.TemporaryDirectory() as directory:
+                result=subprocess.run([DRIVER,'multiplayer-reconnect',str(port)],cwd=WORKSPACE,env=self.environment(directory),capture_output=True,text=True,timeout=20)
+                self.assertEqual(result.returncode,0,result.stdout+result.stderr)
 
     def test_discovery_rejects_malformed_replayed_and_duplicate_replies(self):
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as server:

@@ -10,6 +10,19 @@ are retained below; new website changes belong in that separate log.
 
 ## Unreleased
 
+### Reliability and release checks
+
+- Multiplayer joins verify the server engine version before replacing the current
+  session, with explicit mismatch and handshake-timeout errors.
+- Private multiplayer recovery retries up to three times, supports cancellation
+  and requests the previous team when available. Public sessions require a fresh
+  website join ticket.
+- Editor validation detects invalid object teams/types, inaccessible territories
+  and stationary escort targets; campaign validation preserves save errors.
+- Native installation lifecycle checks cover fresh profiles, authored-content
+  imports, campaign save/reload and multiplayer startup/recovery, with package
+  hashes and platform-specific receipts.
+
 - Project renamed to **zod-enhanced — Zod Engine Enhanced**. Existing profiles,
   protocol identifiers and command-line target names remain compatible.
 

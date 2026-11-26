@@ -374,7 +374,7 @@ Rect(150,150,980,600,{24,32,39,255});Text("CAMPAIGN STUDIO",176,170,28,amber);Te
     if(!authorCampaign.missions.empty()&&Button("Load mission map",472,694,240)){
         string file;if(ZCampaign_SafeAsset(authorCampaign.root,authorCampaign.missions[campaignMission].map,file))Request(file);
     }
-    if(Button("Validate",730,694,144)){SaveCampaign();issues=ZContent_ValidateCampaign(authorCampaign,true);issueScroll=0;validationPanel=true;campaignPanel=false;}
+    if(Button("Validate",730,694,144)){if(!SaveCampaign())return;issues=ZContent_ValidateCampaign(authorCampaign,true);issueScroll=0;validationPanel=true;campaignPanel=false;}
     if(Button("Close",894,694,210)){if(!authorCampaign.root.empty())SaveCampaign();campaignPanel=false;editField=-1;SDL_StopTextInput(SDL_GetKeyboardFocus());}
 }
 
