@@ -732,3 +732,16 @@ The server console includes ownership and role management alongside health,
 updates, moderation, presets and audit history. Only owners may delegate/remove
 roles. Health and update values remain explicitly marked stale when the host stops
 reporting. No additional SQL migration is needed beyond schema 007.
+
+## Multiplayer menu and server browser
+
+Multiplayer contains Server Browser for ordinary network matches. Its Public
+Servers tab lists public dedicated hosts and uses browser-based cloud approval.
+Local Area Network discovers nearby LAN hosts; Direct Connect accepts private
+host IP/hostnames and optional ports (default 2137). LAN/private play supports
+guests. Host LAN / private opens the existing match-creation tools.
+
+Planetary Conquest is the chosen name for the proposed online-only shared
+planetary territory mode. Its menu entry is explicitly unavailable until its
+strategic API and gameplay are implemented. Co-op is also a future mode. Neither
+replaces ordinary public, LAN or direct-connect matches.

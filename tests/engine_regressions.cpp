@@ -124,6 +124,7 @@ struct ZFrontEndRegression {
         frontend.screen=ZFrontEnd::SCR_SETTINGS;for(int category:{2,3,4}){frontend.settings_category=category;capture("settings-"+to_string(category));}
         frontend.diagnostic_return_screen=ZFrontEnd::SCR_SETTINGS;frontend.screen=ZFrontEnd::SCR_DIAGNOSTICS;frontend.diagnostic_preview=ZAsset_DiagnosticPreview("idle");capture("diagnostics-review");SDL_Event focusEvent{};focusEvent.type=SDL_EVENT_KEY_DOWN;focusEvent.key.key=SDLK_TAB;focusEvent.key.mod=SDL_KMOD_SHIFT;frontend.HandleEvent(focusEvent);REQUIRE(frontend.focus_button==frontend.focus_count-1);focusEvent.key.key=SDLK_SPACE;frontend.HandleEvent(focusEvent);frontend.Render();REQUIRE(frontend.screen==ZFrontEnd::SCR_SETTINGS);frontend.ReviewDiagnostics(true);REQUIRE(frontend.DiagnosticOverlay());frontend.kb_back=true;frontend.Render();REQUIRE(!frontend.Visible()&&!frontend.DiagnosticOverlay());frontend.Show();
         frontend.screen=ZFrontEnd::SCR_BUILD_INFO;capture("build-info");frontend.screen=ZFrontEnd::SCR_MULTIPLAYER_GUIDE;frontend.multiplayer_guide_step=1;capture("multiplayer-guide");
+        frontend.screen=ZFrontEnd::SCR_SINGLE_PLAYER;capture("single-player-menu");frontend.screen=ZFrontEnd::SCR_MULTIPLAYER_MENU;capture("multiplayer-menu");frontend.OpenCampaignGroup(2);capture("imported-campaigns");
         frontend.screen=ZFrontEnd::SCR_KEYS;frontend.keys_scroll=MAX_ZKEYS-8;capture("editor-bindings");
         REQUIRE(frontend.LaunchEditor({"maps/p02_bb_orig01.map"}));frontend.workspace->tool=1;frontend.workspace->objectScroll=6;frontend.workspace->objectKind=8;capture("object-palette");ZPrefs_ResetCategory(5);frontend.FreeGraphics();SDL_Quit();std::cout<<"polish-ok";
     }
@@ -373,7 +374,7 @@ struct ZFrontEndRegression {
             ZFrontEnd::Action action;
             click(800,622); REQUIRE(frontend.PopAction(action));
             REQUIRE(action.type==ZFrontEnd::FE_LOAD_SAVE && action.value==3);
-            click(280,555);REQUIRE(!frontend.PopAction(action));REQUIRE(frontend.screen==ZFrontEnd::SCR_MULTIPLAYER_GUIDE);for(int step=0;step<4;++step){frontend.kb_activate=true;frontend.Render();}REQUIRE(frontend.PopAction(action));REQUIRE(action.type==ZFrontEnd::FE_OPEN_MULTIPLAYER);
+            click(280,555);REQUIRE(!frontend.PopAction(action));REQUIRE(frontend.screen==ZFrontEnd::SCR_MULTIPLAYER_MENU);frontend.kb_activate=true;frontend.Render();REQUIRE(!frontend.PopAction(action));REQUIRE(frontend.screen==ZFrontEnd::SCR_MULTIPLAYER_GUIDE);for(int step=0;step<4;++step){frontend.kb_activate=true;frontend.Render();}REQUIRE(frontend.PopAction(action));REQUIRE(action.type==ZFrontEnd::FE_OPEN_MULTIPLAYER);frontend.Show();REQUIRE(frontend.screen==ZFrontEnd::SCR_MULTIPLAYER_MENU);frontend.kb_back=true;frontend.Render();REQUIRE(frontend.screen==ZFrontEnd::SCR_MAIN);
             click(280,445);REQUIRE(frontend.PopAction(action));REQUIRE(action.type==ZFrontEnd::FE_OPEN_SKIRMISH);
             click(1128,737);REQUIRE(frontend.screen==ZFrontEnd::SCR_SETTINGS);
             int effects=zod_effects_volume,music=zod_music_volume;
@@ -388,7 +389,7 @@ struct ZFrontEndRegression {
             click(280,610);REQUIRE(frontend.screen==ZFrontEnd::SCR_SCORES);REQUIRE(!frontend.PopAction(action));
             frontend.screen=ZFrontEnd::SCR_MAIN;frontend.kb_item=-1;frontend.kb_dy=1;frontend.Render();
             zod_scenes=false;frontend.kb_activate=true;frontend.Render();
-            REQUIRE(frontend.screen==ZFrontEnd::SCR_CAMPAIGNS);
+            REQUIRE(frontend.screen==ZFrontEnd::SCR_SINGLE_PLAYER);frontend.kb_activate=true;frontend.Render();REQUIRE(frontend.screen==ZFrontEnd::SCR_CAMPAIGNS&&frontend.campaign_scope==1&&frontend.campaign_choice==-1);frontend.kb_back=true;frontend.Render();REQUIRE(frontend.screen==ZFrontEnd::SCR_SINGLE_PLAYER);frontend.kb_dy=1;frontend.Render();frontend.kb_activate=true;frontend.Render();frontend.Render();REQUIRE(frontend.screen==ZFrontEnd::SCR_CAMPAIGNS&&frontend.campaign_scope==2&&frontend.campaigns.empty()&&frontend.campaign_mission_choice==-1);frontend.kb_activate=true;frontend.Render();REQUIRE(!frontend.PopAction(action));
             frontend.SelectCampaign(-1);frontend.StartLevel(0,false);
             REQUIRE(frontend.PopAction(action));REQUIRE(action.type==ZFrontEnd::FE_START_MAP && action.value==0);
             std::cout<<"disc-menu-actions-ok";
@@ -1240,8 +1241,8 @@ public:
     }
 
     static void browser(const string &image = "") {
-        REQUIRE(SDL_Init(SDL_INIT_VIDEO));
-        GMMMultiplayer menu;
+        REQUIRE(SDL_Init(SDL_INIT_VIDEO));SDL_SetEnvironmentVariable(SDL_GetEnvironment(),"ZOD_ORCHESTRATOR","local",true);
+        GMMMultiplayer menu;REQUIRE(!menu.lan_mode&&!menu.direct_mode);menu.HandleWidgetEvent(GMM_UNCLICK_EVENT,&menu.lan_button);REQUIRE(menu.lan_mode&&!menu.direct_mode);menu.HandleWidgetEvent(GMM_UNCLICK_EVENT,&menu.direct_button);REQUIRE(menu.direct_mode&&!menu.match_list.IsActive()&&!menu.refresh_task.Pending()&&menu.address_entry.IsSelected());menu.HandleWidgetEvent(GMM_UNCLICK_EVENT,&menu.mode_button);REQUIRE(!menu.lan_mode&&!menu.direct_mode&&menu.match_list.IsActive());
         menu.address_entry.SetSelected(true);
         for(char c:string("127.0.0.1:2301")) menu.KeyPress(c);
         REQUIRE(menu.address_entry.GetText()=="127.0.0.1:2301");

@@ -399,3 +399,10 @@ advances, default defeat retries, and an explicit End ends the campaign. Export
 rejects reachable branches with no route to an ending, missing required assets and
 invalid objectives/events. Unreachable missions are reported for review. Run
 Validate and inspect the playtest report before distributing a campaign pack.
+
+## Single Player menu
+
+Single Player has separate Original Campaign and Imported Campaigns entries.
+Original Campaign retains its own mission history, progression and cinematics.
+Imported Campaigns lists installed packs and exposes Import pack; an empty list
+never starts the Original Campaign by accident. Back returns to Single Player.

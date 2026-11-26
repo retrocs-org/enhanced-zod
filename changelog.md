@@ -10,6 +10,14 @@ are retained below; new website changes belong in that separate log.
 
 ## Unreleased
 
+### Play-mode navigation
+
+- Separate Single Player into Original Campaign and Imported Campaigns, preserving their mission history and progress.
+- Group network play under Multiplayer. Keep ordinary matches in Server Browser with explicit Public Servers, Local Area Network and Direct Connect tabs.
+- Name the future shared territory mode Planetary Conquest; label it and future Co-op as not yet playable.
+- Default to public-server discovery, preserve guest LAN/private connections and browser approval for public hosts, and return from the browser to the Multiplayer menu.
+
+
 ### macOS embedded-server startup crash
 
 - Remove the 400 KB automatic socket-send buffer that exhausted SDL's small server-thread stack during map-handshake replies.

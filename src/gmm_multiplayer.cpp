@@ -12,7 +12,7 @@ namespace {bool hexToken(const string &value,size_t length){return value.size()=
 
 GMMMultiplayer::GMMMultiplayer()
 {
-    menu_type=GMM_MULTIPLAYER; title="Multiplayer"; w=420; h=430;
+    menu_type=GMM_MULTIPLAYER; title="Server Browser"; w=420; h=430;
     SetupLayout1(); Refresh();
 }
 void GMMMultiplayer::SetupLayout1()
@@ -20,11 +20,12 @@ void GMMMultiplayer::SetupLayout1()
     auto button=[&](GMMWButton &b,int px,int py,int width,const string &label) {
         b.SetType(MMGENERIC_BUTTON); b.SetCoords(px,py); b.SetDimensions(width,18); b.SetText(label); AddWidget(&b);
     };
-    button(mode_button,10,24,190,"Nearby LAN"); button(refresh_button,210,24,200,"Refresh");
+    button(mode_button,10,24,126,"Public Servers");button(lan_button,142,24,136,"Local Area Network");button(direct_button,284,24,126,"Direct Connect");mode_button.SetGreen(true);
+    const char *help[]={"Enter a private host IP address or hostname below.","Use host:port for a custom port. Default game port: 2137.","Private and LAN hosts support guests without cloud sign-in.","For public dedicated servers, use the Public Servers tab."};for(int i=0;i<4;++i){direct_help[i].SetCoords(10,68+i*36);direct_help[i].SetDimensions(400,24);direct_help[i].SetText(help[i]);direct_help[i].SetActive(false);AddWidget(&direct_help[i]);}
     search_entry.SetCoords(10,48);search_entry.SetDimensions(400,GMMWTEXTENTRY_HEIGHT);search_entry.SetLabel("Map/name/mode: ");search_entry.SetMaxText(60);AddWidget(&search_entry);
     region_entry.SetCoords(10,70);region_entry.SetDimensions(400,GMMWTEXTENTRY_HEIGHT);region_entry.SetLabel("Region: ");region_entry.SetMaxText(32);AddWidget(&region_entry);
     button(view_button,10,92,126,"All servers");button(ping_button,144,92,126,"Any ping");button(players_button,278,92,132,"Any players");
-    button(state_button,10,114,190,"Any game state");button(favorite_button,210,114,200,"Toggle favorite");
+    button(state_button,10,114,126,"Any game state");button(favorite_button,144,114,126,"Toggle favorite");button(refresh_button,278,114,132,"Refresh");
     match_list.SetCoords(10,140); match_list.SetVisibleEntries(7); match_list.SetDimensions(400,105); AddWidget(&match_list);
     status_label.SetCoords(10,254); AddWidget(&status_label);
     detail_label.SetCoords(10,270); AddWidget(&detail_label);
@@ -32,13 +33,20 @@ void GMMMultiplayer::SetupLayout1()
     address_entry.SetCoords(10,316); address_entry.SetDimensions(400,GMMWTEXTENTRY_HEIGHT);
     address_entry.SetLabel("Address: "); address_entry.SetAddressMode(true); address_entry.SetMaxText(65); AddWidget(&address_entry);
     button(address_button,10,337,400,"Join by IP / hostname:port");
-    button(create_button,10,362,190,"Create Game"); button(back_button,210,362,200,"Back");
+    button(create_button,10,362,190,"Host LAN / private"); button(back_button,210,362,200,"Back");
     button(portal_button,10,388,190,"Friends / invitations");button(creations_button,210,388,200,"Community creations");
     UpdateDimensions();
 }
+void GMMMultiplayer::SetBrowserMode(int mode){
+ if(joining)return;refresh_task.Cancel();compatibility_task.Cancel();compatibility_address.clear();has_reconnect_target=false;join_button.SetText("Join Selected Game");lan_mode=mode==1;direct_mode=mode==2;sticky_error=false;matches.clear();discovered.clear();match_list.GetEntryList().clear();
+ mode_button.SetGreen(mode==0);lan_button.SetGreen(lan_mode);direct_button.SetGreen(direct_mode);
+ std::vector<ZGMMWidget*> listing={&match_list,&search_entry,&region_entry,&view_button,&ping_button,&players_button,&state_button,&favorite_button,&refresh_button,&join_button};for(auto *widget:listing)widget->SetActive(!direct_mode);for(auto &label:direct_help)label.SetActive(direct_mode);
+ address_entry.SetSelected(direct_mode);status_label.SetText(direct_mode?"Direct connect to a private or LAN host":"");detail_label.SetText(direct_mode?"Share the host address and game port with invited players.":"");keyboard_focus=-1;
+ if(!direct_mode)Refresh();
+}
 void GMMMultiplayer::Refresh()
 {
-    if(refresh_task.Pending() || joining) return;
+    if(refresh_task.Pending() || joining || direct_mode) return;
     sticky_error=false; status_label.SetText(lan_mode ? "Scanning nearby games..." : "Loading online games...");
     detail_label.SetText("Direct entry: IP:port, or IP with default port 2137");
     bool lan=lan_mode;
@@ -157,10 +165,10 @@ void GMMMultiplayer::HandleWidgetEvent(int type,ZGMMWidget *widget)
     else if(widget==&players_button){players_filter=(players_filter+1)%4;const char *labels[]={"Any players","Open slots","Populated","Empty"};players_button.SetText(labels[players_filter]);Refilter();}
     else if(widget==&state_button){state_filter=(state_filter+1)%3;state_button.SetText(state_filter==0?"Any game state":state_filter==1?"Lobby":"In battle");Refilter();}
     else if(widget==&favorite_button){int selected=match_list.GetFirstSelected();if(selected>=0){int ref=match_list.GetEntryList()[selected].ref_id;if(ref>=0&&ref<(int)matches.size())ZServerToggleFavorite(matches[ref]);Refilter();}}
-    else if(widget==&mode_button) {
-        if(refresh_task.Pending()) return;
-        lan_mode=!lan_mode; mode_button.SetText(lan_mode ? "Nearby LAN" : "Online games"); Refresh();
-    } else if(widget==&refresh_button) Refresh();
+    else if(widget==&mode_button)SetBrowserMode(0);
+    else if(widget==&lan_button)SetBrowserMode(1);
+    else if(widget==&direct_button)SetBrowserMode(2);
+    else if(widget==&refresh_button) Refresh();
     else if(widget==&create_button) { gmm_flags.open_main_menu=true; gmm_flags.open_main_menu_type=GMM_MULTIPLAYER_CREATE; }
     else if(widget==&back_button) { CancelAuthorization();killme=true; }
     else if(widget==&address_button) JoinAddress();
@@ -222,7 +230,7 @@ void GMMMultiplayer::CheckCompatibility(const MatchInfo &match){
 }
 
 void GMMMultiplayer::SetReconnectTarget(const string &host,int port,const string &id){
- refresh_task.Cancel();lan_mode=false;mode_button.SetText("Online games");has_reconnect_target=true;
+ SetBrowserMode(0);has_reconnect_target=true;
  reconnect_target.host=host;reconnect_target.port=port;reconnect_target.id=id;reconnect_target.portal=true;reconnect_target.name="Previous public server";
  address_entry.SetText(host+":"+to_string(port));join_button.SetText("Get fresh approval and rejoin");Refresh();
  SetError("Connection interrupted. Rejoin requests fresh browser approval.");

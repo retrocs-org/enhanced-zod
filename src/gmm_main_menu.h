@@ -20,7 +20,7 @@ enum gmm_main_menu_button
 const string gmm_main_menu_button_string[MAX_GMMMM_BUTTONS] =
 {
 	"Play Campaign",
-	"Generate Map", "Multiplayer", "Change Teams",
+	"Generate Map", "Server Browser", "Change Teams",
 	"Manage Bots", "Player List", "Options", "Save Game", "Main Menu", "Quit Game", "Resume battle"
 };
 
