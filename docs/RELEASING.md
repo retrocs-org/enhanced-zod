@@ -284,3 +284,28 @@ or re-signing. Keep this receipt with release QA evidence.
 These automated checks use authored fixtures and SDL's dummy renderer. Before
 publishing, also verify original-disc import, actual display/fullscreen behavior,
 audible music/effects and an interactive remote-server join on each target OS.
+
+## Upgrade and rollback rehearsal
+
+Keep a copy of the previous extracted runtime, then run on each target OS:
+
+```sh
+python3 scripts/release.py upgrade-rehearsal \
+  --previous-package /path/to/previous/zod-enhanced.app \
+  --package build-app/zod-enhanced.app \
+  --package-binary Contents/MacOS/zod-enhanced \
+  --rehearsal-report outputs/upgrade-rehearsal/report.json
+```
+
+For Windows/Linux, supply the executable's relative path in the extracted runtime.
+Both versions must provide `--build-info` and `--diagnostics`. The tool copies both
+packages into a temporary directory, starts the previous build, replaces it with
+the candidate, rolls back, and verifies byte preservation of seeded settings,
+save/import/progress fixtures and unchanged supplied packages. It clears stale
+success evidence before a run. An optional `--profile-template /path/to/test-profile`
+copies an existing test profile (without symlinks); the original is never modified.
+No real user profile is read by default, and no server/database is contacted.
+
+This proves startup and file preservation, not every historical save format. Also
+run `installation-check` and load representative real saves for a release crossing
+save-format changes. Rehearsal evidence is local; it does not deploy or publish.

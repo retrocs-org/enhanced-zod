@@ -62,6 +62,8 @@ public:
 	// call when the menu (re)appears: refreshes campaign progress and scores
 	void Show();
 	void ShowImport(bool required = false);
+    void ReviewDiagnostics(bool inGame=false);
+    bool DiagnosticOverlay() const{return visible&&screen==SCR_DIAGNOSTICS&&diagnostic_return_game;}
 	// the map we asked for has arrived (or the menu is otherwise leaving)
 	void Hide();
 	bool Visible() const { return visible; }
@@ -97,7 +99,7 @@ public:
 
 private:
 	friend struct ZFrontEndRegression;
-	enum Screen { SCR_MAIN, SCR_REPLAY, SCR_SCORES, SCR_BRIEFING, SCR_LOADING, SCR_QUIT, SCR_LOAD, SCR_CUSTOM, SCR_KEYS, SCR_IMPORT, SCR_SETTINGS, SCR_EDITOR, SCR_CAMPAIGNS, SCR_RECORDINGS, SCR_ALERTS, SCR_MULTIPLAYER_GUIDE, SCR_BUILD_INFO };
+	enum Screen { SCR_MAIN, SCR_REPLAY, SCR_SCORES, SCR_BRIEFING, SCR_LOADING, SCR_QUIT, SCR_LOAD, SCR_CUSTOM, SCR_KEYS, SCR_IMPORT, SCR_SETTINGS, SCR_EDITOR, SCR_CAMPAIGNS, SCR_RECORDINGS, SCR_ALERTS, SCR_MULTIPLAYER_GUIDE, SCR_BUILD_INFO, SCR_DIAGNOSTICS };
 
 	struct CustomMap
 	{
@@ -137,6 +139,7 @@ private:
     int campaign_dependency_scroll=0,campaign_backup_choice=0;
     std::string recordingDetails,recordingError;int recordingInspected=-1;
     std::vector<std::string> recordingFiles;int recordingChoice=0,recordingScroll=0;
+    void RenderDiagnostics();std::string diagnostic_preview,diagnostic_message;int diagnostic_scroll=0,diagnostic_return_screen=SCR_SETTINGS;bool diagnostic_return_game=false;
     void RenderRecordings();void RenderAlerts();void RenderMultiplayerGuide();void RenderBuildInfo();std::string build_info_message;bool guide_completed_session=false;int multiplayer_guide_step=0;Screen guide_return=SCR_MAIN;
     void RenderImport();
 

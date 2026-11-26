@@ -81,3 +81,8 @@ textarea { width: 100%; max-width: 100%; min-height: 8rem; font: inherit; color:
 .table-scroll{overflow-x:auto}caption{text-align:left;padding:.8rem;font-weight:600}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
 @media(forced-colors:active){.button,.panel,input,select{border:1px solid CanvasText}.button:focus-visible{outline:3px solid Highlight}}
+
+/* Dashboard and diagnostic accessibility */
+textarea:focus-visible,summary:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:4px}main:focus{outline:none}.server-health dd{overflow-wrap:anywhere}#server-health,#server-access,#server-players,#server-presets,#server-history{scroll-margin-top:2rem}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+code,dd{overflow-wrap:anywhere}nav[aria-label="Server dashboard sections"]{flex-wrap:wrap;margin-bottom:1.5rem}

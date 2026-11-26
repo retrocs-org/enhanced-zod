@@ -319,6 +319,7 @@ void ZPlayer::ReturnToMenu()
 	OpenStartMenu();
 }
 
+void ZPlayer::resume_session_event(ZPlayer *p,char *data,int size,int){if(p->public_remote_session||!data||size!=65||data[64]!=0)return;std::string token(data,64);if(token.find_first_not_of("0123456789abcdef")==std::string::npos)p->private_rejoin_token=token;}
 void ZPlayer::JoinHostedMatch(const string &host, int port, int team, ZGuiMainMenuBase *menu,string ticket,string portalId)
 {
     if(!menu) return;
@@ -355,7 +356,7 @@ bool ZPlayer::PollHostedJoin()
         return false;
     }
     if(!result.connection) {
-        bool retry=reconnecting && reconnect_attempt<3 && result.error.find("Version mismatch")==string::npos;
+        bool retry=reconnecting && reconnect_attempt<3 && result.error.find("mismatch")==string::npos;
         if(reconnecting) {reconnecting=retry;reconnect_after=SDL_GetTicks()+1000*reconnect_attempt;}
         string error="Could not join "+result.host+":"+to_string(result.port)+": "+result.error;
         for(auto *menu:gui_menu_list) if(menu->GetInstanceId()==result.menu_id) {
@@ -367,7 +368,7 @@ bool ZPlayer::PollHostedJoin()
         return false;
     }
     sync_last_sequence=0;sync_strikes=0;sync_history.clear();sync_reported_hash.clear();expected_map_hash.clear();map_download_error.clear();cloud_join_ticket=std::move(result.ticket);cloud_server_role=0;cloud_portal_id=result.portalId;
-    bool resumed=reconnecting;reconnecting=false;
+    bool resumed=reconnecting;reconnecting=false;if(!resumed&&(result.host!=reconnect_host||result.port!=reconnect_port))private_rejoin_token.clear();
     hosted_remote_session=true;
     hosted_setup_available=false;
     for(auto *menu:gui_menu_list) if(menu->GetInstanceId()==result.menu_id)
@@ -403,7 +404,7 @@ bool ZPlayer::PollHostedJoin()
 //behaviour is unchanged (important: the menu/SDL isn't up at that point).
 bool ZPlayer::ConnectToServer(string address, int port)
 {
-    reconnecting=false;hosted_remote_session=false;public_remote_session=false;
+    private_rejoin_token.clear();reconnecting=false;hosted_remote_session=false;public_remote_session=false;
 	if(client_socket.GetHandler())
 	{
 		ReturnToMenu();
@@ -1258,7 +1259,7 @@ void ZPlayer::ProcessDisconnect()
 	//is already released by ClientSocket::Process() before it fires DISCONNECT_EVENT,
 	//so there's nothing to close here - just reset client state. This is also the
 	//exact path a future "Leave Game / Disconnect" menu button will reuse.
-    cloud_join_ticket.clear();cloud_server_role=0;
+    ZAsset_RecordDiagnostic(ZDiagnosticEvent::ConnectionLost);cloud_join_ticket.clear();cloud_server_role=0;
     bool was_lobby=LobbyOpen(),was_deploying=frontend.Loading();
     bool recover=hosted_remote_session && !public_remote_session && cloud_disconnect_reason.empty() && !was_deploying;
     int port=client_socket.GetPort();int team=our_team;
@@ -1276,7 +1277,7 @@ void ZPlayer::ProcessDisconnect()
     if(was_lobby || hosted_remote_session) {
         CloseAllMenus(); LoadMainMenu(GMM_MULTIPLAYER);
         for(auto *menu:gui_menu_list) if(auto *browser=dynamic_cast<GMMMultiplayer*>(menu))
-            {if(public_remote_session)browser->SetReconnectTarget(remote_address,port,cloud_portal_id);
+            {if(public_remote_session){browser->SetReconnectTarget(remote_address,port,cloud_portal_id);browser->SetError("Connection lost. Select Reconnect and approve again in your browser within 90 seconds to restore your team.");}
              else browser->SetError(cloud_disconnect_reason.empty()?"Connection lost. Refresh the server list or join again.":cloud_disconnect_reason);
              if(!cloud_disconnect_reason.empty())browser->SetError(cloud_disconnect_reason);}
     }
@@ -2032,7 +2033,7 @@ void ZPlayer::RenderScreen()
 			frontend_presenting = true;
 			ZVideo_SetCanvasMode(ZFrontEnd::CANVAS_W, ZFrontEnd::CANVAS_H);
 			SDL_ShowCursor();
-			ZMusicEngine::PlayMenuMusic();
+			if(!frontend.DiagnosticOverlay())ZMusicEngine::PlayMenuMusic();
 		}
 		frontend.Render();
 		return;
@@ -4808,6 +4809,7 @@ bool ZPlayer::MainMenuWheelDown()
 //normally applied - so apply the volume/speed ones here.
 void ZPlayer::ApplyMenuWheelFlags(gmm_flag &the_flags)
 {
+ if(the_flags.review_diagnostics){the_flags.review_diagnostics=false;frontend.ReviewDiagnostics(true);}
  if(the_flags.moderate_target>=0){std::string packet(8,'\0');memcpy(&packet[0],&the_flags.moderate_target,4);memcpy(&packet[4],&the_flags.moderate_minutes,4);packet+=the_flags.moderate_reason;packet+='\0';client_socket.SendMessage(CLOUD_MODERATE,packet.data(),packet.size());the_flags.moderate_target=-1;}
 
 	if(the_flags.set_volume) SetSoundSetting(the_flags.set_volume_value);
@@ -4919,6 +4921,7 @@ bool ZPlayer::MainMenuAbsorbLUnClick()
             if(the_flags.toggle_ready && !SendReady(the_flags.ready_value))
                 if(auto *lobby=dynamic_cast<GMMLobby*>(*i)) lobby->SetError("Ready could not be sent. Leave and reconnect.");
             if(the_flags.leave_match) {
+                client_socket.SendMessage(RESUME_SESSION,nullptr,0);private_rejoin_token.clear();
                 reconnecting=false;hosted_remote_session=false;public_remote_session=false;
                 client_socket.ClearConnection(); hosted_setup_available=false; lobby_countdown=-1;
                 ReturnToMenu(); CloseAllMenus(); LoadMainMenu(GMM_MULTIPLAYER); return true;
@@ -5899,6 +5902,7 @@ bool ZPlayer::FrontEndWanted()
 {
 	if(!zod_frontend || !graphics_loaded) return false;
 	if(!frontend.Visible()) return false;
+    if(frontend.DiagnosticOverlay())return true;
 	if(zmap.Loaded()) return false;
 
 	//a classic GMM window (skirmish generator, multiplayer browser, lobby,

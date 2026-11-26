@@ -709,3 +709,26 @@ First-time multiplayer users see a keyboard/controller-accessible native guide f
 asset import, browser approval, private/LAN guests and friends/invitations. It can
 be reopened from Settings > Media. Completing it is remembered per profile;
 a read-only profile still permits entering multiplayer for the current session.
+
+## Rejoining and compatible clients
+
+The client checks the server protocol and canonical native-source SHA-256 before
+opening its gameplay session. Different operating systems and Debug/Release
+configurations can share a source identity. A source mismatch, missing compatibility
+response or protocol mismatch blocks joining with update guidance. Refresh the
+browser after upgrading. The map preview shows its digest and whether a local map
+differs; the server's transferred map is independently verified before play.
+
+Disconnected teams are reserved for 90 seconds within the same round. A private
+client keeps its random reconnect token in memory, retries up to three times, and
+resynchronizes the server world. Tokens are single-use and never persisted or
+included in diagnostic exports. Public players select Reconnect and approve a
+**new** browser request; only the same cloud account can reclaim its team. Bans,
+revoked hosting credentials and maintenance still apply. Reservations expire on
+round changes or server restart. Rejoining restores team control and current world
+state; previous local selection/camera state is not restored.
+
+The server console includes ownership and role management alongside health,
+updates, moderation, presets and audit history. Only owners may delegate/remove
+roles. Health and update values remain explicitly marked stale when the host stops
+reporting. No additional SQL migration is needed beyond schema 007.

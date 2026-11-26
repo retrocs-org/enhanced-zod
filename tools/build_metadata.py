@@ -16,7 +16,7 @@ def metadata(root):
  files=sorted([p for p in (root/'src').rglob('*') if p.is_file() and p.suffix in {'.h','.cpp','.c','.hpp'}]+[root/'CMakeLists.txt',root/'VERSION',root/'tools/build_metadata.py'])
  digest=hashlib.sha256()
  for p in files:
-  digest.update(p.relative_to(root).as_posix().encode()+b'\0'+p.read_bytes()+b'\0')
+  digest.update(p.relative_to(root).as_posix().encode()+b'\0'+p.read_bytes().replace(b'\r\n',b'\n')+b'\0')
  fingerprint=digest.hexdigest();dirty=bool(git('status','--porcelain','--untracked-files=normal','--','src','CMakeLists.txt','VERSION','tools/build_metadata.py'))
  version=(root/'VERSION').read_text().strip()
  return {'version':version,'commit':commit,'source_sha256':fingerprint,'dirty':dirty,'build_id':version+'+'+commit[:12]+'.'+fingerprint[:12]+('-dirty' if dirty else ''),'build_number':count,'platform':platform.system()+'-'+platform.machine()}
@@ -36,7 +36,7 @@ def main():
   if args.version:m['version']=args.version
   m['build_id']=m['version']+'+'+m['commit'][:12]+'.'+m['source_sha256'][:12]+('-dirty' if m['dirty'] else '')+'.'+args.config
   write_changed(args.output/'BUILD-IDENTITY.json',(json.dumps(m,indent=2,sort_keys=True)+'\n').encode())
-  header='#pragma once\n#define ZOD_BUILD_ID_LITERAL '+json.dumps(m['build_id'])+'\n#define ZOD_BUILD_JSON_LITERAL '+json.dumps(json.dumps(m,sort_keys=True))+'\n'
+  header='#pragma once\n#define ZOD_SOURCE_HASH_LITERAL '+json.dumps(m['source_sha256'])+'\n#define ZOD_BUILD_ID_LITERAL '+json.dumps(m['build_id'])+'\n#define ZOD_BUILD_JSON_LITERAL '+json.dumps(json.dumps(m,sort_keys=True))+'\n'
   write_changed(args.output/'zbuild_metadata.h',header.encode())
  if args.plist:
   with args.plist.open('rb') as f:p=plistlib.load(f)

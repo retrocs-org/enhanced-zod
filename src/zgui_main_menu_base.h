@@ -96,7 +96,7 @@ public:
 		exit_to_menu = false;
 		save_game = false;
 		save_slot = 1;
-		set_volume = false;set_music=false;
+		set_volume = false;set_music=false;review_diagnostics=false;
 		set_volume_value = -1;
 		pause_game = false;
 		set_game_speed = false;
@@ -137,7 +137,7 @@ public:
 	bool exit_to_menu;      //leave the current single-player game for the start menu
 	bool save_game;         //write the single-player save file
 	int save_slot;          //...into this slot
-	bool set_volume,set_music;
+	bool set_volume,set_music,review_diagnostics;
 	int set_volume_value;
 	bool pause_game;
 	bool set_game_speed;

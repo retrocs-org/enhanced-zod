@@ -115,8 +115,8 @@ void ZMapWorkspace::Paint() {
 void ZMapWorkspace::Event(const SDL_Event &event) {
     if(pickEventLocation){if(event.type==SDL_EVENT_KEY_DOWN&&event.key.key==SDLK_ESCAPE){pickEventLocation=false;campaignPanel=true;return;}if(event.type==SDL_EVENT_MOUSE_MOTION){mx=event.motion.x;my=event.motion.y;}if(event.type==SDL_EVENT_MOUSE_BUTTON_UP&&event.button.button==SDL_BUTTON_LEFT){int x=(int)(((event.button.x-306)/zoom+cameraX)/16),y=(int)(((event.button.y-162)/zoom+cameraY)/16);auto &h=map.GetMapBasics();if(event.button.x>=306&&event.button.x<1250&&event.button.y>=162&&event.button.y<702&&x>=0&&y>=0&&x<h.width&&y<h.height){eventX=to_string(x);eventY=to_string(y);pickEventLocation=false;campaignPanel=true;}}return;}
     if(terrainConfirm||connectionsPanel){if(event.type==SDL_EVENT_KEY_DOWN&&event.key.key==SDLK_ESCAPE){terrainConfirm=connectionsPanel=false;terrainPreview.clear();return;}if(terrainConfirm&&event.type==SDL_EVENT_KEY_DOWN&&event.key.key==SDLK_RETURN){ApplyTerrainPreview();return;}if(event.type==SDL_EVENT_MOUSE_MOTION){mx=event.motion.x;my=event.motion.y;}if(event.type==SDL_EVENT_MOUSE_BUTTON_DOWN){mx=pressX=event.button.x;my=pressY=event.button.y;}if(event.type==SDL_EVENT_MOUSE_BUTTON_UP){mx=event.button.x;my=event.button.y;clicked=true;}return;}
-    if(event.type==SDL_EVENT_KEY_DOWN&&editField<0&&event.key.key==SDLK_TAB){int count=max(1,focusCount),step=(event.key.mod&SDL_KMOD_SHIFT)?-1:1;if(focusButton<0&&step<0)focusButton=0;focusButton=(focusButton+step+count)%count;return;}
-    if(event.type==SDL_EVENT_KEY_DOWN&&editField<0&&event.key.key==SDLK_RETURN&&focusButton>=0){focusActivate=true;return;}
+    if(event.type==SDL_EVENT_KEY_DOWN&&event.key.key==SDLK_TAB){editField=-1;SDL_StopTextInput(SDL_GetKeyboardFocus());int count=max(1,focusCount),step=(event.key.mod&SDL_KMOD_SHIFT)?-1:1;if(focusButton<0&&step<0)focusButton=0;focusButton=(focusButton+step+count)%count;return;}
+    if(event.type==SDL_EVENT_KEY_DOWN&&editField<0&&(event.key.key==SDLK_RETURN||event.key.key==SDLK_KP_ENTER||event.key.key==SDLK_SPACE)&&focusButton>=0){focusActivate=true;return;}
     if(event.type==SDL_EVENT_WINDOW_FOCUS_LOST){panning=down=painting=false;autosaveAt=0;Autosave();}
     if(recoveryPrompt||helpPanel){if(event.type==SDL_EVENT_KEY_DOWN&&event.key.key==SDLK_ESCAPE){if(recoveryPrompt)recoveryDeferred=true;recoveryPrompt=helpPanel=false;return;}if(event.type==SDL_EVENT_MOUSE_MOTION){mx=event.motion.x;my=event.motion.y;}if(event.type==SDL_EVENT_MOUSE_BUTTON_DOWN){mx=pressX=event.button.x;my=pressY=event.button.y;}if(event.type==SDL_EVENT_MOUSE_BUTTON_UP){mx=event.button.x;my=event.button.y;clicked=true;}return;}
     if(event.type==SDL_EVENT_MOUSE_MOTION) {hoverSince=SDL_GetTicks(); if(panning){cameraX-=(event.motion.x-mx)/zoom;cameraY-=(event.motion.y-my)/zoom;}mx=event.motion.x;my=event.motion.y;if(down&&tool==0&&(terrainMode==0||terrainMode==3))Paint();
@@ -156,7 +156,7 @@ void ZMapWorkspace::Event(const SDL_Event &event) {
         if(ctrl&&key==SDLK_V&&hasClipboard){int x=(int)(((mx-306)/zoom+cameraX)/16),y=(int)(((my-162)/zoom+cameraY)/16);PasteSelection(x,y);}
         if(!ctrl&&ZPrefs_KeyIs(key,ZKEY_EDITOR_UNDO))Undo(false);if(!ctrl&&ZPrefs_KeyIs(key,ZKEY_EDITOR_REDO))Undo(true);
         if(ctrl&&key==SDLK_S)Save();if(ctrl&&campaignPanel&&(key==SDLK_Z||key==SDLK_Y)){UndoCampaign(key==SDLK_Y||(event.key.mod&SDL_KMOD_SHIFT));return;}
-        if(ctrl&&key==SDLK_Z)Undo(false);if(ctrl&&key==SDLK_Y)Undo(true);
+        if(ctrl&&key==SDLK_Z)Undo((event.key.mod&SDL_KMOD_SHIFT)!=0);if(ctrl&&key==SDLK_Y)Undo(true);
         if(key==SDLK_LEFT||key==SDLK_A)cameraX-=64/zoom;
         if(key==SDLK_UP||key==SDLK_W)cameraY-=64/zoom;
         if(key==SDLK_RIGHT||key==SDLK_D)cameraX+=64/zoom;
@@ -293,7 +293,10 @@ string *ZMapWorkspace::Editing(){
     switch(editField){case 10:return &mission.title;case 11:return &mission.speaker;case 12:return &mission.video;case 13:return &mission.victoryVideo;case 14:return &mission.briefing;default:return nullptr;}
 }
 void ZMapWorkspace::Field(string &value,int id,float x,float y,float w,int height){
-    Rect(x,y,w,height,{12,21,28,255});if(editField==id)Rect(x,y,3,height,amber);
+    bool interactive=(pending.empty()||!dirty)&&!recoveryPrompt&&!helpPanel&&!historyPanel&&(!(browser||fileMenu||fileForm||campaignPanel||validationPanel||importPanel||prefabPanel||connectionsPanel||terrainConfirm)||modalLayer==1);
+    int index=interactive?focusIndex++:-1;bool focused=index>=0&&index==focusButton;
+    Rect(x,y,w,height,{12,21,28,255});if(editField==id||focused)Rect(x,y,3,height,amber);
+    if(focused&&focusActivate){focusActivate=false;editField=id;SDL_StartTextInput(SDL_GetKeyboardFocus());}
     if(height>50){vector<string> lines;std::istringstream stream(value+(editField==id?"|":""));string line;while(std::getline(stream,line))lines.push_back(line);int rows=max(1,(height-12)/24),start=max(0,(int)lines.size()-rows);for(int row=start;row<(int)lines.size();++row)Text(lines[row].substr(0,max(1,(int)(w/10)-2)),x+10,y+6+(row-start)*24,18);}
     else {string shown=value;if(shown.size()>70)shown=shown.substr(shown.size()-70);Text(shown+(editField==id?"|":""),x+10,y+6,19);}
     if((pending.empty()||!dirty)&&(!(historyPanel||browser||fileMenu||fileForm||campaignPanel||validationPanel||importPanel||prefabPanel||connectionsPanel||terrainConfirm)||modalLayer==1)&&clicked&&mx>=x&&mx<x+w&&my>=y&&my<y+height){editField=id;SDL_StartTextInput(SDL_GetKeyboardFocus());clicked=false;}
@@ -386,16 +389,17 @@ Rect(150,150,980,600,{24,32,39,255});Text("CAMPAIGN STUDIO",176,170,28,amber);Te
 }
 
 void ZMapWorkspace::Validate(){issues=ZContent_ValidateMap(map);issueScroll=0;validationPanel=true;}
-void ZMapWorkspace::ClearRecovery(){recoveryDeferred=false;autosaveAt=0;SDL_RemovePath((ZAsset_Profile()+"editor-recovery.map").c_str());SDL_RemovePath((ZAsset_Profile()+"editor-recovery.view").c_str());}
+void ZMapWorkspace::ClearRecovery(){recoveryDeferred=false;autosaveAt=0;SDL_RemovePath((ZAsset_Profile()+"editor-recovery.map").c_str());SDL_RemovePath((ZAsset_Profile()+"editor-recovery.view").c_str());SDL_RemovePath((ZAsset_Profile()+"editor-recovery.previous.map").c_str());}
 void ZMapWorkspace::Autosave(){
  if(recoveryPrompt||recoveryDeferred||!dirty||painting||SDL_GetTicks()<autosaveAt)return;
  autosaveAt=SDL_GetTicks()+30000;SDL_CreateDirectory(ZAsset_Profile().c_str());
  string recovery=ZAsset_Profile()+"editor-recovery.map",temp=recovery+".tmp";
+ ZMap previous;if(previous.Read(recovery.c_str())){auto backup=ZAsset_Profile()+"editor-recovery.previous.map";if(!previous.Write((backup+".tmp").c_str())||!SDL_RenamePath((backup+".tmp").c_str(),backup.c_str())){message="Autosave backup failed. Save your map manually.";return;}}
  if(!map.Write(temp.c_str())||!SDL_RenamePath(temp.c_str(),recovery.c_str())){message="Autosave failed. Save your work to a writable folder.";SDL_RemovePath(temp.c_str());return;}
  std::ofstream view(ZAsset_Profile()+"editor-recovery.view.tmp");view<<cameraX<<" "<<cameraY<<" "<<zoom<<"\n";view.close();if(view)SDL_RenamePath((ZAsset_Profile()+"editor-recovery.view.tmp").c_str(),(ZAsset_Profile()+"editor-recovery.view").c_str());
 }
 
-void ZMapWorkspace::Recover(){string dir=directory;if(Open(ZAsset_Profile()+"editor-recovery.map",dir)){recoveryDeferred=false;path=UniqueMapPath("Recovered");dirty=true;std::ifstream view(ZAsset_Profile()+"editor-recovery.view");float cx,cy,z;if(view>>cx>>cy>>z&&std::isfinite(cx)&&std::isfinite(cy)&&std::isfinite(z)&&z>=.1f&&z<=4){cameraX=cx;cameraY=cy;zoom=z;}message="Recovered autosave. Save creates a new custom map.";}}
+void ZMapWorkspace::Recover(){string dir=directory;bool restored=Open(ZAsset_Profile()+"editor-recovery.map",dir);if(!restored)restored=Open(ZAsset_Profile()+"editor-recovery.previous.map",dir);if(restored){recoveryDeferred=false;path=UniqueMapPath("Recovered");dirty=true;std::ifstream view(ZAsset_Profile()+"editor-recovery.view");float cx,cy,z;if(view>>cx>>cy>>z&&std::isfinite(cx)&&std::isfinite(cy)&&std::isfinite(z)&&z>=.1f&&z<=4){cameraX=cx;cameraY=cy;zoom=z;}message="Recovered autosave. Save creates a new custom map.";}else message="Neither recovery snapshot could be read. Current work is unchanged.";}
 
 void ZMapWorkspace::RenderTimeline(){
  Rect(150,150,980,600,{24,32,39,255});Text("MISSION OBJECTIVE TIMELINE",176,172,28,amber);

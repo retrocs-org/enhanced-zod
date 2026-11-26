@@ -29,6 +29,7 @@ void ZPlayer::SetupEHandler()
     ehandler.AddFunction(TCP_EVENT,CLOUD_NOTICE,cloud_notice_event);
     ehandler.AddFunction(TCP_EVENT,MODERATION_FEEDBACK,moderation_feedback_event);
     ehandler.AddFunction(TCP_EVENT,STATE_SYNC_CHECK,state_sync_event);
+    ehandler.AddFunction(TCP_EVENT,RESUME_SESSION,resume_session_event);
     ehandler.AddFunction(TCP_EVENT,CLOUD_RESULT,cloud_result_event);
 	ehandler.AddFunction(TCP_EVENT, RETURN_TO_MENU, return_to_menu_event);	//#136
 	ehandler.AddFunction(TCP_EVENT, RESET_GAME, reset_game_event);
@@ -856,6 +857,7 @@ void ZPlayer::test_event(ZPlayer *p, char *data, int size, int dummy)
 
 void ZPlayer::connect_event(ZPlayer *p, char *data, int size, int dummy)
 {
+    if(!p->private_rejoin_token.empty())p->client_socket.SendMessage(RESUME_SESSION,p->private_rejoin_token.c_str(),65);
 	p->ProcessConnect(!p->deployment_handshake);
 
 	p->SendLogin();

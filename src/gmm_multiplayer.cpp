@@ -123,8 +123,8 @@ void GMMMultiplayer::Process()
 {
     PollAuthorization();
     Compatibility check;if(compatibility_task.Poll(check)&&check.address==compatibility_address&&!joining){
-        status_label.SetText(check.compatible?"Compatible engine: "+check.version:check.error.substr(0,70));
-        detail_label.SetText(!ZAsset_RuntimeReady()?"Import original graphics and sounds before playing.":check.compatible?"Map: "+check.map.substr(0,32)+" / SHA-256 "+(check.hash.empty()?string("unavailable"):check.hash.substr(0,12))+" / "+(!check.localHash.empty()&&check.localHash!=check.hash?string("local map differs; host copy downloaded"):string("verified on download")):"Install the same engine version; Refresh checks updated servers.");
+        status_label.SetText(check.compatible?"Protocol + build compatible: "+check.version:check.error.substr(0,70));
+        detail_label.SetText(!ZAsset_RuntimeReady()?"Import original graphics and sounds before playing.":check.compatible?"Map: "+check.map.substr(0,32)+" / SHA-256 "+(check.hash.empty()?string("unavailable"):check.hash.substr(0,12))+" / "+(!check.localHash.empty()&&check.localHash!=check.hash?string("local map differs; host copy downloaded"):string("verified on download")):"Install matching game/server releases. Refresh to check again.");
     }
     RefreshResult result; if(refresh_task.Poll(result)) ApplyRefresh(result);
     if(applied_search!=search_entry.GetText()||applied_region!=region_entry.GetText())Refilter();

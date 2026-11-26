@@ -45,4 +45,27 @@ class PackageTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             package=Path(temp)/'zod-enhanced';package.mkdir();exe=package/'zod';exe.write_text('#!/bin/sh\ncase "$1" in\n--version) printf "zod-enhanced fixture\\n";;\n--check-content) printf "Original levels: 0/1\\n"; exit 2;;\n--diagnostics) mkdir -p "$ZOD_PROFILE_DIR"; echo safe > "$ZOD_PROFILE_DIR/report.txt"; echo "$ZOD_PROFILE_DIR/report.txt";;\n*) exit 1;;\nesac\n');exe.chmod(0o755)
             smoke.smoke(package,'zod');self.assertTrue(json.loads((package.parent/'SMOKE-zod-enhanced.json').read_text())['passed'])
+    def test_upgrade_rehearsal_preserves_profile_and_rolls_back(self):
+        rehearsal=module('upgrade_rehearsal','tools/upgrade_rehearsal.py')
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);previous=root/'old';candidate=root/'new';previous.mkdir();candidate.mkdir();(previous/'game').write_text('old');(candidate/'game').write_text('new');report=root/'proof.json'
+            def run(arguments,**kwargs):
+                if arguments[1]=='--build-info':return subprocess.CompletedProcess(arguments,0,json.dumps({'build_id':Path(arguments[0]).read_text()}),'')
+                profile=Path(kwargs['env']['ZOD_PROFILE_DIR']);destination=profile/'diagnostics/report.txt';destination.parent.mkdir(exist_ok=True);destination.write_text('safe diagnostic');return subprocess.CompletedProcess(arguments,0,str(destination),'')
+            with patch.object(rehearsal.subprocess,'run',side_effect=run):proof=rehearsal.rehearse(previous,candidate,'game',report)
+            self.assertTrue(proof['passed']);self.assertEqual([p['build_id'] for p in proof['phases']],['old','new','old']);self.assertEqual((previous/'game').read_text(),'old');self.assertEqual((candidate/'game').read_text(),'new')
+            # A rejected output path cannot delete a package file.
+            with self.assertRaisesRegex(RuntimeError,'outside'):rehearsal.rehearse(previous,candidate,'game',candidate/'game')
+            self.assertEqual((candidate/'game').read_text(),'new')
+            with self.assertRaisesRegex(RuntimeError,'relative'):rehearsal.rehearse(previous,candidate,'../game',report)
+    def test_upgrade_rehearsal_rejects_profile_mutation_without_success_receipt(self):
+        rehearsal=module('upgrade_rehearsal','tools/upgrade_rehearsal.py')
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);previous=root/'old';candidate=root/'new';previous.mkdir();candidate.mkdir();(previous/'game').write_text('old');(candidate/'game').write_text('new');report=root/'proof.json';report.write_text('stale success')
+            def run(arguments,**kwargs):
+                if arguments[1]=='--build-info':return subprocess.CompletedProcess(arguments,0,'{"build_id":"fixture"}','')
+                profile=Path(kwargs['env']['ZOD_PROFILE_DIR']);(profile/'preferences.ini').write_text('destroyed');destination=profile/'report.txt';destination.write_text('safe');return subprocess.CompletedProcess(arguments,0,str(destination),'')
+            with patch.object(rehearsal.subprocess,'run',side_effect=run),self.assertRaisesRegex(RuntimeError,'profile files'):rehearsal.rehearse(previous,candidate,'game',report)
+            self.assertFalse(report.exists())
+
 if __name__=='__main__':unittest.main()

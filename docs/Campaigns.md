@@ -384,3 +384,18 @@ requires another test. Testing an unsaved map snapshot does not mark an older sa
 map as tested. Records live in the authored project's `.playtest-report`, are
 excluded from exported campaign packs, and can be exported as readable text into
 the profile's diagnostics directory. Imported campaigns remain read-only.
+
+## Recovery and export checks
+
+Editor autosave retains the latest and previous valid map snapshots. If the newest
+snapshot is corrupt, Recover autosave tries the previous snapshot and opens a new
+custom map copy. Saving or explicitly discarding recovery clears both snapshots.
+Original levels remain read-only. Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y
+redoes; Tab/Shift+Tab focuses buttons and fields, Enter/Space activates, and Tab
+leaves text entry. The map title's asterisk indicates unsaved map changes.
+
+Campaign validation follows the same branch rules as gameplay: default victory
+advances, default defeat retries, and an explicit End ends the campaign. Export
+rejects reachable branches with no route to an ending, missing required assets and
+invalid objectives/events. Unreachable missions are reported for review. Run
+Validate and inspect the playtest report before distributing a campaign pack.

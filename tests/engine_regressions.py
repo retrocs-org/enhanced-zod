@@ -252,7 +252,7 @@ class EngineRegressions(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix='zod-enhanced-polish-') as directory:
             result=subprocess.check_output([DRIVER,'polish',directory],cwd=WORKSPACE,env=self.environment(directory),text=True,timeout=20)
             self.assertIn('polish-ok',result)
-            for name in ['build-info','multiplayer-guide','moderation-feedback','save-browser','editor-help','accessibility','campaign-polish','settings-2','settings-3','settings-4','editor-bindings','object-palette']:
+            for name in ['diagnostics-review','build-info','multiplayer-guide','moderation-feedback','save-browser','editor-help','accessibility','campaign-polish','settings-2','settings-3','settings-4','editor-bindings','object-palette']:
                 self.assertEqual((pathlib.Path(directory)/(name+'.png')).read_bytes()[:8],b'\x89PNG\r\n\x1a\n')
 
     def test_scaled_battle_menu_resume(self):
@@ -696,6 +696,20 @@ class EngineRegressions(unittest.TestCase):
             second.until('RESET_GAME')
             self.download_world(first)
             self.download_world(second)
+
+    def test_private_rejoin_reserves_team_and_consumes_session_token(self):
+        with self.match() as (_,port,sockets):
+            first=Client(sockets[0]);token=first.until('RESUME_SESSION')[0]
+            self.assertEqual(len(token),65)
+            self.assertEqual(self.identify(first,'Reserved player',PROTOCOL['RED_TEAM']),PROTOCOL['RED_TEAM'])
+            first.connection.close();time.sleep(.15)
+            sockets.append(socket.create_connection(('127.0.0.1',port),timeout=2));other=Client(sockets[-1])
+            self.assertEqual(self.identify(other,'Different player',PROTOCOL['RED_TEAM']),PROTOCOL['BLUE_TEAM'])
+            sockets.append(socket.create_connection(('127.0.0.1',port),timeout=2));resumed=Client(sockets[-1]);resumed.until('RESUME_SESSION');resumed.send('RESUME_SESSION',token)
+            self.assertEqual(struct.unpack('=i',resumed.until('SET_TEAM')[0])[0],PROTOCOL['RED_TEAM'])
+            self.assertEqual(self.identify(resumed,'Reserved player',PROTOCOL['RED_TEAM']),PROTOCOL['RED_TEAM'])
+            sockets.append(socket.create_connection(('127.0.0.1',port),timeout=2));replay=Client(sockets[-1]);replay.send('RESUME_SESSION',token)
+            self.assertEqual(self.identify(replay,'Token replay',PROTOCOL['RED_TEAM']),0)
 
     def test_explicit_spectator_choice_releases_team_and_clears_ready(self):
         with self.match() as (_,port,sockets):

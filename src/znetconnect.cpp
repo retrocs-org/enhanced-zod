@@ -1,4 +1,5 @@
 #include "znetconnect.h"
+#include "zbuild.h"
 #include "client_socket.h"
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -110,6 +111,15 @@ std::shared_ptr<ZConnectedSocket> ZNetConnect(const std::string &host, int port,
     return {};
 }
 
+bool ZNetCheckCompatibility(const std::string &advertised,std::string &error) {
+    auto split=advertised.find('|'),end=advertised.find('|',split==std::string::npos?0:split+1);
+    if(split==std::string::npos||end==std::string::npos||advertised.substr(0,split)!="1") {error="Protocol mismatch. Update the game and server together.";return false;}
+    auto hash=advertised.substr(split+1,end-split-1);
+    if(hash.size()!=64||hash.find_first_not_of("0123456789abcdef")!=std::string::npos||advertised.size()>256){error="Invalid server compatibility response.";return false;}
+    auto build=advertised.substr(end+1);if(build.empty()||std::any_of(build.begin(),build.end(),[](unsigned char c){return c<32||c>126;})){error="Invalid server build identity.";return false;}
+    if(hash!=ZBuild_SourceHash()){error="Build mismatch: server "+advertised.substr(end+1)+", your game "+ZBuild_ID()+". Install matching releases; platform and Debug/Release may differ.";return false;}
+    return true;
+}
 // A disposable preflight leaves the player's current session untouched on failure.
 bool ZNetCheckVersion(const std::string &host,int port,std::string &error,int milliseconds,std::string *serverVersion,std::string *mapHash) {
     auto started=std::chrono::steady_clock::now();
@@ -122,12 +132,13 @@ bool ZNetCheckVersion(const std::string &host,int port,std::string &error,int mi
         error="Could not request server version. Check the server address and port.";return false;
     }
     auto deadline=started+std::chrono::milliseconds(milliseconds);
-    bool received=false,compatible=false,closed=false;
-    while(!received && !closed && std::chrono::steady_clock::now()<deadline) {
+    bool received=false,compatible=false,closed=false,buildReceived=false,buildCompatible=false;
+    while((!received||!buildReceived) && !closed && std::chrono::steady_clock::now()<deadline) {
         probe.Process();
         for(auto *event:events) {
             if(event->event_type==OTHER_EVENT && event->event_number==DISCONNECT_EVENT)closed=true;
             if(mapHash&&event->event_type==TCP_EVENT&&event->event_number==MAP_FINGERPRINT&&event->size==65&&event->data&&event->data[64]==0){std::string hash(event->data,64);if(hash.find_first_not_of("0123456789abcdef")==std::string::npos)*mapHash=hash;}
+            if(event->event_type==TCP_EVENT&&event->event_number==BUILD_COMPATIBILITY){buildReceived=true;if(event->data&&event->size>0&&event->size<=257&&event->data[event->size-1]==0&&!memchr(event->data,0,event->size-1))buildCompatible=ZNetCheckCompatibility(std::string(event->data,event->size-1),error);else error="Invalid server compatibility response.";}
             if(event->event_type==TCP_EVENT && event->event_number==GIVE_VERSION) {
                 received=true;
                 if(event->size!=sizeof(version_packet) || !event->data || !memchr(event->data,0,sizeof(version_packet)))
@@ -141,8 +152,11 @@ bool ZNetCheckVersion(const std::string &host,int port,std::string &error,int mi
             delete event;
         }
         events.clear();
-        if(!received && !closed)std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        if(received&&!compatible)break;
+        if(buildReceived&&!buildCompatible)break;
+        if((!received||!buildReceived) && !closed)std::this_thread::sleep_for(std::chrono::milliseconds(2));
     }
     if(!received)error=closed?"Server closed the version check. Check its game port.":"Server version check timed out. Check the game port and firewall.";
-    return compatible;
+    if(received&&compatible&&!buildReceived)error="Server lacks build compatibility checks. Update this server before joining.";
+    return compatible&&buildReceived&&buildCompatible;
 }

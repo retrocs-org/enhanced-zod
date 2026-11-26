@@ -1,4 +1,5 @@
 #include "zserver.h"
+#include "zbuild.h"
 #include "zcampaign.h"
 #include "packet_io.h"
 #include "zpath_debug.h"
@@ -55,6 +56,7 @@ void ZServer::SetupEHandler()
 	ehandler.AddFunction(TCP_EVENT, REQUEST_VERSION, request_version_event);
     ehandler.AddFunction(TCP_EVENT,CLOUD_MODERATE,cloud_moderate_event);
     ehandler.AddFunction(TCP_EVENT,STATE_SYNC_REPLY,state_sync_reply_event);
+    ehandler.AddFunction(TCP_EVENT,RESUME_SESSION,resume_session_event);
 	ehandler.AddFunction(TCP_EVENT, CONTINUE_AFTER_END, continue_after_end_event);	//#120
 
 	ehandler.AddFunction(OTHER_EVENT, CONNECT_EVENT, connect_event);
@@ -112,6 +114,7 @@ void ZServer::disconnect_event(ZServer *p, char *data, int size, int player)
 		return;
 	}
 
+    p->ReserveCloudSlot(player);
 	//logout player
 	p->LogoutPlayer(player, false);
 
@@ -1315,5 +1318,7 @@ void ZServer::request_version_event(ZServer *p, char *data, int size, int player
 {
  if(p->zmap.Loaded()){auto hash=p->MapFingerprint();p->server_socket.SendMessage(player,MAP_FINGERPRINT,hash.c_str(),65);}
 
+    std::string compatibility="1|"+ZBuild_SourceHash()+"|"+ZBuild_ID();
+    p->server_socket.SendMessage(player,BUILD_COMPATIBILITY,compatibility.c_str(),compatibility.size()+1);
 	p->RelayVersion(player);
 }

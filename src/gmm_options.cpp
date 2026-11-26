@@ -215,7 +215,7 @@ void GMMOptions::HandleWidgetEvent(int event_type, ZGMMWidget *event_widget)
         if(event_widget==&subtitle_size_button){zod_subtitle_percent=zod_subtitle_percent>=200?75:min(200,zod_subtitle_percent+25);ZPrefs_Save();return;}
         if(event_widget==&subtitle_bg_button){zod_subtitle_background=!zod_subtitle_background;ZPrefs_Save();return;}
         if(event_widget==&profile_button){ZPerf_Enable(!ZPerf_Enabled());return;}
-        if(event_widget==&diagnostics_button){string path;diagnostics_button.SetText(ZAsset_ExportDiagnostics(path,"idle")?"Report saved in profile":"Could not save report");return;}
+        if(event_widget==&diagnostics_button){gmm_flags.review_diagnostics=true;return;}
         if(event_widget==&defaults_button){ZPrefs_ResetCategory(category==4?5:category==5?4:category);ZVideo_SetFullscreen(zod_fullscreen);ZVideo_SetGamma(zod_gamma);ZVideo_SetPictureMode(zod_picture_mode);ZAudio_ApplyVolumes();if(category==1)gmm_flags.set_music=true;if(category==2){gmm_flags.set_game_speed=true;gmm_flags.set_game_speed_value=1;}Reflow();return;}
 
         for(int i=0;i<7;++i) if(event_widget==&category_button[i]) { category=i;focus=0;Reflow();return; }

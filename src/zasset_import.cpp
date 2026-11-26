@@ -4,6 +4,8 @@
 #include "zsdl.h"
 #include "zmap.h"
 #include <fstream>
+#include <sstream>
+#include "zcontent.h"
 #include <vector>
 #include <algorithm>
 #include <cctype>
@@ -59,11 +61,8 @@ std::vector<ZAssetCheck> ZAsset_CheckContent() {
 bool ZAsset_RuntimeReady() {for(const auto &check:ZAsset_CheckContent())if(check.present!=check.total)return false;return true;}
 namespace {std::mutex diagnosticMutex;std::vector<std::pair<Uint64,ZDiagnosticEvent>> diagnosticEvents;}
 void ZAsset_RecordDiagnostic(ZDiagnosticEvent event){std::lock_guard<std::mutex> lock(diagnosticMutex);if(!diagnosticEvents.empty()&&diagnosticEvents.back().second==event)return;if(diagnosticEvents.size()==16)diagnosticEvents.erase(diagnosticEvents.begin());diagnosticEvents.push_back({SDL_GetTicks(),event});}
-bool ZAsset_ExportDiagnostics(std::string &path,const std::string &phase) {
-    const std::string folder=ZAsset_Profile()+"diagnostics";
-    if(!SDL_CreateDirectory(folder.c_str()))return false;
-    path=folder+"/report-"+std::to_string(SDL_GetTicksNS())+".txt";
-    std::ofstream out(path+".tmp");
+std::string ZAsset_DiagnosticPreview(const std::string &phase) {
+    std::ostringstream out;
 #ifndef ZOD_VERSION
 #define ZOD_VERSION "development"
 #endif
@@ -78,9 +77,30 @@ bool ZAsset_ExportDiagnostics(std::string &path,const std::string &phase) {
     out<<"Import status: "<<(std::find(phases.begin(),phases.end(),phase)!=phases.end()?phase:"unknown")<<"\n";
     out<<"Recent import error: "<<(phase=="error"?"import_failed":"none reported")<<"\n";
     for(const auto &check:ZAsset_CheckContent())out<<check.category<<": "<<check.present<<"/"<<check.total<<" required samples present\n";
-    {std::lock_guard<std::mutex> lock(diagnosticMutex);for(const auto &entry:diagnosticEvents){const char *code=entry.second==ZDiagnosticEvent::ImportFailed?"import_failed":entry.second==ZDiagnosticEvent::DeploymentFailed?"deployment_failed":"video_failed";out<<"Event at "<<entry.first<<" ms: "<<code<<"\n";}}
+    {std::lock_guard<std::mutex> lock(diagnosticMutex);for(const auto &entry:diagnosticEvents){const char *code=entry.second==ZDiagnosticEvent::ImportFailed?"import_failed":entry.second==ZDiagnosticEvent::DeploymentFailed?"deployment_failed":entry.second==ZDiagnosticEvent::Desync?"desync_detected":entry.second==ZDiagnosticEvent::ConnectionLost?"connection_lost":"video_failed";out<<"Event at "<<entry.first<<" ms: "<<code<<"\n";}}
     out<<ZPerf_Report()<<ZPerf_ServerReport(ZAsset_Profile()+"diagnostics/server-performance.txt");
-    out<<"Report excludes personal paths, credentials and raw logs.\n";out.close();
+    // Desync reports are allowlisted, bounded and re-parsed; never copy arbitrary files or raw logs.
+    int count=0;char **files=SDL_GlobDirectory((ZAsset_Profile()+"diagnostics").c_str(),"desync-*.txt",0,&count);
+    std::vector<std::string> names;for(int i=0;files&&i<count;++i)names.push_back(files[i]);SDL_free(files);std::sort(names.rbegin(),names.rend());
+    int included=0;for(const auto &name:names){
+        if(included>=3)break;SDL_PathInfo info;auto file=ZAsset_Profile()+"diagnostics/"+name;if(!SDL_GetPathInfo(file.c_str(),&info)||info.size>8192)continue;
+        std::ifstream input(file);std::string line;int lines=0,checks=0;bool any=false;std::ostringstream detail;
+        while(lines++<16&&std::getline(input,line)){
+            if(line.size()==77&&line.compare(0,13,"Map SHA-256: ")==0){auto hash=line.substr(13);if(hash.find_first_not_of("0123456789abcdef")==std::string::npos){detail<<"Recent desync map SHA-256: "<<hash<<"\n";any=true;}continue;}
+            std::istringstream row(line);std::string sequence,expected,actual,extra;
+            if(checks<8&&(row>>sequence>>expected>>actual)&&!(row>>extra)&&!sequence.empty()&&sequence.size()<=15&&sequence.find_first_not_of("0123456789")==std::string::npos&&expected.size()==73&&expected.compare(0,9,"expected=")==0&&expected.substr(9).find_first_not_of("0123456789abcdef")==std::string::npos&&actual.size()==71&&actual.compare(0,7,"actual=")==0&&actual.substr(7).find_first_not_of("0123456789abcdef")==std::string::npos){detail<<"Desync state check "<<sequence<<": "<<expected<<" "<<actual<<"\n";++checks;}
+        }
+        if(any){out<<detail.str();++included;}
+    }
+    out<<"Report excludes personal paths, credentials, chat and raw logs. No automatic upload.\n";
+    return out.str();
+}
+bool ZAsset_ExportDiagnosticBundle(const std::string &preview,std::string &path){
+    if(preview.empty()||preview.size()>65536)return false;auto folder=ZAsset_Profile()+"diagnostics";if(!SDL_CreateDirectory(folder.c_str()))return false;path=folder+"/support-"+std::to_string(SDL_GetTicksNS())+".zip";std::string error;return ZContent_WriteBundle({{"report.txt",std::vector<unsigned char>(preview.begin(),preview.end())}},path,error);
+}
+bool ZAsset_ExportDiagnostics(std::string &path,const std::string &phase) {
+    const std::string folder=ZAsset_Profile()+"diagnostics";if(!SDL_CreateDirectory(folder.c_str()))return false;
+    path=folder+"/report-"+std::to_string(SDL_GetTicksNS())+".txt";std::ofstream out(path+".tmp");out<<ZAsset_DiagnosticPreview(phase);out.close();
     if(!out||!SDL_RenamePath((path+".tmp").c_str(),path.c_str())){SDL_RemovePath((path+".tmp").c_str());return false;}return true;
 }
 ZAssetImport::ZAssetImport():phase("idle"),message("Select your original Z DOS disc: ISO or BIN/CUE.") {}

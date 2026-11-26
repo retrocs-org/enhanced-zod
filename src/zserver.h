@@ -40,6 +40,12 @@ class ZServer : public ZCore
         void FreezeCloudRoster();
         std::map<int,ZCloudPeer> cloud_peers;
         std::map<std::string,ZCloudRoster> cloud_roster;
+        struct RejoinSlot {int team;double until;std::string round;};
+        std::map<std::string,RejoinSlot> rejoin_slots;
+        std::map<int,std::string> private_rejoin_tokens;std::set<int> rejoin_opt_out;
+        static void resume_session_event(ZServer*,char*,int,int);
+        void ReserveCloudSlot(int player);
+        void RestoreCloudSlot(int player,const std::string &account);
         ZMPAsync<ZCloudClaim> cloud_task;
         ZMPAsync<ZCloudRoles> cloud_roles_task;long long cloud_maintenance_notice=0;
     ZCloudRoles cloud_roles;

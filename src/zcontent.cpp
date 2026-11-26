@@ -59,9 +59,13 @@ vector<ZContentIssue> ZContent_ValidateCampaign(const ZCampaign &campaign,bool d
  vector<ZContentIssue> out;ZCampaign parsed;string error;
  if(!ZCampaign_Load(campaign.root+"/campaign.ini",parsed,error)){out.push_back({true,error});return out;}
  vector<bool> reached(parsed.missions.size(),false);vector<int> pending{0};bool canFinish=false;
- while(!pending.empty()){int i=pending.back();pending.pop_back();if(i<0||i>=(int)reached.size()||reached[i])continue;reached[i]=true;const auto &m=parsed.missions[i];for(int branch:{m.nextWin,m.nextLoss}){if(branch==-2){canFinish=true;continue;}int next=branch==-1?i+1:branch;if(next==(int)reached.size())canFinish=true;else pending.push_back(next);}}
+ while(!pending.empty()){int i=pending.back();pending.pop_back();if(i<0||i>=(int)reached.size()||reached[i])continue;reached[i]=true;const auto &m=parsed.missions[i];for(int outcome=0;outcome<2;++outcome){int branch=outcome?m.nextLoss:m.nextWin;if(branch==-2){canFinish=true;continue;}int next=branch==-1?(outcome?i:i+1):branch;if(next==(int)reached.size())canFinish=true;else pending.push_back(next);}}
  for(size_t i=0;i<reached.size();++i)if(!reached[i])out.push_back({false,"Mission "+to_string(i+1)+": unreachable from the opening mission; check win/loss links"});
  if(!canFinish)out.push_back({false,"Campaign has no reachable ending; all mission branches loop"});
+ vector<bool> finishes(parsed.missions.size(),false);bool changed=true;
+ while(changed){changed=false;for(size_t i=0;i<parsed.missions.size();++i)if(!finishes[i]){const auto &m=parsed.missions[i];for(int outcome=0;outcome<2;++outcome){int branch=outcome?m.nextLoss:m.nextWin;int next=branch==-1?(outcome?(int)i:(int)i+1):branch;if(branch==-2||next==(int)finishes.size()||(next>=0&&next<(int)finishes.size()&&finishes[next])){finishes[i]=true;changed=true;break;}}}}
+ for(size_t i=0;i<finishes.size();++i)if(reached[i]&&!finishes[i])out.push_back({distribution,"Mission "+to_string(i+1)+": reachable branch cannot reach a campaign ending; fix the win/loss loop"});
+ if(!parsed.cover.empty()){string cover;if(!ZCampaign_SafeAsset(parsed.root,parsed.cover,cover))out.push_back({distribution,"Campaign cover image is missing"});}
  set<string> usedMaps;
  for(size_t i=0;i<parsed.missions.size();++i){auto &m=parsed.missions[i];string path;ZMap map;
   const string prefix="Mission "+to_string(i+1)+": ";

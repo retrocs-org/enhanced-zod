@@ -1,3 +1,10 @@
+## Integrated dedicated-server dashboard (unreleased)
+
+- Bring ownership, delegated administrators/moderators, health, update status, player moderation, presets and audit history into the server console.
+- Keep existing owner-only role changes and CSRF validation; provide clear role labels and dashboard section links.
+- Improve focus on text areas and summaries, skip-to-content targeting, long build-ID wrapping and reduced-motion navigation.
+- Uses existing schema 007; no new database migration. Install matching native client/server versions for the new build compatibility and rejoin handshake.
+
 ## Reliability tools and sharing (unreleased)
 
 - Preview, upload/import and download portable named server presets, matching installed maps by SHA-256 and enforcing role/engine compatibility.

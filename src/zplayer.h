@@ -243,7 +243,8 @@ class ZPlayer : public ZClient
 		void RecenterLobby();
         int lobby_countdown=-1;
         bool lobby_pause_confirmed=false;
-        std::string cloud_disconnect_reason,cloud_join_ticket,cloud_portal_id;
+        std::string cloud_disconnect_reason,cloud_join_ticket,cloud_portal_id,private_rejoin_token;
+        static void resume_session_event(ZPlayer*,char*,int,int);
         bool managed_dedicated=false;
         static void cloud_server_role_event(ZPlayer *p,char *data,int size,int dummy);
         static void cloud_required_event(ZPlayer *p,char *data,int size,int dummy);

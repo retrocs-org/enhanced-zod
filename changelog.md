@@ -10,6 +10,17 @@ are retained below; new website changes belong in that separate log.
 
 ## Unreleased
 
+### Rejoining, recovery and release rehearsal
+
+- Reserve disconnected multiplayer teams for 90 seconds within the same round: private games use one-use session tokens; public games require fresh cloud approval for the same account.
+- Check protocol and native source identity before connecting, independently of OS and Debug/Release configuration. Continue verifying downloaded maps by SHA-256.
+- Keep a previous valid editor autosave and recover from it if the latest snapshot is corrupt. Add Ctrl/Cmd+Shift+Z redo and keyboard access to editor text fields.
+- Detect reachable campaign branches trapped in loops, respect default loss retries, and reject missing distribution cover images.
+- Add reverse focus traversal and Space activation to frontend controls, and share an opt-in diagnostic preview/ZIP export between main-menu and in-game settings.
+- Isolate preferences when ZOD_PROFILE_DIR is set; preserve the legacy default profile behavior.
+- Rehearse package replacement and rollback with a temporary persistent profile and machine-readable evidence. Explicitly distinguish startup/file preservation from save-format gameplay compatibility.
+
+
 ### Build identity and multiplayer reliability
 
 - Identify builds by commit, source fingerprint, compiler/configuration and platform; expose JSON build info and macOS bundle build metadata.

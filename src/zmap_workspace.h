@@ -23,7 +23,7 @@ public:
     void FinishCampaignTest();
     void ResumeAfterTest(){FinishCampaignTest();if(!playPath.empty())SDL_RemovePath(playPath.c_str());playPath.clear();closed=false;down=painting=clicked=false;message="Returned from playtest. Unsaved edits and history preserved.";}
     void Browse() {browser=true;}
-    void Welcome() {dirty=false;SDL_PathInfo info;recoveryPrompt=SDL_GetPathInfo((ZAsset_Profile()+"editor-recovery.map").c_str(),&info);message="File > New / Open / Recover autosave. Ctrl+C/V copies selected objects; Delete removes.";}
+    void Welcome() {dirty=false;SDL_PathInfo info;recoveryPrompt=SDL_GetPathInfo((ZAsset_Profile()+"editor-recovery.map").c_str(),&info)||SDL_GetPathInfo((ZAsset_Profile()+"editor-recovery.previous.map").c_str(),&info);message="File > New / Open / Recover autosave. Ctrl+C/V copies selected objects; Delete removes.";}
     bool Render(); // true when the workspace closes
 private:
     friend struct ZFrontEndRegression;

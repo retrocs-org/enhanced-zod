@@ -10,6 +10,34 @@ std::string ZCloud_JSON(const std::string &s) {
     std::string out="\""; const char *hex="0123456789abcdef";
     for(unsigned char c:s) { if(c=='"'||c=='\\') {out+='\\';out+=c;} else if(c<32) {out+="\\u00";out+=hex[c>>4];out+=hex[c&15];} else out+=c; } return out+'"';
 }
+void ZServer::ReserveCloudSlot(int player) {
+    for(auto it=rejoin_slots.begin();it!=rejoin_slots.end();)if(it->second.until<current_time()||it->second.round!=cloud_round)it=rejoin_slots.erase(it);else ++it;
+    if(player<0||player>=(int)player_info.size())return;
+    if(rejoin_opt_out.erase(player_info[player].p_id)){private_rejoin_tokens.erase(player_info[player].p_id);return;}
+    if(!cloud_required){auto token=private_rejoin_tokens.find(player_info[player].p_id);if(token!=private_rejoin_tokens.end()){if(allow_remote_clients&&game_on&&player_info[player].team>NULL_TEAM&&player_info[player].mode==PLAYER_MODE&&rejoin_slots.size()<64)rejoin_slots["private:"+token->second]={player_info[player].team,current_time()+90,cloud_round};private_rejoin_tokens.erase(token);}return;}
+    if(!lan_match_started||!game_on)return;
+    auto peer=cloud_peers.find(player_info[player].p_id);
+    if(peer==cloud_peers.end()||peer->second.account.empty()||player_info[player].team<=NULL_TEAM||player_info[player].bot_logged_in)return;
+    auto ban=cloud_roles.bans.find(peer->second.account);
+    if(ban!=cloud_roles.bans.end()&&ban->second.expires>std::time(nullptr))return;
+    if(rejoin_slots.size()<64)rejoin_slots[peer->second.account]={player_info[player].team,current_time()+90,cloud_round};
+}
+void ZServer::resume_session_event(ZServer *p,char *data,int size,int player){
+    if(player<0||player>=(int)p->player_info.size())return;
+    if(size==0){p->rejoin_opt_out.insert(p->player_info[player].p_id);return;}
+    if(p->cloud_required||!data||size!=65||data[64]!=0)return;
+    std::string token(data,64);if(token.find_first_not_of("0123456789abcdef")!=std::string::npos)return;
+    p->RestoreCloudSlot(player,"private:"+token);
+}
+void ZServer::RestoreCloudSlot(int player,const std::string &account) {
+    if(player<0||player>=(int)player_info.size())return;
+    if(cloud_required){auto peer=cloud_peers.find(player_info[player].p_id);if(peer==cloud_peers.end()||peer->second.account!=account)return;auto ban=cloud_roles.bans.find(account);if(ban!=cloud_roles.bans.end()&&ban->second.expires>std::time(nullptr)){rejoin_slots.erase(account);return;}}
+    auto found=rejoin_slots.find(account);if(found==rejoin_slots.end())return;
+    auto slot=found->second;rejoin_slots.erase(found);
+    if(slot.until<current_time()||slot.round!=cloud_round||!game_on){SendNews(player,"Your 90-second rejoin reservation expired or the round changed. Spectate until the next round.",255,190,80);return;}
+    for(size_t i=0;i<player_info.size();++i)if((int)i!=player&&player_info[i].team==slot.team&&player_info[i].mode==PLAYER_MODE){SendNews(player,"Your former team is occupied. You are spectating.",255,190,80);return;}
+    ChangePlayerTeam(player,slot.team);SendNews(player,"Rejoined your reserved team. The current world is downloading; previous orders continue on the server.",255,190,80);
+}
 bool ZServer::CloudAuthorized(int player) {
     if(player<0 || player>=(int)player_info.size()) return false;
     if(player_info[player].bot_logged_in) return true;
@@ -17,6 +45,8 @@ bool ZServer::CloudAuthorized(int player) {
 }
 void ZServer::CloudConnected(int player) {
     if(!cloud_required) {
+        if(allow_remote_clients&&private_rejoin_tokens.size()<64){try{std::random_device random;std::ostringstream token;for(int n=0;n<8;++n)token<<std::hex<<std::setw(8)<<std::setfill('0')<<(std::uint32_t)random();private_rejoin_tokens[player_info[player].p_id]=token.str();server_socket.SendMessage(player,RESUME_SESSION,token.str().c_str(),65);}catch(...){SendNews(player,"Reconnect reservation unavailable; join again manually if disconnected.",255,190,80);}}
+
         if(getenv("ZOD_PERSISTENT_SERVER") && std::string(getenv("ZOD_PERSISTENT_SERVER"))=="1") {
             int mode=0;server_socket.SendMessage(player,CLOUD_REQUIRED,(char*)&mode,sizeof(mode));
         }
@@ -95,6 +125,7 @@ void ZServer::cloud_ticket_event(ZServer *p,char *data,int size,int player) {
 void ZServer::CheckCloud() {
     if(!cloud_required) return;
     RefreshCloudRoles();ApplyCloudOperations();
+    for(auto it=rejoin_slots.begin();it!=rejoin_slots.end();)if(it->second.until<current_time()||it->second.round!=cloud_round)it=rejoin_slots.erase(it);else ++it;
     ZCloudClaim claim;
     if(cloud_task.Poll(claim)) for(size_t i=0;i<player_info.size();++i) if(player_info[i].p_id==claim.peer) {
         bool duplicate=false;for(const auto &v:cloud_peers) if(v.first!=claim.peer && !claim.account.empty() && v.second.account==claim.account) duplicate=true;
@@ -102,6 +133,7 @@ void ZServer::CheckCloud() {
         if(success) {
             auto &peer=cloud_peers[claim.peer];peer.account=claim.account;peer.grant=claim.grant;
             player_info[i].name=claim.name; RelayLPlayerName((int)i);
+            RestoreCloudSlot((int)i,claim.account);
         }
         if(!success){auto reason=duplicate?std::string("This account already has a connection to this server."):claim.error;if(!reason.empty())server_socket.SendMessage((int)i,CLOUD_NOTICE,reason.c_str(),reason.size()+1);}
         server_socket.SendMessage((int)i,CLOUD_RESULT,(char*)&success,sizeof(success));
@@ -133,7 +165,7 @@ void ZServer::FreezeCloudRoster() {
     }
 }
 void ZServer::ResetCloudMatch() {
-    map_fingerprint.clear();cloud_round=std::to_string(SDL_GetTicksNS());cloud_applied_revision=0;cloud_voting_until=0;cloud_roles.winner.clear();cloud_roles.winnerRound.clear();
+    rejoin_slots.clear();map_fingerprint.clear();cloud_round=std::to_string(SDL_GetTicksNS());cloud_applied_revision=0;cloud_voting_until=0;cloud_roles.winner.clear();cloud_roles.winnerRound.clear();
     cloud_roster_fixed=false;cloud_reported=false;cloud_roster.clear();cloud_deaths.clear();cloud_match_start=ztime.ztime;
     for(int t=0;t<MAX_TEAM_TYPES;++t) cloud_kills[t]=cloud_lost[t]=cloud_captures[t]=0;
 }

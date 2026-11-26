@@ -517,6 +517,7 @@ void ZFrontEnd::LoadProgress()
 	if(progress_unlocked >= (int)levels.size()) progress_unlocked = (int)levels.size() - 1;
 }
 
+void ZFrontEnd::ReviewDiagnostics(bool inGame){Init();diagnostic_return_screen=screen;diagnostic_return_game=inGame;diagnostic_preview=ZAsset_DiagnosticPreview(asset_import.phase);diagnostic_message.clear();diagnostic_scroll=0;focus_button=-1;focus_activate=false;visible=true;screen=SCR_DIAGNOSTICS;}
 void ZFrontEnd::ShowImport(bool required)
 {
     Show();
@@ -645,8 +646,8 @@ void ZFrontEnd::PlayLevelResult(bool won)
 
 void ZFrontEnd::HandleEvent(const SDL_Event &ev)
 {
-    if(ev.type==SDL_EVENT_KEY_DOWN&&ev.key.key==SDLK_TAB&&!editing_name&&!editing_mapname){focus_button=(focus_button+1)%max(1,focus_count);focus_activate=false;if(screen!=SCR_EDITOR)return;}
-    if(ev.type==SDL_EVENT_KEY_DOWN&&(ev.key.key==SDLK_RETURN||ev.key.key==SDLK_KP_ENTER)&&focus_button>=0&&screen!=SCR_EDITOR&&!editing_name&&!editing_mapname&&!(screen==SCR_KEYS&&keys_waiting>=0)){focus_activate=true;return;}
+    if(ev.type==SDL_EVENT_KEY_DOWN&&ev.key.key==SDLK_TAB&&!editing_name&&!editing_mapname){int count=max(1,focus_count),step=(ev.key.mod&SDL_KMOD_SHIFT)?-1:1;if(focus_button<0&&step<0)focus_button=0;focus_button=(focus_button+step+count)%count;focus_activate=false;if(screen!=SCR_EDITOR)return;}
+    if(ev.type==SDL_EVENT_KEY_DOWN&&(ev.key.key==SDLK_RETURN||ev.key.key==SDLK_KP_ENTER||ev.key.key==SDLK_SPACE)&&focus_button>=0&&screen!=SCR_EDITOR&&!editing_name&&!editing_mapname&&!(screen==SCR_KEYS&&keys_waiting>=0)){focus_activate=true;return;}
     if(screen==SCR_EDITOR && workspace) {workspace->Event(ev);return;}
 	switch(ev.type)
 	{
@@ -1492,6 +1493,7 @@ void ZFrontEnd::Render()
     case SCR_ALERTS:RenderAlerts();break;
     case SCR_MULTIPLAYER_GUIDE:RenderMultiplayerGuide();break;
     case SCR_BUILD_INFO:RenderBuildInfo();break;
+    case SCR_DIAGNOSTICS:RenderDiagnostics();break;
     case SCR_EDITOR: if(workspace && workspace->Render()) {
         string play=workspace->PlayPath();editor_testing=!play.empty();if(!editor_testing)workspace.reset();ZVideo_SetFullscreen(editor_fullscreen_previous);screen=SCR_MAIN;ScanCustomMaps(true);
         if(editor_testing&&!workspace->TestCampaign().root.empty()){editor_previous_campaign=selected_campaign;editor_previous_levels=levels;editor_previous_level=current_level;editor_previous_current=progress_current;editor_previous_unlocked=progress_unlocked;selected_campaign=workspace->TestCampaign();levels.clear();for(const auto &mission:selected_campaign.missions){LevelInfo info;info.title=mission.title;info.base=mission.map;ZCampaign_SafeAsset(selected_campaign.root,mission.map,info.file);ZMap map;info.planet=DESERT;info.w=info.h=0;if(map.Read(info.file.c_str())){info.planet=map.GetMapBasics().terrain_type;info.w=map.GetMapBasics().width;info.h=map.GetMapBasics().height;}levels.push_back(info);}StartLevel(workspace->TestMission(),true);break;}
@@ -1693,7 +1695,7 @@ void ZFrontEnd::RenderSettings(bool interactive)
         DrawLabel(font_ui_medium,17,"Presets change related settings together; individual options remain editable.",268,600,C_STEEL_DIM);
     }
     if(settings_category==4&&Button("Multiplayer guide",268,554,354,40,interactive)){guide_return=screen;screen=SCR_MULTIPLAYER_GUIDE;multiplayer_guide_step=0;}
-    if(settings_category==4&&Button("Export diagnostics",650,554,358,40,interactive)){string path;bool exported=ZAsset_ExportDiagnostics(path,asset_import.phase);screen=SCR_IMPORT;import_return_screen=SCR_SETTINGS;asset_import.message=!exported?"Could not export diagnostics.":"Diagnostics saved in your profile diagnostics folder. No personal paths or raw logs included.";}
+    if(settings_category==4&&Button("Export diagnostics",650,554,358,40,interactive)){ReviewDiagnostics();}
     if(settings_category==4){DrawLabel(font_ui,23,"Video volume",268,398,C_STEEL);if(Button("-",650,390,40,40,interactive)){zod_video_volume=max(0,zod_video_volume-5);ZPrefs_Save();}DrawLabel(font_ui,22,to_string(zod_video_volume)+"%",848,398,C_STEEL_HI,1);if(Button("+",968,390,40,40,interactive)){zod_video_volume=min(100,zod_video_volume+5);ZPrefs_Save();}if(Button(zod_video_subtitles?"Subtitles: On":"Subtitles: Off",650,448,358,40,interactive)){zod_video_subtitles=!zod_video_subtitles;ZPrefs_Save();}}
     if(settings_category==0){
         DrawLabel(font_ui_medium,16,"LIVE FILTER / MOVEMENT PREVIEW",548,558,C_STEEL_DIM);
@@ -2680,7 +2682,7 @@ void ZFrontEnd::RenderImport()
     auto checks=ZAsset_CheckContent();
     for(size_t i=0;i<checks.size();++i){const auto &check=checks[i];DrawLabel(font_ui_medium,16,check.category+": "+to_string(check.present)+"/"+to_string(check.total),x+32+(i%3)*255,y+405+(i/3)*24,check.present==check.total?C_STEEL:C_AMBER);}
     if(!asset_import.Busy()&&Button("Repair / reimport",x+32,y+340,210,32))asset_import.Choose(ZVideo_GetWindow());
-    if(!asset_import.Busy()&&Button("Export diagnostics",x+260,y+340,220,32)){string path;asset_import.message=ZAsset_ExportDiagnostics(path,asset_import.phase)?"Diagnostics saved in your profile diagnostics folder. Contains no personal paths or raw logs.":"Could not write diagnostics report.";}
+    if(!asset_import.Busy()&&Button("Export diagnostics",x+260,y+340,220,32)){ReviewDiagnostics();}
     if(!asset_import.Busy()&&Button("Open reports folder",x+500,y+340,260,32)){SDL_CreateDirectory((ZAsset_Profile()+"diagnostics").c_str());SDL_OpenURL(("file://"+ZAsset_Profile()+"diagnostics").c_str());}
     if(asset_import.Busy())DrawLabel(font_ui_medium,18,to_string(asset_import.percent)+"%",x+w-90,y+345,C_AMBER);
     if(asset_import.phase=="complete") {
@@ -2846,4 +2848,18 @@ void ZFrontEnd::RenderBuildInfo(){
  DrawLabel(font_ui_medium,18,"Based on Zod Engine by Michael Bok / Nighsoft. SDL3 foundation by fenio.",176,546,C_STEEL_DIM);
  if(Button("Copy build JSON",176,594,300,42))build_info_message=SDL_SetClipboardText(json.c_str())?"Build information copied":"Clipboard unavailable; use --build-info or export diagnostics";
  DrawLabel(font_ui_medium,16,build_info_message,176,650,C_AMBER);if(Button("Back",900,636,204,44)||kb_back){kb_back=false;screen=SCR_SETTINGS;}
+}
+
+void ZFrontEnd::RenderDiagnostics(){
+ DimScreen(190);DrawPanel(140,80,1000,650);DrawLabel(font_ui,27,"REVIEW SUPPORT DIAGNOSTICS",176,108,C_AMBER);
+ DrawLabel(font_ui_medium,18,"Review before exporting. Nothing is uploaded; share the ZIP only if you choose.",176,156,C_STEEL_DIM);
+ std::vector<std::string> lines;std::istringstream input(diagnostic_preview);std::string line;while(std::getline(input,line)){while(line.size()>92){lines.push_back(line.substr(0,92));line.erase(0,92);}lines.push_back(line);}
+ int last=std::max(0,(int)lines.size()-12);diagnostic_scroll=std::max(0,std::min(last,diagnostic_scroll));
+ for(int i=0;i<12&&i+diagnostic_scroll<(int)lines.size();++i)DrawLabel(font_ui_medium,17,lines[i+diagnostic_scroll],176,204+i*28,C_STEEL);
+ if(Button("Previous",176,558,200,40,diagnostic_scroll>0))diagnostic_scroll=std::max(0,diagnostic_scroll-12);
+ if(Button("Next",392,558,200,40,diagnostic_scroll<last))diagnostic_scroll=std::min(last,diagnostic_scroll+12);
+ if(Button("Export reviewed ZIP",176,620,350,44)){std::string path;diagnostic_message=ZAsset_ExportDiagnosticBundle(diagnostic_preview,path)?"Saved in profile diagnostics. Use Open folder to find the ZIP.":"Export failed. Check profile folder permissions.";}
+ if(Button("Open folder",548,620,260,44)){auto folder=ZAsset_Profile()+"diagnostics";if(!SDL_CreateDirectory(folder.c_str())||!SDL_OpenURL(("file://"+folder).c_str()))diagnostic_message="Could not open the diagnostics folder.";}
+ if(Button("Back",850,620,254,44)||kb_back){kb_back=false;screen=(Screen)diagnostic_return_screen;if(diagnostic_return_game){Hide();diagnostic_return_game=false;}diagnostic_preview.clear();}
+ DrawLabel(font_ui_medium,16,diagnostic_message,176,686,C_AMBER);
 }

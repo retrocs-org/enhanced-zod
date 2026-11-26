@@ -1,4 +1,5 @@
 #include "zprefs.h"
+#include "zasset_import.h"
 #include <algorithm>
 #include "constants.h"	//#75: DEFAULT_MAX_UNITS_PER_TEAM + UNIT_LIMIT bounds
 
@@ -95,6 +96,7 @@ extern bool zod_render_smoothing;
 
 static string prefs_path()
 {
+    const char *profile=getenv("ZOD_PROFILE_DIR");if(profile&&*profile){SDL_CreateDirectory(ZAsset_Profile().c_str());return ZAsset_Profile()+"preferences.ini";}
 	const char *home = getenv("HOME");
 	if(!home || !home[0]) home = getenv("USERPROFILE"); //Windows
 	if(!home || !home[0]) return ".zod_prefs";          //last resort: cwd

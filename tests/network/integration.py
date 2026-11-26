@@ -123,6 +123,13 @@ with tempfile.TemporaryDirectory(prefix='zod-cloud-') as tmp:
    assert any(row['id']=='test' and row['started'] for row in listing),'native browser did not read the public started state'
    self_version=subprocess.check_output([ENGINE,'--version'],text=True).strip()
    assert any(row['id']=='test' and row['version'] and row['version'] in self_version for row in api(base,'/api/servers')),'agent did not publish the engine version'
+   # A public rejoin requires a NEW portal ticket and restores the same account's reserved team.
+   alice.close();time.sleep(.2);reset_limits()
+   fresh=api(base,'/api/tickets',{'server':'test'},session)['ticket']
+   alice=Client(gp);alice.until('CLOUD_REQUIRED');alice.send('CLOUD_TICKET',fresh.encode()+b'\0')
+   verdict,rejoin_packets=alice.until('CLOUD_RESULT');assert struct.unpack('=i',verdict)[0]==1
+   assert any(k==P['SET_TEAM'] and struct.unpack('=i',body)[0]==P['RED_TEAM'] for k,body in rejoin_packets),'authenticated rejoin did not restore reserved team'
+   alice.send('SET_PLAYER_MODE',bytes([P['PLAYER_MODE']]))
    # Real online role changes: a connected administrator loses controls after removal.
    reset_limits()
    bob_ticket=api(base,'/api/tickets',{'server':'test'},bob_session)['ticket']

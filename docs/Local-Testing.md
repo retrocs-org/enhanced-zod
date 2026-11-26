@@ -53,3 +53,18 @@ alert sounds/history while replay state is rebuilt.
 Accessibility presets in both settings menus apply shared saved preferences for high
 contrast/team symbols, reduced motion, larger interface or readable subtitles. Presets
 apply their named settings without resetting unrelated preferences.
+
+## Support diagnostics
+
+Main-menu Settings > Media and in-game Options > Game both open a diagnostic
+review screen. Tab/Shift+Tab and Enter/Space work throughout the preview controls.
+Export reviewed ZIP writes exactly the reviewed report under the profile's
+`diagnostics` directory; nothing uploads automatically. The report includes build,
+renderer/content readiness, bounded fixed event codes, numeric performance data
+and up to three recent validated desync reports (map and expected/actual state
+hashes only). Credentials, chat, personal
+paths and raw logs are excluded. The existing `--diagnostics` text command remains
+available for headless hosts.
+
+For isolated tests, set `ZOD_PROFILE_DIR` explicitly; preferences then use
+`preferences.ini` under that profile instead of `$HOME/.zod_prefs`.

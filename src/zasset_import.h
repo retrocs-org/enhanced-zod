@@ -8,10 +8,12 @@
 
 // The profile is shared by source builds and installed applications.
 std::string ZAsset_Profile();
-enum class ZDiagnosticEvent { ImportFailed, DeploymentFailed, VideoFailed };
+enum class ZDiagnosticEvent { ImportFailed, DeploymentFailed, VideoFailed, Desync, ConnectionLost };
 void ZAsset_RecordDiagnostic(ZDiagnosticEvent event);
 struct ZAssetCheck { std::string category; int present=0,total=0; };
 std::vector<ZAssetCheck> ZAsset_CheckContent();
+std::string ZAsset_DiagnosticPreview(const std::string &phase);
+bool ZAsset_ExportDiagnosticBundle(const std::string &preview,std::string &path);
 bool ZAsset_ExportDiagnostics(std::string &path,const std::string &phase);
 bool ZAsset_RuntimeReady();
 std::string ZAsset_TerrainDirectory(int terrain);

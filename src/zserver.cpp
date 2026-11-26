@@ -3742,6 +3742,7 @@ team_type ZServer::AssignableFortTeam(int requested, int exclude_player)
 			team_taken[t] = true;
 	}
 
+    for(const auto &entry:rejoin_slots)if(entry.second.until>=current_time()&&entry.second.round==cloud_round&&entry.second.team>0&&entry.second.team<MAX_TEAM_TYPES)team_taken[entry.second.team]=true;
 	if(requested >= 1 && requested < MAX_TEAM_TYPES &&
 	   team_has_fort[requested] && !team_taken[requested] && !bot_thread[requested])
 		return (team_type)requested;
@@ -3778,6 +3779,7 @@ void ZServer::FillEmptySlotsWithBots()
 			team_taken[t] = true;
 	}
 
+    for(const auto &entry:rejoin_slots)if(entry.second.until>=current_time()&&entry.second.round==cloud_round&&entry.second.team>0&&entry.second.team<MAX_TEAM_TYPES)team_taken[entry.second.team]=true;
 	for(int t = 0; t < MAX_TEAM_TYPES; t++)
 		if(team_has_fort[t] && !team_taken[t] && !bot_thread[t])
 			StartBot(t);
