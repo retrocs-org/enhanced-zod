@@ -1,12 +1,14 @@
 #ifndef _ZGMM_LOBBY_H_
 #define _ZGMM_LOBBY_H_
 #include "zgui_main_menu_base.h"
+#include "zmpclient.h"
 
 class GMMLobby : public ZGuiMainMenuBase
 {
 public:
     GMMLobby();
     void Process() override;
+    void RenderContents(ZMap &map,SDL_Surface *dest) override;
     bool UnClick(int x,int y) override;
     void SetSession(const string &address, const string &map, const vector<int> &teams, bool loaded);
     void SetError(const string &message);
@@ -16,6 +18,9 @@ private:
     friend class ZLobbyRegression;
     GMMWLabel session_label, map_label, status_label, hint_label, error_label;
     GMMWList player_list;
+    GMMWButton auto_button,spectate_button;
+    ZSDL_Surface preview_image;string preview_name;bool preview_loaded=false;
+    GMMWLabel preview_label;
     GMMWButton team_button, bots_button, ready_button, leave_button;
     bool pause_confirmed=false, saw_paused=false, world_loaded=false, sticky_error=false;
     bool ready_pending=false, requested_ready=false;

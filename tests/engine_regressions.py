@@ -692,6 +692,16 @@ class EngineRegressions(unittest.TestCase):
             self.download_world(first)
             self.download_world(second)
 
+    def test_explicit_spectator_choice_releases_team_and_clears_ready(self):
+        with self.match() as (_,port,sockets):
+            first=Client(sockets[0]);self.assertEqual(self.identify(first,'Spectating',PROTOCOL['RED_TEAM']),PROTOCOL['RED_TEAM'])
+            first.send('SET_READY',struct.pack('=i',1));first.until('SET_LPLAYER_READY')
+            first.send('SET_TEAM',struct.pack('=i',-1));self.assertEqual(struct.unpack('=i',first.until('SET_TEAM')[0])[0],0)
+            first.send('REQUEST_PLAYER_LIST');first.send('REQUEST_PLAYER_ID');_,packets=first.until('GIVE_PLAYER_ID')
+            self.assertTrue(all(struct.unpack('=ii',body)[1]==0 for kind,body in packets if kind==PROTOCOL['SET_LPLAYER_READY']))
+            sockets.append(socket.create_connection(('127.0.0.1',port),timeout=2));second=Client(sockets[-1])
+            self.assertEqual(self.identify(second,'New player',PROTOCOL['RED_TEAM']),PROTOCOL['RED_TEAM'])
+
     def test_server_survives_malformed_peer(self):
         with self.match() as (process, port, sockets):
             healthy = Client(sockets[0])

@@ -142,4 +142,106 @@ class PHPBackend(unittest.TestCase):
         self.assertNotEqual(provision.returncode,0)
         self.assertIn('already assigned',provision.stderr)
         self.assertEqual(sql("SELECT key_hash FROM server_keys WHERE id='api-two'")[0]['key_hash'],hashlib.sha256(('c'*64).encode()).hexdigest())
+    def test_06_privacy_friends_blocking_recovery_and_sessions(self):
+        sql('DELETE FROM rate_limits')
+        users={}
+        for name in ['SocialAlpha','SocialBeta','SocialGamma']:
+            api('/api/accounts',{'username':name,'password':'a secure test password'},expected=201)
+            users[name]=api('/api/login',{'username':name,'password':'a secure test password'})['session']
+        a,b,c=[users[name] for name in users]
+        prefs={'visibility':'friends','allow_requests':True,'show_online':True}
+        api('/api/account/privacy',prefs,b)
+        self.assertEqual(request('/players/SocialBeta')[0],404)
+        api('/api/community',{'action':'request','username':'SocialBeta'},a)
+        self.assertEqual(api('/api/community',token=b)['friends'][0]['status'],'incoming')
+        api('/api/community',{'action':'accept','username':'SocialAlpha'},c,expected=404)
+        api('/api/community',{'action':'accept','username':'SocialAlpha'},b)
+        self.assertEqual(request('/players/SocialBeta',token=a)[0],200)
+        self.assertEqual(request('/players/SocialBeta',token=c)[0],404)
+        api('/api/servers/heartbeat',{'name':'Social server','host':'127.0.0.1','port':2137,'map':'social.map','players':0,'capacity':2,'started':False,'version':'0.7.0'},self.key)
+        api('/api/community',{'action':'invite','username':'SocialBeta','server':'api-one'},a)
+        self.assertEqual(api('/api/community',token=b)['invitations'][0]['server_id'],'api-one')
+        sql('DELETE FROM rate_limits')
+        api('/api/community',{'action':'block','username':'SocialAlpha'},b)
+        self.assertEqual(api('/api/community',token=a)['friends'],[])
+        self.assertEqual(api('/api/community',token=b)['invitations'],[])
+        api('/api/community',{'action':'invite','username':'SocialBeta','server':'api-one'},a,expected=403)
+        self.assertEqual(request('/players/SocialBeta',token=a)[0],404)
+        api('/api/account/recovery-codes',{'password':'incorrect password'},a,expected=401)
+        codes=api('/api/account/recovery-codes',{'password':'a secure test password'},a)['codes']
+        self.assertEqual(len(codes),8)
+        hashes=[row['code_hash'] for row in sql('SELECT code_hash FROM recovery_codes')]
+        self.assertNotIn(codes[0],hashes);self.assertIn(hashlib.sha256(codes[0].encode()).hexdigest(),hashes)
+        other=api('/api/login',{'username':'SocialAlpha','password':'a secure test password'})['session']
+        sessions=api('/api/account/sessions',token=a);target=next(row['id'] for row in sessions if not row['current'])
+        api('/api/account/sessions',{'id':target},b) # Cannot revoke another account's sessions.
+        api('/api/me',token=other)
+        api('/api/account/sessions',{'id':target},a);api('/api/me',token=other,expected=401)
+        api('/api/recover',{'username':'SocialAlpha','code':codes[0],'password':'a recovered test password'})
+        api('/api/me',token=a,expected=401)
+        api('/api/recover',{'username':'SocialAlpha','code':codes[0],'password':'another test password'},expected=401)
+        sql('DELETE FROM rate_limits')
+        recovered=api('/api/login',{'username':'SocialAlpha','password':'a recovered test password'})['session']
+        for path in ['/account','/community','/creations']:
+            self.assertEqual(request(path,token=recovered)[0],200)
+        # Private match records are removed from both the board and named recent winners.
+        api('/api/account/privacy',{'visibility':'private','allow_requests':False,'show_online':False},recovered)
+        self.assertEqual(request('/players/SocialAlpha')[0],404)
+
+    def test_07_creation_upload_preview_moderation_and_versions(self):
+        import io,zipfile,base64
+        sql('DELETE FROM rate_limits')
+        api('/api/accounts',{'username':'MapAuthor','password':'authored test password'},expected=201)
+        token=api('/api/login',{'username':'MapAuthor','password':'authored test password'})['session']
+        _,page,_=request('/creations',token=token);csrf=re.search(rb'name="csrf" value="([a-f0-9]+)"',page).group(1).decode()
+        # Use project-authored map bytes; never upload original game data in tests.
+        sys.path.insert(0,str(ROOT/'tests'));import source_fixtures
+        map_path=pathlib.Path(self.temp.name)/'community.map';source_fixtures.write_map(map_path)
+        image=base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1cAAAAASUVORK5CYII=')
+        def upload(filename,payload,project='',version='1.0.0',auth=None):
+            boundary='ZodCommunityBoundary'
+            parts=[]
+            values={'csrf':csrf,'project':project,'title':'Authored example','description':'Community fixture','version':version,'engine_min':'0.7.0','notes':'Version notes','rights':'yes'}
+            for key,value in values.items():parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{key}"\r\n\r\n{value}\r\n'.encode())
+            for key,name,data in [('creation',filename,payload),('screenshot','preview.png',image)]:parts.append(f'--{boundary}\r\nContent-Disposition: form-data; name="{key}"; filename="{name}"\r\nContent-Type: application/octet-stream\r\n\r\n'.encode()+data+b'\r\n')
+            parts.append(f'--{boundary}--\r\n'.encode())
+            return request('/creations/submit',token=auth or token,raw=b''.join(parts),headers={'Content-Type':'multipart/form-data; boundary='+boundary,'Cookie':'zod_csrf='+csrf})
+        status,body,_=upload('example.map',map_path.read_bytes());self.assertEqual(status,200,body)
+        self.assertIn(b'Pending moderator approval',body)
+        revision=sql('SELECT id,project_id FROM community_versions ORDER BY created_at DESC LIMIT 1')[0]
+        self.assertEqual(api('/api/creations'),[])
+        self.assertEqual(request('/creations/download/'+revision['id'])[0],404)
+        moderator=APP/'bin/community.php'
+        listing=json.loads(subprocess.check_output([PHP,str(moderator),'--list'],text=True));self.assertTrue(any(row['id']==revision['id'] for row in listing))
+        review=pathlib.Path(self.temp.name)/'moderation-review'
+        subprocess.run([PHP,str(moderator),'--id',revision['id'],'--export',str(review)],check=True,capture_output=True)
+        self.assertEqual((review/(revision['id']+'-example.map')).read_bytes(),map_path.read_bytes())
+        subprocess.run([PHP,str(moderator),'--id',revision['id'],'--approve'],check=True,capture_output=True)
+        subprocess.run([PHP,str(moderator),'--server','api-one','--region','Europe','--mode','Skirmish'],check=True,capture_output=True)
+        self.assertEqual(next(row for row in api('/api/servers') if row['id']=='api-one')['region'],'Europe')
+        rows=api('/api/creations');self.assertEqual(rows[0]['version'],'1.0.0')
+        self.assertEqual(request('/creations/download/'+revision['id'])[1],map_path.read_bytes())
+        self.assertEqual(request('/creations/image/'+revision['id'])[2]['Content-Type'],'image/png')
+        self.assertEqual(upload('example.map',map_path.read_bytes(),revision['project_id'],'1.1.0')[0],200)
+        api('/api/accounts',{'username':'OtherAuthor','password':'authored test password'},expected=201)
+        other=api('/api/login',{'username':'OtherAuthor','password':'authored test password'})['session']
+        self.assertEqual(upload('example.map',map_path.read_bytes(),revision['project_id'],'2.0.0',other)[0],403)
+        self.assertEqual(upload('broken.map',b'truncated')[0],400)
+        # Unsafe ZIP entry must fail before storing a new version.
+        data=io.BytesIO()
+        with zipfile.ZipFile(data,'w') as archive:archive.writestr('../escape.php','<?php');archive.writestr('campaign.ini','format=1\nmap=one.map\n')
+        self.assertEqual(upload('bad.zip',data.getvalue())[0],400)
+        self.assertEqual(len(sql('SELECT id FROM community_versions')),2)
+        valid=io.BytesIO()
+        with zipfile.ZipFile(valid,'w') as archive:
+            archive.writestr('campaign.ini','format=1\nid=authored-pack\ntitle=Authored pack\nversion=1.0.0\nengine_min=0.7.0\n[mission]\nmap=one.map\n')
+            archive.writestr('one.map',map_path.read_bytes())
+        self.assertEqual(upload('campaign.zip',valid.getvalue())[0],200)
+        self.assertEqual(len(sql('SELECT id FROM community_versions')),3)
+        for index in range(8):
+            sql("INSERT INTO community_versions(id,project_id,version,engine_min,notes,filename,sha256,manifest,archive,screenshot,screenshot_type) SELECT SHA2(CONCAT(id,'quota"+str(index)+"'),256),project_id,'9.0."+str(index)+"',engine_min,notes,filename,sha256,manifest,archive,screenshot,screenshot_type FROM community_versions WHERE id='"+revision['id']+"'")
+        status,body,_=upload('example.map',map_path.read_bytes())
+        self.assertEqual(status,429);self.assertIn(b'reviewed',body)
+
+
 if __name__=='__main__':unittest.main()

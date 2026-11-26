@@ -8,6 +8,14 @@ repository changes, not an announcement that the live website has been updated.
 
 ### Added
 
+- Opt-in friends, recent portal presence, server invitations and blocking.
+- Profile visibility, active-session management and one-use offline recovery codes.
+- Moderated map/campaign sharing with screenshots, package previews, engine
+  requirements, SHA-256 downloads and version history.
+- Region/mode/occupancy/state filters and browser-local server favorites/recent
+  join requests; operator tools label servers and review creations.
+- MariaDB migration 002 and PHP ZipArchive support in the Docker website image.
+
 - Self-contained PHP website and network API in `public-web`, backed by MariaDB.
 - Public server directory, player profiles, leaderboards and unranked match
   statistics, with account authentication and public-server join tickets.

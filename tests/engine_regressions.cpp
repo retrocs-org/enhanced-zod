@@ -11,6 +11,7 @@
 #include "zplayer.h"
 #include "zsavegame.h"
 #include "zmpclient.h"
+#include "zserver_bookmarks.h"
 #include "gmm_multiplayer_create.h"
 #include "zprefs.h"
 #include "map_gen_core.h"
@@ -795,13 +796,15 @@ public:
         menu.HandleWidgetEvent(GMM_UNCLICK_EVENT,&menu.ready_button); REQUIRE(!menu.GetGMMFlags().toggle_ready);
         local_id=101; players[1].ready=true; players[2].ignored=true; menu.SetCountdown(12); menu.Process();
         menu.SetCenterCoords(320,240); SDL_FillSurfaceRect(screen,nullptr,0xff171b20);
-        ZMap background; menu.RenderContents(background,screen); REQUIRE(IMG_SavePNG(screen,image.c_str()));
+        ZMap background;REQUIRE(background.Read("maps/p02_bb_orig01.map")); menu.RenderContents(background,screen); REQUIRE(IMG_SavePNG(screen,image.c_str()));
         menu.HandleWidgetEvent(GMM_UNCLICK_EVENT,&menu.ready_button); menu.ready_sent_at=SDL_GetTicks()-6000;
         menu.Process(); REQUIRE(menu.sticky_error && !menu.ready_pending);
+        menu.GetGMMFlags().clear();menu.HandleWidgetEvent(GMM_UNCLICK_EVENT,&menu.spectate_button);REQUIRE(menu.GetGMMFlags().change_team&&menu.GetGMMFlags().change_team_type==-1);
+        menu.GetGMMFlags().clear();menu.HandleWidgetEvent(GMM_UNCLICK_EVENT,&menu.auto_button);REQUIRE(menu.GetGMMFlags().change_team);
         menu.HandleWidgetEvent(GMM_UNCLICK_EVENT,&menu.leave_button); REQUIRE(menu.GetGMMFlags().leave_match);
         // The title-bar close action must leave too, rather than expose a
         // paused match with its ready gate hidden.
-        menu.Click(520,99); menu.UnClick(520,99); REQUIRE(menu.GetGMMFlags().leave_match && !menu.KillMe());
+        int menuWidth,menuHeight;menu.GetDimensions(menuWidth,menuHeight);int closeX=320+menuWidth/2-8,closeY=240-menuHeight/2+8;menu.Click(closeX,closeY); menu.UnClick(closeX,closeY); REQUIRE(menu.GetGMMFlags().leave_match && !menu.KillMe());
         clock.Resume(); menu.Process(); REQUIRE(menu.KillMe());
         ZSDL_Surface::SetMainSoftwareSurface(nullptr); SDL_DestroySurface(screen);
 
@@ -1051,7 +1054,7 @@ public:
                 REQUIRE(menu.random.seed==UINT32_MAX && menu.random.players==3 && menu.random.size==0 && menu.random.terrain==2);
             }
             menu.SetCenterCoords(320,240); SDL_FillSurfaceRect(screen,nullptr,0xff171b20);
-            ZMap background; menu.RenderContents(background,screen); REQUIRE(IMG_SavePNG(screen,image.c_str()));
+            ZMap background;REQUIRE(background.Read("maps/p02_bb_orig01.map")); menu.RenderContents(background,screen); REQUIRE(IMG_SavePNG(screen,image.c_str()));
             if(restore) {
                 menu.StartMatch(); auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(8);
                 while(!menu.GetGMMFlags().join_match && std::chrono::steady_clock::now()<deadline) { menu.Process(); SDL_Delay(2); }
@@ -1136,11 +1139,18 @@ public:
         GMMMultiplayer::RefreshResult result; result.ok=true;
         MatchInfo full; full.host="127.0.0.1"; full.port=2301; full.players=2; full.capacity=2; full.map="test.map";
         result.matches={full}; menu.ApplyRefresh(result);
-        REQUIRE(menu.match_list.GetEntryList()[0].disabled);
+        REQUIRE(!menu.match_list.GetEntryList()[0].disabled); // Full/active games permit spectator connections.
         full.players=1; full.started=true; result.matches={full}; menu.ApplyRefresh(result);
-        REQUIRE(menu.match_list.GetEntryList()[0].disabled);
+        REQUIRE(!menu.match_list.GetEntryList()[0].disabled); // Full/active games permit spectator connections.
         full.started=false; result.matches={full}; menu.ApplyRefresh(result);
         REQUIRE(!menu.match_list.GetEntryList()[0].disabled);
+        full.region="Europe";full.game_mode="Co-op";full.ping_ms=45;result.matches={full};menu.ApplyRefresh(result);
+        menu.search_entry.SetText("Co-op");menu.region_entry.SetText("Europe");menu.max_ping=100;menu.Refilter();REQUIRE(menu.match_list.GetEntryList().size()==1);
+        menu.max_ping=25;menu.Refilter();REQUIRE(menu.match_list.GetEntryList().empty());menu.max_ping=0;
+        menu.players_filter=3;menu.Refilter();REQUIRE(menu.match_list.GetEntryList().empty());menu.players_filter=0;
+        ZServerToggleFavorite(full);REQUIRE(ZServerFavorite(full));menu.view=1;menu.Refilter();REQUIRE(menu.match_list.GetEntryList().size()==1);
+        ZServerRemember(full);ZServerRemember(full);REQUIRE(ZServerBookmarks(true).size()==1);menu.view=2;menu.Refilter();REQUIRE(menu.match_list.GetEntryList().size()==1);
+        ZServerToggleFavorite(full);REQUIRE(!ZServerFavorite(full));menu.view=0;menu.search_entry.SetText("");menu.region_entry.SetText("");menu.Refilter();
         menu.GetGMMFlags().clear();menu.HandleWidgetEvent(GMM_UNCLICK_EVENT,&menu.back_button);
         REQUIRE(menu.KillMe() && !menu.GetGMMFlags().open_main_menu);
         // Let the asynchronous scan release its own socket before process exit.

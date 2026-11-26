@@ -8,6 +8,7 @@ static double MenuRenderScale();
 #include "mac_dock_icon.h"
 #include "zprefs.h"
 #include "zperf.h"
+#include "zserver_bookmarks.h"
 #include "zpath_debug.h"
 #include "zgamepad.h"
 #include <math.h>
@@ -379,6 +380,7 @@ bool ZPlayer::PollHostedJoin()
     remote_address=result.host;
     connect_attempt_time=current_time(); server_response_seen=false; server_silence_warned=false;
     bool ok=client_socket.Adopt(*result.connection);
+    if(ok){MatchInfo visited;visited.host=result.host;visited.port=result.port;ZServerRemember(visited);}
     CloseAllMenus();
     LoadMainMenu(ok ? GMM_LOBBY : result.origin);
     if(resumed && ok)for(auto *menu:gui_menu_list)if(auto *lobby=dynamic_cast<GMMLobby*>(menu))lobby->SetPauseConfirmed(true);

@@ -1,10 +1,14 @@
 #include "gmm_multiplayer.h"
 #include "zlan.h"
+#include "zserver_bookmarks.h"
+#include "znetconnect.h"
+#include <chrono>
+#include <cctype>
 #include <algorithm>
 
 GMMMultiplayer::GMMMultiplayer()
 {
-    menu_type=GMM_MULTIPLAYER; title="Multiplayer"; w=420; h=325;
+    menu_type=GMM_MULTIPLAYER; title="Multiplayer"; w=420; h=430;
     SetupLayout1(); Refresh();
 }
 void GMMMultiplayer::SetupLayout1()
@@ -13,14 +17,19 @@ void GMMMultiplayer::SetupLayout1()
         b.SetType(MMGENERIC_BUTTON); b.SetCoords(px,py); b.SetDimensions(width,18); b.SetText(label); AddWidget(&b);
     };
     button(mode_button,10,24,190,"Nearby LAN"); button(refresh_button,210,24,200,"Refresh");
-    match_list.SetCoords(10,48); match_list.SetVisibleEntries(7); match_list.SetDimensions(400,105); AddWidget(&match_list);
-    status_label.SetCoords(10,162); AddWidget(&status_label);
-    detail_label.SetCoords(10,178); AddWidget(&detail_label);
-    button(join_button,10,198,400,"Join Selected Game");
-    address_entry.SetCoords(10,224); address_entry.SetDimensions(400,GMMWTEXTENTRY_HEIGHT);
+    search_entry.SetCoords(10,48);search_entry.SetDimensions(400,GMMWTEXTENTRY_HEIGHT);search_entry.SetLabel("Map/name/mode: ");search_entry.SetMaxText(60);AddWidget(&search_entry);
+    region_entry.SetCoords(10,70);region_entry.SetDimensions(400,GMMWTEXTENTRY_HEIGHT);region_entry.SetLabel("Region: ");region_entry.SetMaxText(32);AddWidget(&region_entry);
+    button(view_button,10,92,126,"All servers");button(ping_button,144,92,126,"Any ping");button(players_button,278,92,132,"Any players");
+    button(state_button,10,114,190,"Any game state");button(favorite_button,210,114,200,"Toggle favorite");
+    match_list.SetCoords(10,140); match_list.SetVisibleEntries(7); match_list.SetDimensions(400,105); AddWidget(&match_list);
+    status_label.SetCoords(10,254); AddWidget(&status_label);
+    detail_label.SetCoords(10,270); AddWidget(&detail_label);
+    button(join_button,10,290,400,"Join Selected Game");
+    address_entry.SetCoords(10,316); address_entry.SetDimensions(400,GMMWTEXTENTRY_HEIGHT);
     address_entry.SetLabel("Address: "); address_entry.SetAddressMode(true); address_entry.SetMaxText(65); AddWidget(&address_entry);
-    button(address_button,10,245,400,"Join by IP / hostname:port");
-    button(create_button,10,270,190,"Create Game"); button(back_button,210,270,200,"Back");
+    button(address_button,10,337,400,"Join by IP / hostname:port");
+    button(create_button,10,362,190,"Create Game"); button(back_button,210,362,200,"Back");
+    button(portal_button,10,388,190,"Friends / invitations");button(creations_button,210,388,200,"Community creations");
     UpdateDimensions();
 }
 void GMMMultiplayer::Refresh()
@@ -33,26 +42,42 @@ void GMMMultiplayer::Refresh()
         RefreshResult result;
         result.ok=lan ? ZLAN_Discover(result.matches,result.error) : ZMP_ListMatches(result.matches);
         if(!result.ok && result.error.empty()) result.error="Match service is unreachable";
+        if(result.ok)for(size_t i=0;i<result.matches.size()&&i<32;++i){auto &m=result.matches[i];std::string error;auto start=std::chrono::steady_clock::now();auto connection=ZNetConnect(m.host,m.port,error,250);if(connection)m.ping_ms=(int)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-start).count();}
         return result;
     });
 }
 void GMMMultiplayer::ApplyRefresh(const RefreshResult &result)
 {
-    matches=result.matches; match_list.GetEntryList().clear();
-    for(size_t i=0;i<matches.size();++i) {
-        const auto &match=matches[i];
-        string name=match.map; if(name.size()>4 && name.substr(name.size()-4)==".map") name.resize(name.size()-4);
-        if(name.size()>25) name=name.substr(0,22)+"...";
-        string line=name+"  "+to_string(std::max(0,match.players))+"/"+to_string(match.capacity)+"  "+match.host+":"+to_string(match.port);
-        bool unavailable=match.started || (match.capacity>0 && match.players>=match.capacity);
-        if(unavailable) line+=match.started ? " [playing]" : " [full]";
-        mmlist_entry entry(line,(int)i,(int)i); entry.disabled=unavailable;
-        match_list.GetEntryList().push_back(entry);
-    }
+    discovered=result.matches;Refilter();
     match_list.CheckViewI();
     if(!joining && !sticky_error) {
         status_label.SetText(!result.ok ? result.error : matches.empty() ? "No games found. Create one or enter an address." : to_string(matches.size())+" game(s) found");
     }
+}
+void GMMMultiplayer::Refilter()
+{
+    applied_search=search_entry.GetText();applied_region=region_entry.GetText();
+    auto lower=[](string text){for(char &c:text)c=(char)std::tolower((unsigned char)c);return text;};
+    matches=discovered;auto entries=discovered;
+    if(view){auto bookmarks=ZServerBookmarks(view==2);for(const auto &saved:bookmarks){auto found=std::find_if(matches.begin(),matches.end(),[&](const MatchInfo &m){return m.host==saved.host&&m.port==saved.port;});if(found==matches.end())entries.push_back(saved);}}
+    match_list.GetEntryList().clear();
+    // Keep the displayed indices bound to this filtered snapshot, including offline bookmarks.
+    if(view){auto bookmarks=ZServerBookmarks(view==2);entries.erase(std::remove_if(entries.begin(),entries.end(),[&](const MatchInfo &m){return std::none_of(bookmarks.begin(),bookmarks.end(),[&](const MatchInfo &b){return m.host==b.host&&m.port==b.port;});}),entries.end());}
+    for(const auto &m:entries){
+        if(!applied_search.empty()&&lower(m.name+" "+m.map+" "+m.game_mode+" "+m.host).find(lower(applied_search))==string::npos)continue;
+        if(!applied_region.empty()&&lower(m.region).find(lower(applied_region))==string::npos)continue;
+        if(max_ping&&(m.ping_ms<0||m.ping_ms>max_ping))continue;
+        if(players_filter==1&&!(m.capacity>0&&m.players<m.capacity))continue;
+        if(players_filter==2&&m.players<=0)continue;
+        if(players_filter==3&&m.players!=0)continue;
+        if((state_filter==1&&m.started)||(state_filter==2&&!m.started))continue;
+        auto found=std::find_if(matches.begin(),matches.end(),[&](const MatchInfo &e){return e.host==m.host&&e.port==m.port;});
+        if(found==matches.end()){matches.push_back(m);found=matches.end()-1;}
+        int ref=(int)(found-matches.begin());string name=m.map.empty()?m.host:m.map;if(name.size()>22)name=name.substr(0,19)+"...";
+        string line=(ZServerFavorite(m)?"* ":"")+name+" "+to_string(std::max(0,m.players))+"/"+to_string(m.capacity)+" "+(m.ping_ms<0?"?":to_string(m.ping_ms))+"ms"+(m.started?" [playing]":m.capacity>0&&m.players>=m.capacity?" [full]":"");
+        match_list.GetEntryList().push_back(mmlist_entry(line,ref,ref));
+    }
+    match_list.CheckViewI();
 }
 void GMMMultiplayer::SetError(const string &message)
 {
@@ -84,6 +109,7 @@ bool GMMMultiplayer::KeyPress(int c)
 void GMMMultiplayer::Process()
 {
     RefreshResult result; if(refresh_task.Poll(result)) ApplyRefresh(result);
+    if(applied_search!=search_entry.GetText()||applied_region!=region_entry.GetText())Refilter();
     if(join_delay>0 && --join_delay==0) {
         gmm_flags.join_match=true; gmm_flags.join_host=requested.host; gmm_flags.join_port=requested.port;
         gmm_flags.join_team=NULL_TEAM;
@@ -105,7 +131,14 @@ void GMMMultiplayer::HandleWidgetEvent(int type,ZGMMWidget *widget)
         return;
     }
     if(type!=GMM_UNCLICK_EVENT) return;
-    if(widget==&mode_button) {
+    if(widget==&portal_button)SDL_OpenURL("https://zodee.retrocs.org/index.php/community");
+    else if(widget==&creations_button)SDL_OpenURL("https://zodee.retrocs.org/index.php/creations");
+    else if(widget==&view_button){view=(view+1)%3;view_button.SetText(view==0?"All servers":view==1?"Favorites":"Recently joined");Refilter();}
+    else if(widget==&ping_button){max_ping=max_ping==0?100:max_ping==100?200:max_ping==200?500:0;ping_button.SetText(max_ping?"Ping <= "+to_string(max_ping):"Any ping");Refilter();}
+    else if(widget==&players_button){players_filter=(players_filter+1)%4;const char *labels[]={"Any players","Open slots","Populated","Empty"};players_button.SetText(labels[players_filter]);Refilter();}
+    else if(widget==&state_button){state_filter=(state_filter+1)%3;state_button.SetText(state_filter==0?"Any game state":state_filter==1?"Lobby":"In battle");Refilter();}
+    else if(widget==&favorite_button){int selected=match_list.GetFirstSelected();if(selected>=0){int ref=match_list.GetEntryList()[selected].ref_id;if(ref>=0&&ref<(int)matches.size())ZServerToggleFavorite(matches[ref]);Refilter();}}
+    else if(widget==&mode_button) {
         if(refresh_task.Pending()) return;
         lan_mode=!lan_mode; mode_button.SetText(lan_mode ? "Nearby LAN" : "Online games"); Refresh();
     } else if(widget==&refresh_button) Refresh();
@@ -116,7 +149,7 @@ void GMMMultiplayer::HandleWidgetEvent(int type,ZGMMWidget *widget)
         int selected=match_list.GetFirstSelected();
         if(selected<0) { SetError("Select a game first"); return; }
         auto &entry=match_list.GetEntryList()[selected];
-        if(entry.disabled) { SetError("This game is full or already playing"); return; }
+
         if(entry.ref_id>=0 && entry.ref_id<(int)matches.size()) QueueJoin(matches[entry.ref_id]);
     }
 }

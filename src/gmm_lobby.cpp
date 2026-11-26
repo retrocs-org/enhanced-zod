@@ -7,7 +7,7 @@ string clean(string text) { for(char &c:text) if((unsigned char)c<32 || c==127) 
 }
 GMMLobby::GMMLobby()
 {
-    menu_type=GMM_LOBBY; title="Match lobby"; w=420; h=304;
+    menu_type=GMM_LOBBY; title="Match lobby"; w=590; h=336;
     opened_at=SDL_GetTicks(); SetupLayout1();
 }
 void GMMLobby::SetupLayout1()
@@ -20,12 +20,15 @@ void GMMLobby::SetupLayout1()
     };
     button(team_button,10,216,"Choose next open team"); button(bots_button,214,216,"Manage bots");
     button(ready_button,10,240,"Waiting for assignment..."); button(leave_button,214,240,"Leave lobby");
-    label(hint_label,267); label(error_label,284);
+    button(auto_button,10,264,"Auto assign open team");button(spectate_button,214,264,"Watch as spectator");
+    label(hint_label,291); label(error_label,308);
+    preview_label.SetCoords(424,200);AddWidget(&preview_label);
     session_label.SetText("Connecting to server..."); status_label.SetText("Loading map and players...");
     UpdateDimensions();
 }
 void GMMLobby::SetSession(const string &address,const string &map,const vector<int> &teams,bool loaded)
 {
+    if(map!=preview_name||!loaded){preview_image.Unload();preview_loaded=false;preview_name=map;}
     session_label.SetText("Server: "+clip(clean(address),65));
     map_label.SetText("Map: "+clip(clean(map.empty() ? "loading..." : map),68));
     fort_teams=teams; world_loaded=loaded;
@@ -92,6 +95,13 @@ void GMMLobby::HandleWidgetEvent(int type,ZGMMWidget *widget)
     if(type!=GMM_UNCLICK_EVENT || !widget) return;
     if(widget==&leave_button) { gmm_flags.leave_match=true; return; }
     auto *me=LocalPlayer();
+    if(widget==&spectate_button){if(!world_loaded||!me||!ztime||!ztime->IsPaused())return;gmm_flags.change_team=true;gmm_flags.change_team_type=-1;return;}
+    if(widget==&auto_button){
+        if(!world_loaded||!me||ready_pending)return;
+        for(int team:fort_teams){bool taken=false;for(const auto &p:*player_info)if(p.p_id!=me->p_id&&p.team==team&&(p.mode==PLAYER_MODE||(p.mode==BOT_MODE&&!p.ignored)))taken=true;
+            if(!taken){gmm_flags.change_team=true;gmm_flags.change_team_type=team;return;}}
+        SetError("All teams are occupied. Spectate or wait for a free team.");return;
+    }
     if(widget==&ready_button) {
         if(!world_loaded || !me || me->mode!=PLAYER_MODE || !Playable(*me) || ready_pending) return;
         sticky_error=false; error_label.SetText(""); requested_ready=!me->ready;
@@ -117,4 +127,9 @@ bool GMMLobby::UnClick(int px,int py)
     bool handled=ZGuiMainMenuBase::UnClick(px,py);
     if(killme) { killme=false; gmm_flags.leave_match=true; }
     return handled;
+}
+
+void GMMLobby::RenderContents(ZMap &map,SDL_Surface *dest){
+    if(world_loaded&&!preview_loaded){MapPreview preview;if(ZMP_ReadMapDataPreview(map,preview)){auto *surface=SDL_CreateSurface(preview.preview_width,preview.preview_height,SDL_PIXELFORMAT_ARGB8888);if(surface){for(int row=0;row<surface->h;++row)memcpy((char*)surface->pixels+row*surface->pitch,preview.pixels.data()+row*surface->w,surface->w*4);preview_image.LoadBaseImage(surface);}preview_label.SetText(to_string(preview.width)+" x "+to_string(preview.height));preview_loaded=true;}}
+    ZGuiMainMenuBase::RenderContents(map,dest);if(preview_image.GetBaseSurface())preview_image.BlitSurface(nullptr,x+424,y+80);
 }

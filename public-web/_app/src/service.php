@@ -2,8 +2,11 @@
 declare(strict_types=1);
 if (!defined('ZODEE_INTERNAL') && PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/community_service.php';
+require_once __DIR__ . '/content_service.php';
 
 final class ZodService {
+    use CommunityService,ContentService;
     public function currentAccount(): ?array {
         return query('SELECT a.id,a.username,a.created_at FROM sessions s JOIN accounts a ON a.id=s.account_id WHERE s.token_hash=? AND s.expires_at>UTC_TIMESTAMP(6)', [token_hash(session_token())])->fetch() ?: null;
     }
@@ -70,8 +73,8 @@ final class ZodService {
         session_cookie($token); return ['ok'=>true,'session'=>$token];
     }
     public function servers(): array {
-        $rows=query('SELECT s.* FROM servers s JOIN server_keys k ON k.id=s.id WHERE k.enabled=1 AND s.last_seen>UTC_TIMESTAMP(6)-INTERVAL 90 SECOND ORDER BY s.name')->fetchAll();
-        return array_map(fn($s)=>['id'=>$s['id'],'name'=>$s['name'],'host'=>$s['host'],'port'=>(int)$s['port'],'map'=>$s['map_name'],'players'=>(int)$s['players'],'capacity'=>(int)$s['capacity'],'started'=>(bool)$s['started'],'version'=>$s['version'],'seen'=>str_replace(' ','T',$s['last_seen']).'Z'],$rows);
+        $rows=query('SELECT s.*,COALESCE(md.region,\'Unspecified\') AS region,COALESCE(md.game_mode,\'Skirmish\') AS game_mode FROM servers s LEFT JOIN server_metadata md ON md.server_id=s.id JOIN server_keys k ON k.id=s.id WHERE k.enabled=1 AND s.last_seen>UTC_TIMESTAMP(6)-INTERVAL 90 SECOND ORDER BY s.name')->fetchAll();
+        return array_map(fn($s)=>['id'=>$s['id'],'name'=>$s['name'],'host'=>$s['host'],'port'=>(int)$s['port'],'map'=>$s['map_name'],'players'=>(int)$s['players'],'capacity'=>(int)$s['capacity'],'started'=>(bool)$s['started'],'version'=>$s['version'],'region'=>$s['region'],'game_mode'=>$s['game_mode'],'seen'=>str_replace(' ','T',$s['last_seen']).'Z'],$rows);
     }
     public function heartbeat(array $in): array {
         $id=$this->server();fields($in,['id','name','host','port','map','players','capacity','started','version','seen']);
@@ -140,7 +143,7 @@ final class ZodService {
     }
     public function leaderboard(int $limit=50): array {
         $limit=max(1,min(100,$limit));
-        $rows=query('SELECT a.username,COUNT(p.match_pk) AS matches,COALESCE(SUM(p.won),0) AS wins,COALESCE(SUM(p.kills),0) AS kills,COALESCE(SUM(p.lost),0) AS lost,COALESCE(SUM(p.captures),0) AS captures FROM accounts a LEFT JOIN match_players p ON p.account_id=a.id GROUP BY a.id,a.username HAVING matches>0 ORDER BY wins DESC,kills DESC,a.username ASC LIMIT '.$limit)->fetchAll();
+        $rows=query('SELECT a.username,COUNT(p.match_pk) AS matches,COALESCE(SUM(p.won),0) AS wins,COALESCE(SUM(p.kills),0) AS kills,COALESCE(SUM(p.lost),0) AS lost,COALESCE(SUM(p.captures),0) AS captures FROM accounts a LEFT JOIN match_players p ON p.account_id=a.id WHERE COALESCE((SELECT visibility FROM account_preferences WHERE account_id=a.id),\'public\')=\'public\' GROUP BY a.id,a.username HAVING matches>0 ORDER BY wins DESC,kills DESC,a.username ASC LIMIT '.$limit)->fetchAll();
         foreach ($rows as &$r) foreach (['matches','wins','kills','lost','captures'] as $key) $r[$key]=(int)$r[$key];return $rows;
     }
     public function totals(): array {
@@ -150,11 +153,13 @@ final class ZodService {
     }
     public function profile(string $name): ?array {
         $account=query('SELECT id,username,created_at FROM accounts WHERE username_key=?',[strtolower($name)])->fetch();if (!$account)return null;
+        $viewer=$this->currentAccount();$visibility=query('SELECT visibility FROM account_preferences WHERE account_id=?',[$account['id']])->fetchColumn()?:'public';
+        if(($viewer['id']??'')!==$account['id'] && ($visibility==='private'||($visibility==='friends'&&(!$viewer||!$this->areFriends($viewer['id'],$account['id'])))||($viewer&&$this->blocked($viewer['id'],$account['id']))))return null;
         $stats=query('SELECT COUNT(*) AS matches,COALESCE(SUM(won),0) AS wins,COALESCE(SUM(kills),0) AS kills,COALESCE(SUM(lost),0) AS lost,COALESCE(SUM(captures),0) AS captures FROM match_players WHERE account_id=?',[$account['id']])->fetch();
         foreach ($stats as &$n)$n=(int)$n;
         $recent=query('SELECT m.map_name,m.duration,m.finished_at,m.server_id,p.won,p.kills,p.lost,p.captures FROM match_players p JOIN matches m ON m.id=p.match_pk WHERE p.account_id=? ORDER BY m.finished_at DESC LIMIT 15',[$account['id']])->fetchAll();
         return ['account'=>$account,'stats'=>$stats,'recent'=>$recent];
     }
-    public function recent(): array { return query('SELECT m.*, (SELECT GROUP_CONCAT(a.username ORDER BY a.username SEPARATOR ", ") FROM match_players p JOIN accounts a ON a.id=p.account_id WHERE p.match_pk=m.id AND p.won=1) AS winners FROM matches m ORDER BY m.finished_at DESC LIMIT 12')->fetchAll(); }
+    public function recent(): array { return query('SELECT m.*, (SELECT GROUP_CONCAT(a.username ORDER BY a.username SEPARATOR ", ") FROM match_players p JOIN accounts a ON a.id=p.account_id WHERE p.match_pk=m.id AND p.won=1 AND COALESCE((SELECT visibility FROM account_preferences WHERE account_id=a.id),\'public\')=\'public\') AS winners FROM matches m ORDER BY m.finished_at DESC LIMIT 12')->fetchAll(); }
     public function maps(): array { return query('SELECT map_name,COUNT(*) AS matches FROM matches GROUP BY map_name ORDER BY matches DESC,map_name LIMIT 6')->fetchAll(); }
 }

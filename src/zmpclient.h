@@ -20,6 +20,8 @@ struct MatchInfo
 	int port;
 	int players;
 	bool lan = false, started = false;
+    int ping_ms=-1;
+    std::string region="Unspecified",game_mode="Skirmish";
 	int capacity;   //max humans = the map's player slots
 
 	MatchInfo() : port(-1), players(-1), capacity(0) {}
@@ -50,6 +52,8 @@ struct MapPreview
     std::vector<int> teams;
     std::vector<std::uint32_t> pixels; //ARGB8888, with fort markers
 };
+class ZMap;
+bool ZMP_ReadMapDataPreview(ZMap &map,MapPreview &out);
 bool ZMP_ReadMapFilePreview(const std::string &path, MapPreview &out);
 bool ZMP_ReadMapPreview(const std::string &name, MapPreview &out);
 bool ZMP_ValidateSetup(const MapPreview &map, const std::vector<std::string> &bots,

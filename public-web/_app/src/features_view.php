@@ -11,7 +11,7 @@ function feature_section(): void {
     ];
     $features=[
         ['MULTIPLAYER','Find a battle. Bring your friends.','Play over LAN, connect directly or join a public server. Host private games with guests, or run a headless Linux dedicated server.','/servers','Browse servers'],
-        ['NETWORKING & COMMUNITY','A home for players and servers.','Use the networking portal to discover public servers, see who is playing and explore community profiles, leaderboards and unranked match statistics. Public servers use accounts and join tickets; private and LAN play work without a cloud account.','/network','Explore the online portal'],
+        ['NETWORKING & COMMUNITY','A home for players and servers.','Use the networking portal to discover public servers, manage opt-in friends and server invitations, and explore profiles, leaderboards and unranked match statistics. Public servers use accounts and join tickets; private and LAN play work without a cloud account.','/network','Explore the online portal'],
         ['MAP & CAMPAIGN EDITORS','Build more than a battlefield.','Create and playtest in the integrated full-screen editor, with terrain tools, object groups and undo/redo. Campaign Studio adds mission sequences, objectives and briefings. Open original maps as starting points and save your own copies.','https://github.com/retrocs-org/zodee/blob/main/docs/Campaigns.md','Explore the creator tools'],
         ['macOS · WINDOWS · LINUX','Classic strategy on modern systems.','Built on the upstream SDL3 port, with modern desktop builds, scalable menus and configurable controls. Import your own original game data, then play the Original Campaign or add community campaigns.','/downloads','Get the game'],
     ];

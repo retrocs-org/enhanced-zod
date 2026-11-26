@@ -329,6 +329,8 @@ void ZServer::set_player_team_event(ZServer *p, char *data, int size, int player
 
 	the_team = PacketGetInt(data, 0);
 
+    bool spectate=the_team==-1;
+    if(spectate){if(p->map_list.size()||p->lan_match_started||!p->ztime.IsPaused())return;the_team=NULL_TEAM;}
 	if(the_team < NULL_TEAM) return;
 	if(the_team >= MAX_TEAM_TYPES) return;
 
@@ -352,7 +354,7 @@ void ZServer::set_player_team_event(ZServer *p, char *data, int size, int player
 	//them sharing one fort while the other side sat unowned. Redirect a taken/empty
 	//request to the first free fort team so each player actually controls a side.
     bool authenticated_bot = p->player_info[player].bot_logged_in && p->player_info[player].mode == BOT_MODE;
-	if(!p->map_list.size() && !authenticated_bot)
+	if(!p->map_list.size() && !authenticated_bot && !spectate)
 	{
 		team_type ft = p->AssignableFortTeam(the_team, player);
         the_team=ft;

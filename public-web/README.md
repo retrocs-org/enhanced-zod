@@ -19,7 +19,7 @@ See [configuration and database setup](../docs/NETWORK-SERVICES.md). Local previ
 php -S 127.0.0.1:8088 -t public-web public-web/router.php
 ```
 
-Production requires PHP 8.4+, PDO MySQL, mbstring, MariaDB and Apache/PHP-FPM.
+Production requires PHP 8.4+, PDO MySQL, mbstring, ZipArchive (for campaign sharing), MariaDB and Apache/PHP-FPM.
 Route non-file requests to `/index.php` and deny HTTP access to `_app/`.
 
 Configure `ZOD_DB_PASSWORD` in `/srv/www/vhosts/zodee.retrocs.org/config.inc.php`
@@ -33,3 +33,48 @@ points also support bookmarked pages such as `/network/` and `/leaderboard/`.
 After enabling `FallbackResource /index.php` for the vhost, you may set
 `ZOD_CLEAN_URLS` to `'1'` for short URLs throughout. Dedicated-server clients
 can use `https://zodee.retrocs.org/index.php` as their hub URL without rewrites.
+
+## Community features and database upgrade
+
+Run `php _app/bin/migrate.php` from the installed document root after updating.
+Migration 002 adds opt-in friends/presence, invitations, blocking, profile privacy,
+one-use recovery codes and versioned community creations. Existing accounts keep
+public profiles, with friend requests and presence sharing disabled by default.
+
+The Community page manages requests, blocks and fifteen-minute server invitations.
+Presence means activity on the portal within three minutes, not in-game status.
+The account page provides session revocation and eight offline recovery codes.
+Codes are shown once and stored hashed; each works once, and generating a new set
+invalidates the previous set. Recovery revokes website sessions and unused join
+tickets. It does not send email or automatically close existing game connections.
+
+The Creations page accepts authored `.map` files and campaign `.zip` packs with a
+PNG/JPEG screenshot. Versions include minimum engine requirements, file previews,
+SHA-256 and author/version history. Authors can preview pending submissions;
+public browsing and downloads require operator approval. Original game media must
+not be uploaded. Downloads are explicit; the game still validates and previews
+campaign packs before installation. Use editor Open for downloaded map files.
+
+Set PHP `upload_max_filesize=8M`, `post_max_size=12M`, and MariaDB
+`max_allowed_packet` to at least 16 MiB for the upload limits. Campaign ZIP support
+needs the PHP zip extension. Screenshots are limited to 2 MiB and 2048 × 2048.
+Submissions are stored in MariaDB, so include these tables in database backups.
+Authors have a default 128 MiB total quota (`ZOD_CREATION_QUOTA_MB`) and up to
+ten pending submissions, including versions awaiting review.
+The Docker web target includes ZipArchive and these PHP upload limits.
+
+Operator commands (from the document root):
+
+```sh
+php _app/bin/community.php --list
+php _app/bin/community.php --id REVISION_ID --export /private/review-directory
+# Review files and redistribution permissions before approval:
+php _app/bin/community.php --id REVISION_ID --approve
+php _app/bin/community.php --id REVISION_ID --hide
+php _app/bin/community.php --server SERVER_ID --region Europe --mode Skirmish
+```
+
+Regions and modes are operator-supplied labels, not IP geolocation. The portal
+filters region, map, mode, player occupancy, lobby state and browser-local
+favorites/recent ticket requests. Real TCP latency, ping filters, persistent
+favorites and successfully joined servers are available in the native browser.

@@ -28,6 +28,7 @@ if (dialog) {
         if (currentRequest !== request || !dialog.open) return;
         if (!response.ok) { signIn.hidden = response.status !== 401; throw new Error(data.error || 'Could not issue a ticket.'); }
         ticket = {token:data.ticket,host:button.dataset.host,port:button.dataset.port};
+        rememberServerRequest(button.dataset.id);
         code.textContent = commandFor(platform.value); commands.hidden = false;
         feedback.textContent = 'Ticket ready. Connect within two minutes; this ticket works once.';
       } catch (error) {if (currentRequest !== request || error.name === 'AbortError') return; feedback.textContent = error.message || 'The service could not be reached. Please retry.';}
@@ -79,3 +80,23 @@ if (navigationToggle && mainNavigation) navigationToggle.addEventListener('click
   navigationToggle.setAttribute('aria-expanded', String(!expanded));
   mainNavigation.classList.toggle('is-open', !expanded);
 });
+
+function storedServers(key){try{const values=JSON.parse(localStorage.getItem(key)||'[]');return Array.isArray(values)?values.filter(v=>typeof v==='string').slice(0,32):[];}catch{return [];}}
+function writeServers(key,values){try{localStorage.setItem(key,JSON.stringify(values.slice(0,32)));}catch{/* Storage is optional in private/locked browsers. */}}
+function rememberServerRequest(id){writeServers('zod-recent-servers',[id,...storedServers('zod-recent-servers').filter(v=>v!==id)]);}
+for(const button of document.querySelectorAll('[data-favorite]')){
+  const update=()=>{const saved=storedServers('zod-favorite-servers').includes(button.dataset.favorite);button.textContent=saved?'★':'☆';button.setAttribute('aria-pressed',String(saved));};update();
+  button.addEventListener('click',()=>{const list=storedServers('zod-favorite-servers'),id=button.dataset.favorite;writeServers('zod-favorite-servers',list.includes(id)?list.filter(v=>v!==id):[id,...list]);update();filterServers();});
+}
+function filterServers(){
+  const form=document.querySelector('#server-filters');if(!form)return;
+  const value=id=>document.getElementById('filter-'+id).value.toLowerCase();let visible=0;
+  const favorites=storedServers('zod-favorite-servers'),recent=storedServers('zod-recent-servers');
+  for(const row of document.querySelectorAll('.server-table tr[data-server]')){
+    const players=Number(row.dataset.players),capacity=Number(row.dataset.capacity),list=value('list'),population=value('players'),state=value('state');
+    const show=row.dataset.region.toLowerCase().includes(value('region'))&&row.dataset.mode.toLowerCase().includes(value('mode'))&&row.cells[0].textContent.toLowerCase().includes(value('map'))&&(list==='all'||(list==='favorites'?favorites:recent).includes(row.dataset.server))&&(population==='any'||population==='open'&&players<capacity||population==='populated'&&players>0||population==='empty'&&players===0)&&(state==='any'||state==='battle'&&row.dataset.started==='1'||state==='lobby'&&row.dataset.started==='0');
+    row.hidden=!show;if(show)visible++;
+  }
+  document.querySelector('#server-filter-status').textContent=visible+' matching server(s)';
+}
+const serverFilters=document.querySelector('#server-filters');if(serverFilters){serverFilters.addEventListener('input',filterServers);serverFilters.addEventListener('change',filterServers);filterServers();}

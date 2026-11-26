@@ -170,7 +170,12 @@ bool ZMP_ReadMapFilePreview(const string &path,MapPreview &out) {
     out=MapPreview();out.name=path;
     ZMap map;
     if(!map.Read(path.c_str())) { out.error = "Map not installed locally"; return false; }
+    bool ok=ZMP_ReadMapDataPreview(map,out);out.name=path;return ok;
+}
+bool ZMP_ReadMapDataPreview(ZMap &map,MapPreview &out) {
+    out=MapPreview();
     auto &header = map.GetMapBasics();
+    if(!header.width||!header.height||header.terrain_type>=MAX_PLANET_TYPES){out.error="Map not ready";return false;}
     out.width = header.width; out.height = header.height; out.terrain = header.terrain_type;
     out.title = header.map_name;
     for(const auto &object : map.GetObjectList())
@@ -434,6 +439,7 @@ bool ZMP_ListMatches(vector<MatchInfo> &out)
 		MatchInfo m;
 		json_str(objs[i], "id", m.id);
 		json_str(objs[i], "name", m.name);
+        json_str(objs[i], "region", m.region);json_str(objs[i], "game_mode", m.game_mode);
 		json_str(objs[i], "map", m.map);
 		json_str(objs[i], "host", m.host);
 		json_int(objs[i], "port", m.port);

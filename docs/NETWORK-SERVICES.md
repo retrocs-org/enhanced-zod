@@ -422,3 +422,11 @@ front-controller URLs. For dedicated servers, use the hub URL
 
 The zod-enhanced website uses a Z-inspired industrial interface with beveled metal panels inspired by the game menus. It contains no gameplay
 illustrations or simulated screenshots.
+
+## Community portal upgrade
+
+The expanded account, social and sharing workflows are documented in
+[public-web/README.md](../public-web/README.md#community-features-and-database-upgrade).
+Run the guarded migrations after deploying an update. Set PHP upload limits and
+install ZipArchive for campaign submissions. Friends and presence are opt-in;
+password recovery uses previously saved offline codes rather than email.

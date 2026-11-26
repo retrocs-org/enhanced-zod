@@ -274,15 +274,11 @@ int GMMWList::WithinEntry(int x_, int y_)
 {
 	int entry_found;
 
-	if(!list_top_img.GetBaseSurface()) return -1;
-	if(!list_left_img.GetBaseSurface()) return -1;
-
-	if(x_ < list_left_img.GetBaseSurface()->w) return -1;
-	if(x_ > w - (list_left_img.GetBaseSurface()->w + list_right_img.GetBaseSurface()->w)) return -1;
-	if(y_ < list_top_img.GetBaseSurface()->h) return -1;
-	if(y_ > list_top_img.GetBaseSurface()->h + (visible_entries * MMLIST_ENTRY_HEIGHT)) return -1;
-
-	entry_found = (y_ - list_top_img.GetBaseSurface()->h) / 13;
+    const int left=list_left_img.GetBaseSurface()?list_left_img.GetBaseSurface()->w:2;
+    const int top=list_top_img.GetBaseSurface()?list_top_img.GetBaseSurface()->h:2;
+    const int right=list_right_img.GetBaseSurface()?list_right_img.GetBaseSurface()->w:16;
+    if(x_<left||x_>w-left-right||y_<top||y_>top+visible_entries*MMLIST_ENTRY_HEIGHT)return -1;
+    entry_found=(y_-top)/MMLIST_ENTRY_HEIGHT;
 
 	if(entry_found < 0) return -1;
 	if(entry_found >= visible_entries) return -1;
@@ -388,12 +384,10 @@ void GMMWList::RenderEntries(ZMap &the_map, SDL_Surface *dest, int tx, int ty)
 	int ix, iy, iw;
 	int i, j;
 
-	if(!list_top_img.GetBaseSurface()) return;
-	if(!list_left_img.GetBaseSurface()) return;
-
-	ix = tx + list_left_img.GetBaseSurface()->w;
-	iy = ty + list_top_img.GetBaseSurface()->h;
-	iw = w - (list_left_img.GetBaseSurface()->w + list_right_img.GetBaseSurface()->w);
+    const int left=list_left_img.GetBaseSurface()?list_left_img.GetBaseSurface()->w:2;
+    const int top=list_top_img.GetBaseSurface()?list_top_img.GetBaseSurface()->h:2;
+    const int right=list_right_img.GetBaseSurface()?list_right_img.GetBaseSurface()->w:16;
+    ix=tx+left;iy=ty+top;iw=w-left-right;
 
 	for(i=0,j=view_i;i<visible_entries;i++,j++)
 	{

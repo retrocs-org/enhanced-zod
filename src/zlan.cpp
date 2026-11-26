@@ -135,7 +135,7 @@ bool ZLAN_Discover(std::vector<MatchInfo> &out, std::string &error, int millisec
         MatchInfo match; match.id="lan-"+std::to_string(get64(reply+16)); match.host=host; match.port=port;
         match.map=std::string(reply+30,reply+30+size); match.name=match.map;
         match.players=(unsigned char)reply[26]; match.capacity=(unsigned char)reply[27];
-        match.lan=true; match.started=reply[28]!=0;
+        match.region="LAN";match.lan=true; match.started=reply[28]!=0;
         auto existing=std::find_if(out.begin(),out.end(),[&](const MatchInfo &item){return item.id==match.id;});
         if(existing==out.end()) out.push_back(match);
         else if(existing->host=="127.0.0.1" && match.host!="127.0.0.1") *existing=match;

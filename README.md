@@ -624,3 +624,22 @@ and destructible terrain can change routes. Campaign validation also catches
 missing media, invalid objective targets and stationary escort targets before
 playtesting/export. See [native installation QA](docs/RELEASING.md#native-installation-lifecycle-check)
 for release checks on macOS, Windows and Linux.
+
+### Multiplayer browser, lobbies and community
+
+The native Multiplayer browser filters map/name/mode, region, TCP latency,
+occupancy and lobby/battle state. Favorites and the last 32 successfully joined
+addresses are saved per profile. Unmeasured latency is shown as unknown, and LAN
+entries are labelled LAN; online region/mode labels are supplied by operators.
+Full and active servers can be joined as spectators. The lobby shows a map
+preview, each player's ready state, open-team auto-assignment and an explicit
+spectator choice before the match starts. One human per playable fort team keeps
+assignments balanced; changing teams clears readiness.
+
+Friends/invitations and community creations open from the browser into the PHP
+portal. Friends and recent portal presence are opt-in, with profile privacy and
+blocking. Invitations point to a server, never share someone else's ticket.
+Community creations have screenshots, compatibility details and version history;
+submissions require moderation before public downloads. Account tools provide
+session revocation and one-use offline password-recovery codes. See
+[website setup and migration](public-web/README.md#community-features-and-database-upgrade).

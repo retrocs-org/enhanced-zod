@@ -10,6 +10,16 @@ are retained below; new website changes belong in that separate log.
 
 ## Unreleased
 
+### Multiplayer browser and lobby improvements
+
+- Search and filter servers by map/name/mode, region, measured TCP latency,
+  occupancy and game state; save favorites and successfully joined addresses.
+- Join full or active games as a spectator, preview the map in the lobby and
+  auto-assign an open fort team. Explicit pre-match spectator selection releases
+  the team and clears readiness.
+- Open portal friends/invitations and community creations from Multiplayer.
+- Render and select list entries without requiring legacy menu border artwork.
+
 ### Reliability and release checks
 
 - Multiplayer joins verify the server engine version before replacing the current
