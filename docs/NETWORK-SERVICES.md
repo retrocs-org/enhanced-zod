@@ -735,13 +735,18 @@ reporting. No additional SQL migration is needed beyond schema 007.
 
 ## Multiplayer menu and server browser
 
-Multiplayer contains Server Browser for ordinary network matches. Its Public
-Servers tab lists public dedicated hosts and uses browser-based cloud approval.
-Local Area Network discovers nearby LAN hosts; Direct Connect accepts private
-host IP/hostnames and optional ports (default 2137). LAN/private play supports
-guests. Host LAN / private opens the existing match-creation tools.
+Multiplayer is split into Play Offline and Play Online. Play Offline > Play
+against AI opens the existing local skirmish tools without requiring cloud login.
+Play Online contains Planetary Conquest and Server Browser for ordinary matches.
+
+Server Browser has Public Servers, Private Servers and LAN Servers tabs. Public
+Servers lists public dedicated hosts and uses browser-based cloud approval.
+Private Servers accepts an IP/hostname and optional port (default 2137), rather
+than exposing private hosts in a public directory. LAN Servers discovers nearby
+hosts. Private/LAN play supports guests. Host LAN / private opens the existing
+match-creation tools. Back returns from the browser to Play Online.
 
 Planetary Conquest is the chosen name for the proposed online-only shared
 planetary territory mode. Its menu entry is explicitly unavailable until its
-strategic API and gameplay are implemented. Co-op is also a future mode. Neither
-replaces ordinary public, LAN or direct-connect matches.
+strategic API and gameplay are implemented. Future cooperative campaigns are
+under Campaigns > Cooperative, rather than the ordinary match browser.

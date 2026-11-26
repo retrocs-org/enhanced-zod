@@ -10,6 +10,14 @@ are retained below; new website changes belong in that separate log.
 
 ## Unreleased
 
+### Campaign and offline/online menu hierarchy
+
+- Group original and custom solo campaigns under Campaigns > Single Player, and reserve Campaigns > Cooperative > Future Campaign for future content.
+- Split Multiplayer into Play Offline > Play against AI and Play Online > Planetary Conquest / Server Browser.
+- Name the browser tabs Public Servers, Private Servers and LAN Servers; private hosts connect by address and are not publicly listed.
+- Move the standalone Skirmish shortcut into Play Offline and preserve parent-menu navigation after returning from a browser or AI setup.
+
+
 ### Play-mode navigation
 
 - Separate Single Player into Original Campaign and Imported Campaigns, preserving their mission history and progress.

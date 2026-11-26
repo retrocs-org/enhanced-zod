@@ -99,7 +99,7 @@ public:
 
 private:
 	friend struct ZFrontEndRegression;
-	enum Screen { SCR_MAIN, SCR_REPLAY, SCR_SCORES, SCR_BRIEFING, SCR_LOADING, SCR_QUIT, SCR_LOAD, SCR_CUSTOM, SCR_KEYS, SCR_IMPORT, SCR_SETTINGS, SCR_EDITOR, SCR_CAMPAIGNS, SCR_RECORDINGS, SCR_ALERTS, SCR_MULTIPLAYER_GUIDE, SCR_BUILD_INFO, SCR_DIAGNOSTICS, SCR_SINGLE_PLAYER, SCR_MULTIPLAYER_MENU };
+	enum Screen { SCR_MAIN, SCR_REPLAY, SCR_SCORES, SCR_BRIEFING, SCR_LOADING, SCR_QUIT, SCR_LOAD, SCR_CUSTOM, SCR_KEYS, SCR_IMPORT, SCR_SETTINGS, SCR_EDITOR, SCR_CAMPAIGNS, SCR_RECORDINGS, SCR_ALERTS, SCR_MULTIPLAYER_GUIDE, SCR_BUILD_INFO, SCR_DIAGNOSTICS, SCR_SINGLE_PLAYER, SCR_MULTIPLAYER_MENU, SCR_CAMPAIGN_MENU, SCR_COOPERATIVE_MENU, SCR_OFFLINE_MENU, SCR_ONLINE_MENU };
 
 	struct CustomMap
 	{
@@ -280,8 +280,8 @@ private:
 
 	// ---- screens ----
 	void RenderMain(bool interactive);
-    void RenderPlayModes(bool multiplayer);void OpenCampaignGroup(int scope);
-    int campaign_scope=0,mode_choice=0;bool browser_return_pending=false;
+    void RenderPlayModes();void OpenCampaignGroup(int scope);
+    int campaign_scope=0,mode_choice=0;bool browser_return_pending=false,skirmish_return_pending=false;
 	void RenderCommandMain(bool interactive);
 	void RenderControlPanel(bool interactive);
 	int settings_return_screen=SCR_MAIN,import_return_screen=SCR_MAIN;

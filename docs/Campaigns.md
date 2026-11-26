@@ -1,7 +1,7 @@
 # Campaign packs and Map Editor
 
-**Single Player** offers **Original Campaign** alongside each installed community
-campaign. The original mission list and progression are retained. Imported
+**Campaigns > Single Player** offers **Original 1996 Campaigns** and
+**Custom Campaigns**. The original mission list and progression are retained. Imported
 campaign progress is stored separately by pack ID; installing a pack never
 replaces the original campaign.
 
@@ -400,9 +400,11 @@ rejects reachable branches with no route to an ending, missing required assets a
 invalid objectives/events. Unreachable missions are reported for review. Run
 Validate and inspect the playtest report before distributing a campaign pack.
 
-## Single Player menu
+## Campaigns menu
 
-Single Player has separate Original Campaign and Imported Campaigns entries.
-Original Campaign retains its own mission history, progression and cinematics.
-Imported Campaigns lists installed packs and exposes Import pack; an empty list
-never starts the Original Campaign by accident. Back returns to Single Player.
+Campaigns contains Single Player and Cooperative. Single Player offers Original
+1996 Campaigns and Custom Campaigns. The original campaign retains its own mission
+history, progression and cinematics. Custom Campaigns lists installed packs and
+exposes Import pack; an empty list never starts the original campaign by accident.
+Back returns through Single Player to Campaigns. Cooperative contains a disabled
+Future Campaign entry until cooperative campaigns are implemented.

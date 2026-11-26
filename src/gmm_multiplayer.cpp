@@ -20,8 +20,8 @@ void GMMMultiplayer::SetupLayout1()
     auto button=[&](GMMWButton &b,int px,int py,int width,const string &label) {
         b.SetType(MMGENERIC_BUTTON); b.SetCoords(px,py); b.SetDimensions(width,18); b.SetText(label); AddWidget(&b);
     };
-    button(mode_button,10,24,126,"Public Servers");button(lan_button,142,24,136,"Local Area Network");button(direct_button,284,24,126,"Direct Connect");mode_button.SetGreen(true);
-    const char *help[]={"Enter a private host IP address or hostname below.","Use host:port for a custom port. Default game port: 2137.","Private and LAN hosts support guests without cloud sign-in.","For public dedicated servers, use the Public Servers tab."};for(int i=0;i<4;++i){direct_help[i].SetCoords(10,68+i*36);direct_help[i].SetDimensions(400,24);direct_help[i].SetText(help[i]);direct_help[i].SetActive(false);AddWidget(&direct_help[i]);}
+    button(mode_button,10,24,126,"Public Servers");button(direct_button,142,24,136,"Private Servers");button(lan_button,284,24,126,"LAN Servers");mode_button.SetGreen(true);
+    const char *help[]={"Private servers connect by address, not a public listing.","Use host:port for a custom port. Default game port: 2137.","Private and LAN hosts support guests without cloud sign-in.","For public dedicated servers, use the Public Servers tab."};for(int i=0;i<4;++i){direct_help[i].SetCoords(10,68+i*36);direct_help[i].SetDimensions(400,24);direct_help[i].SetText(help[i]);direct_help[i].SetActive(false);AddWidget(&direct_help[i]);}
     search_entry.SetCoords(10,48);search_entry.SetDimensions(400,GMMWTEXTENTRY_HEIGHT);search_entry.SetLabel("Map/name/mode: ");search_entry.SetMaxText(60);AddWidget(&search_entry);
     region_entry.SetCoords(10,70);region_entry.SetDimensions(400,GMMWTEXTENTRY_HEIGHT);region_entry.SetLabel("Region: ");region_entry.SetMaxText(32);AddWidget(&region_entry);
     button(view_button,10,92,126,"All servers");button(ping_button,144,92,126,"Any ping");button(players_button,278,92,132,"Any players");
@@ -32,7 +32,7 @@ void GMMMultiplayer::SetupLayout1()
     button(join_button,10,290,400,"Join Selected Game");
     address_entry.SetCoords(10,316); address_entry.SetDimensions(400,GMMWTEXTENTRY_HEIGHT);
     address_entry.SetLabel("Address: "); address_entry.SetAddressMode(true); address_entry.SetMaxText(65); AddWidget(&address_entry);
-    button(address_button,10,337,400,"Join by IP / hostname:port");
+    button(address_button,10,337,400,"Connect by IP / hostname:port");
     button(create_button,10,362,190,"Host LAN / private"); button(back_button,210,362,200,"Back");
     button(portal_button,10,388,190,"Friends / invitations");button(creations_button,210,388,200,"Community creations");
     UpdateDimensions();
@@ -41,7 +41,7 @@ void GMMMultiplayer::SetBrowserMode(int mode){
  if(joining)return;refresh_task.Cancel();compatibility_task.Cancel();compatibility_address.clear();has_reconnect_target=false;join_button.SetText("Join Selected Game");lan_mode=mode==1;direct_mode=mode==2;sticky_error=false;matches.clear();discovered.clear();match_list.GetEntryList().clear();
  mode_button.SetGreen(mode==0);lan_button.SetGreen(lan_mode);direct_button.SetGreen(direct_mode);
  std::vector<ZGMMWidget*> listing={&match_list,&search_entry,&region_entry,&view_button,&ping_button,&players_button,&state_button,&favorite_button,&refresh_button,&join_button};for(auto *widget:listing)widget->SetActive(!direct_mode);for(auto &label:direct_help)label.SetActive(direct_mode);
- address_entry.SetSelected(direct_mode);status_label.SetText(direct_mode?"Direct connect to a private or LAN host":"");detail_label.SetText(direct_mode?"Share the host address and game port with invited players.":"");keyboard_focus=-1;
+ address_entry.SetSelected(direct_mode);status_label.SetText(direct_mode?"Private servers: connect by address":"");detail_label.SetText(direct_mode?"Share the host address and game port with invited players.":"");keyboard_focus=-1;
  if(!direct_mode)Refresh();
 }
 void GMMMultiplayer::Refresh()

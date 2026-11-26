@@ -62,7 +62,7 @@ enum
 
 static const char *item_label[MAX_ITEMS] =
 {
-	"Single Player", "Load Game", "Replay Level", "Skirmish", "Map Editor", "Multiplayer", "High Score"
+	"Campaigns", "Load Game", "Replay Level", "Skirmish", "Map Editor", "Multiplayer", "High Score"
 };
 
 static const char *item_help[MAX_ITEMS] =
@@ -537,7 +537,7 @@ void ZFrontEnd::Show()
 	editing_mapname = false;
 
 	visible = true;
-	screen = browser_return_pending?SCR_MULTIPLAYER_MENU:SCR_MAIN;browser_return_pending=false;
+	screen = browser_return_pending?SCR_ONLINE_MENU:skirmish_return_pending?SCR_OFFLINE_MENU:SCR_MAIN;browser_return_pending=skirmish_return_pending=false;
 	editing_name = false;
 	name_edit = zod_player_name;
 	kb_item = -1;
@@ -562,6 +562,7 @@ bool ZFrontEnd::PopAction(Action &out)
     if(out.type==FE_OPEN_MULTIPLAYER){std::ifstream seen(ZAsset_Profile()+"multiplayer-guide-seen");if(!seen&&!guide_completed_session){guide_return=screen;screen=SCR_MULTIPLAYER_GUIDE;multiplayer_guide_step=0;return false;}}
 
     if(out.type==FE_OPEN_MULTIPLAYER)browser_return_pending=true;
+    if(out.type==FE_OPEN_SKIRMISH)skirmish_return_pending=true;
     if(out.type==FE_START_MAP||out.type==FE_START_CAMPAIGN_MAP||out.type==FE_START_MAP_FILE||out.type==FE_LOAD_SAVE){deployment_action=out;has_deployment_retry=true;deployment_failed=false;}
 	//anything but a campaign level (custom map, save, multiplayer...) is not a
 	//level whose cutscenes we should show
@@ -1301,7 +1302,7 @@ void ZFrontEnd::ActivateItem(int item)
 	switch(item)
 	{
 	case ITEM_NEW:
-        mode_choice=0;screen=SCR_SINGLE_PLAYER;
+        mode_choice=0;screen=SCR_CAMPAIGN_MENU;
 		break;
 	case ITEM_LOAD:
 		LoadSaveInfo();
@@ -1326,7 +1327,7 @@ void ZFrontEnd::ActivateItem(int item)
 		break;
 	case ITEM_MULTI:
 		Sound(snd_click);
-        screen=SCR_MULTIPLAYER_MENU;
+        mode_choice=0;screen=SCR_MULTIPLAYER_MENU;
 		break;
 	case ITEM_SCORES:
 		Sound(snd_click);
@@ -1495,8 +1496,7 @@ void ZFrontEnd::Render()
     case SCR_MULTIPLAYER_GUIDE:RenderMultiplayerGuide();break;
     case SCR_BUILD_INFO:RenderBuildInfo();break;
     case SCR_DIAGNOSTICS:RenderDiagnostics();break;
-    case SCR_SINGLE_PLAYER:RenderPlayModes(false);break;
-    case SCR_MULTIPLAYER_MENU:RenderPlayModes(true);break;
+    case SCR_SINGLE_PLAYER:case SCR_MULTIPLAYER_MENU:case SCR_CAMPAIGN_MENU:case SCR_COOPERATIVE_MENU:case SCR_OFFLINE_MENU:case SCR_ONLINE_MENU:RenderPlayModes();break;
     case SCR_EDITOR: if(workspace && workspace->Render()) {
         string play=workspace->PlayPath();editor_testing=!play.empty();if(!editor_testing)workspace.reset();ZVideo_SetFullscreen(editor_fullscreen_previous);screen=SCR_MAIN;ScanCustomMaps(true);
         if(editor_testing&&!workspace->TestCampaign().root.empty()){editor_previous_campaign=selected_campaign;editor_previous_levels=levels;editor_previous_level=current_level;editor_previous_current=progress_current;editor_previous_unlocked=progress_unlocked;selected_campaign=workspace->TestCampaign();levels.clear();for(const auto &mission:selected_campaign.missions){LevelInfo info;info.title=mission.title;info.base=mission.map;ZCampaign_SafeAsset(selected_campaign.root,mission.map,info.file);ZMap map;info.planet=DESERT;info.w=info.h=0;if(map.Read(info.file.c_str())){info.planet=map.GetMapBasics().terrain_type;info.w=map.GetMapBasics().width;info.h=map.GetMapBasics().height;}levels.push_back(info);}StartLevel(workspace->TestMission(),true);break;}
@@ -1567,22 +1567,23 @@ void ZFrontEnd::RenderCommandMain(bool interactive)
     DimScreen(235);
     DrawLabel(font_led,48,"zod-enhanced",72,40,C_AMBER);
     DrawLabel(font_ui,22,"ZOD ENGINE ENHANCED",74,105,C_STEEL_DIM);
-    DrawLabel(font_ui,22,"SINGLE PLAYER / PUBLIC / LAN / DIRECT",1208,66,C_STEEL,2);
+    DrawLabel(font_ui,22,"CAMPAIGNS / OFFLINE / ONLINE",1208,66,C_STEEL,2);
     FillRect(72,148,1136,2,C_STEEL_DIM,100);
     DrawPanel(72,190,438,490); DrawPanel(536,190,672,490);
     DrawLabel(font_ui,20,"01 / OPERATIONS",98,210,C_AMBER);
     DrawLabel(font_ui,20,"02 / CURRENT OPERATION",564,210,C_AMBER);
-    const int order[]={ITEM_NEW,ITEM_LOAD,ITEM_REPLAY,ITEM_SKIRMISH,ITEM_CUSTOM,ITEM_MULTI,ITEM_SCORES};
+    const int order[]={ITEM_NEW,ITEM_MULTI,ITEM_CUSTOM,ITEM_LOAD,ITEM_REPLAY,ITEM_SCORES};
+    const int itemCount=sizeof(order)/sizeof(order[0]);
     auto enabled=[&](int item) { return item!=ITEM_LOAD || have_save || progress_current>=0; };
     if(interactive && kb_dy) {
         int position=-1;
-        for(int i=0;i<MAX_ITEMS;++i) if(order[i]==kb_item) position=i;
-        if(position<0) position=kb_dy>0?0:MAX_ITEMS-1;
-        else position=(position+kb_dy+MAX_ITEMS)%MAX_ITEMS;
-        while(!enabled(order[position])) position=(position+kb_dy+MAX_ITEMS)%MAX_ITEMS;
+        for(int i=0;i<itemCount;++i) if(order[i]==kb_item) position=i;
+        if(position<0) position=kb_dy>0?0:itemCount-1;
+        else position=(position+kb_dy+itemCount)%itemCount;
+        while(!enabled(order[position])) position=(position+kb_dy+itemCount)%itemCount;
         kb_item=order[position]; Sound(snd_hover);
     }
-    for(int i=0;i<MAX_ITEMS;++i) {
+    for(int i=0;i<itemCount;++i) {
         int item=order[i]; float y=258+i*55;
         bool selected=interactive && kb_item==item;
         if(Button(item_label[item],98,y,386,44,interactive && enabled(item),selected)) ActivateItem(item);
@@ -1612,7 +1613,7 @@ void ZFrontEnd::RenderCommandMain(bool interactive)
     bool saved=load_selected>=0 && load_selected<count;
     if(Button(saved?"Resume saved battle":campaign?"Continue campaign":"Start campaign",564,598,616,48,interactive,true)) {
         if(saved) { Sound(snd_start); actions.push_back(Action(FE_LOAD_SAVE,saves[load_selected].slot)); screen=SCR_LOADING;loading_since=SDL_GetTicks(); }
-        else if(campaign)StartLevel(progress_current,true);else {mode_choice=0;screen=SCR_SINGLE_PLAYER;}
+        else if(campaign)StartLevel(progress_current,true);else {mode_choice=0;screen=SCR_CAMPAIGN_MENU;}
     }
     if(Button("Quit",72,714,150,46,interactive)) { screen_before_quit=SCR_MAIN;screen=SCR_QUIT;Sound(snd_click); }
     DrawLabel(font_ui_medium,18,"Build "+ZBuild_ID(),258,727,C_STEEL_DIM);
@@ -2718,38 +2719,54 @@ void ZFrontEnd::OpenHistoryBriefing(int index){
 void ZFrontEnd::OpenCampaignGroup(int scope){
  campaign_scope=scope;ScanCampaigns();campaign_choice=scope==2&&!campaigns.empty()?0:-1;campaign_previous_choice=-2;campaign_scroll=0;campaign_mission_focus=false;campaign_import_preview=campaign_manage=campaign_records=campaign_gallery=false;screen=SCR_CAMPAIGNS;clicked=kb_activate=focus_activate=false;
 }
-void ZFrontEnd::RenderPlayModes(bool multiplayer){
- DimScreen(190);DrawPanel(180,110,920,580);DrawLabel(font_ui,30,multiplayer?"MULTIPLAYER":"SINGLE PLAYER",216,142,C_AMBER);
- if(!multiplayer){
-  if(kb_dy)mode_choice=(mode_choice+kb_dy+2)%2;
-  if(Button("Original Campaign",216,224,848,52,true,mode_choice==0)||kb_activate&&mode_choice==0){OpenCampaignGroup(1);return;}
-  DrawLabel(font_ui_medium,20,"The original missions, completion history, briefings and cinematics.",232,292,C_STEEL);
-  if(Button("Imported Campaigns",216,350,848,52,true,mode_choice==1)||kb_activate&&mode_choice==1){OpenCampaignGroup(2);return;}
-  DrawLabel(font_ui_medium,20,"Install and play community campaigns with their own saved progress.",232,418,C_STEEL);
- }else{
-  Button("Planetary Conquest",216,216,848,48,false);
-  DrawLabel(font_ui_medium,19,"Planned: online planetary territory war through our public infrastructure.",232,274,C_STEEL_DIM);
-  if(Button("Server Browser",216,326,848,52,true,true)||kb_activate){kb_activate=false;actions.push_back(Action(FE_OPEN_MULTIPLAYER));return;}
-  DrawLabel(font_ui_medium,20,"Public dedicated servers, Local Area Network and private direct connect.",232,390,C_STEEL);
-  Button("Co-op",216,446,848,48,false);
-  DrawLabel(font_ui_medium,19,"Future mode. Planetary Conquest and Co-op are not yet playable.",232,506,C_STEEL_DIM);
+void ZFrontEnd::RenderPlayModes(){
+ Screen parent=SCR_MAIN;int choices=2;string title;
+ switch(screen){
+  case SCR_CAMPAIGN_MENU:title="CAMPAIGNS";break;
+  case SCR_SINGLE_PLAYER:title="CAMPAIGNS / SINGLE PLAYER";parent=SCR_CAMPAIGN_MENU;break;
+  case SCR_COOPERATIVE_MENU:title="CAMPAIGNS / COOPERATIVE";parent=SCR_CAMPAIGN_MENU;choices=0;break;
+  case SCR_MULTIPLAYER_MENU:title="MULTIPLAYER";break;
+  case SCR_OFFLINE_MENU:title="MULTIPLAYER / PLAY OFFLINE";parent=SCR_MULTIPLAYER_MENU;choices=1;break;
+  default:title="MULTIPLAYER / PLAY ONLINE";parent=SCR_MULTIPLAYER_MENU;choices=1;break;
  }
- if(Button("Back",860,606,204,44)||kb_back){kb_back=false;screen=SCR_MAIN;}
+ if(choices){if(kb_dy)mode_choice=(mode_choice+kb_dy+choices)%choices;mode_choice=max(0,min(mode_choice,choices-1));}
+ DimScreen(190);DrawPanel(180,110,920,580);DrawLabel(font_ui,29,title,216,142,C_AMBER);
+ auto go=[&](Screen next){screen=next;mode_choice=0;kb_activate=clicked=focus_activate=false;};
+ auto item=[&](const string &label,const string &description,float y,int index,bool enabled=true){bool activated=Button(label,216,y,848,52,enabled,enabled&&mode_choice==index)||(enabled&&kb_activate&&mode_choice==index);DrawLabel(font_ui_medium,19,description,232,y+68,enabled?C_STEEL:C_STEEL_DIM);return activated;};
+ switch(screen){
+  case SCR_CAMPAIGN_MENU:
+   if(item("Single Player","Original 1996 campaigns and custom campaigns with separate progress.",224,0)){go(SCR_SINGLE_PLAYER);return;}
+   if(item("Cooperative","Campaigns played together. Cooperative content is planned.",350,1)){go(SCR_COOPERATIVE_MENU);return;}break;
+  case SCR_SINGLE_PLAYER:
+   if(item("Original 1996 Campaigns","The original missions, completion history, briefings and cinematics.",224,0)){OpenCampaignGroup(1);return;}
+   if(item("Custom Campaigns","Import and play community campaigns with their own saved progress.",350,1)){OpenCampaignGroup(2);return;}break;
+  case SCR_COOPERATIVE_MENU:
+   item("Future Campaign","Cooperative campaigns are planned and are not yet playable.",224,-1,false);break;
+  case SCR_MULTIPLAYER_MENU:
+   if(item("Play Offline","Local battles against AI. No cloud account or internet is required.",224,0)){go(SCR_OFFLINE_MENU);return;}
+   if(item("Play Online","Planetary Conquest and ordinary public, private or LAN matches.",350,1)){go(SCR_ONLINE_MENU);return;}break;
+  case SCR_OFFLINE_MENU:
+   if(item("Play against AI","Choose a map, AI opponents, teams and difficulty for a local battle.",224,0)){kb_activate=false;actions.push_back(Action(FE_OPEN_SKIRMISH));return;}break;
+  default:
+   item("Planetary Conquest","Planned: online planetary territory war through our public infrastructure.",216,-1,false);
+   if(item("Server Browser","Public Servers, Private Servers by address, and nearby LAN Servers.",350,0)){kb_activate=false;actions.push_back(Action(FE_OPEN_MULTIPLAYER));return;}break;
+ }
+ if(Button("Back",860,606,204,44)||kb_back){kb_back=false;go(parent);}
 }
 void ZFrontEnd::RenderCampaigns(){
     string picked;if(ZCampaign_PollPack(picked)){campaign_manage=campaign_records=campaign_gallery=false;campaign_dependency_scroll=0;campaign_pack_path=picked;campaign_import_preview=ZCampaign_InspectPack(picked,campaign_pack_summary,campaign_error);}
     bool modal=campaign_import_preview||campaign_manage||campaign_records||campaign_gallery;
-    DimScreen(190);DrawPanel(100,80,1080,650);DrawLabel(font_ui,30,campaign_scope==1?"SINGLE PLAYER / ORIGINAL CAMPAIGN":campaign_scope==2?"SINGLE PLAYER / IMPORTED CAMPAIGNS":"SINGLE PLAYER / CAMPAIGNS",132,104,C_AMBER);
+    DimScreen(190);DrawPanel(100,80,1080,650);DrawLabel(font_ui,30,campaign_scope==1?"CAMPAIGNS / ORIGINAL 1996":campaign_scope==2?"CAMPAIGNS / CUSTOM CAMPAIGNS":"CAMPAIGNS",132,104,C_AMBER);
     bool emptyImported=campaign_scope==2&&campaigns.empty();int first=campaign_scope==2&&!emptyImported?0:-1;campaign_choice=campaign_scope==1?-1:max(first,min(campaign_choice,(int)campaigns.size()-1));
     if(kb_dx&&!modal)campaign_mission_focus=kb_dx>0;
     if(kb_dy&&!modal&&!campaign_mission_focus)campaign_choice=campaign_scope==1?-1:max(first,min(campaign_choice+kb_dy,(int)campaigns.size()-1));
-    if(campaign_scope!=2&&Button("Original Campaign",132,166,380,52,!modal,campaign_choice==-1))campaign_choice=-1;
-    if(campaign_scope==2)DrawLabel(font_ui,22,emptyImported?"No imported campaigns":"INSTALLED CAMPAIGNS",132,180,C_STEEL);
+    if(campaign_scope!=2&&Button("Original 1996 Campaigns",132,166,380,52,!modal,campaign_choice==-1))campaign_choice=-1;
+    if(campaign_scope==2)DrawLabel(font_ui,22,emptyImported?"No custom campaigns":"CUSTOM CAMPAIGNS",132,180,C_STEEL);
     if(wheel&&!modal&&Hover(132,230,380,330))campaign_scroll-=wheel>0?1:-1;
     campaign_scroll=max(0,min(campaign_scroll,max(0,(int)campaigns.size()-5)));
     for(int row=0;campaign_scope!=1&&row<5&&row+campaign_scroll<(int)campaigns.size();++row){int i=row+campaign_scroll;if(Button(campaigns[i].title.substr(0,30),132,234+row*60,380,52,!modal,campaign_choice==i))campaign_choice=i;}
     const ZCampaign *pack=campaign_choice<0?nullptr:&campaigns[campaign_choice];
-    string title=emptyImported?"Import a campaign pack to begin":pack?pack->title:"Original Campaign",description=pack?pack->description:"The original Z campaign, preserved with its own progress.";
+    string title=emptyImported?"Import a campaign pack to begin":pack?pack->title:"Original 1996 Campaigns",description=pack?pack->description:"The original Z campaign, preserved with its own progress.";
     DrawLabel(font_ui,28,title.substr(0,40),548,166,C_AMBER);
     int current=0,unlocked=0,count=emptyImported?0:pack?(int)pack->missions.size():(int)original_levels.size();
     if(pack)ZCampaign_Progress(pack->id,current,unlocked);else {const char *home=getenv("HOME");if(!home)home=getenv("USERPROFILE");if(home){FILE *f=fopen((string(home)+"/.zod_campaign_progress").c_str(),"r");if(f){int ignored=fscanf(f,"%d %d",&current,&unlocked);(void)ignored;fclose(f);}}}
@@ -2856,13 +2873,13 @@ void ZFrontEnd::RenderAlerts(){int before=(zod_damage_alerts?1:0)+(zod_productio
 void ZFrontEnd::RenderMultiplayerGuide(){
  DimScreen(190);DrawPanel(140,100,1000,610);DrawLabel(font_ui,28,"MULTIPLAYER / GETTING STARTED",176,132,C_AMBER);
  const char *titles[]={"1. Import your game data","2. Public servers use your cloud account","3. Private games stay independent","4. Join friends and check compatibility"};
- const char *lines[4][4]={{"Use Import disc to install your own original graphics and sounds.","The engine download contains our code and tools, not original game media.","Map data is downloaded from the host and verified before loading.","If assets are missing, return to Import disc from the main menu."},{"Open Multiplayer > Server Browser > Public Servers, then approve in your browser.","Only sign in on your configured HTTPS portal; the game never needs your password.","Approval is short lived and can be used once for the selected server.","If it expires or the connection drops, request fresh browser approval."},{"Private and LAN hosts support guests without a cloud account.","Share the host address and game port with people you invite.","Local campaign and private play do not submit public account statistics.","The public server owner controls administrators, moderators and temporary bans."},{"Use the portal community page for friends and server invitations.","Match the host engine version; check map and capacity in the browser.","Different local maps use the host copy; your saved maps are not replaced.","If a join fails, read the connection message before retrying."}};
+ const char *lines[4][4]={{"Use Import disc to install your own original graphics and sounds.","The engine download contains our code and tools, not original game media.","Map data is downloaded from the host and verified before loading.","If assets are missing, return to Import disc from the main menu."},{"Open Play Online > Server Browser > Public Servers, then approve in your browser.","Only sign in on your configured HTTPS portal; the game never needs your password.","Approval is short lived and can be used once for the selected server.","If it expires or the connection drops, request fresh browser approval."},{"Private and LAN hosts support guests without a cloud account.","Share the host address and game port with people you invite.","Local campaign and private play do not submit public account statistics.","The public server owner controls administrators, moderators and temporary bans."},{"Use the portal community page for friends and server invitations.","Match the host engine version; check map and capacity in the browser.","Different local maps use the host copy; your saved maps are not replaced.","If a join fails, read the connection message before retrying."}};
  DrawLabel(font_ui,25,titles[multiplayer_guide_step],176,220,C_STEEL);for(int i=0;i<4;++i)DrawLabel(font_ui_medium,20,lines[multiplayer_guide_step][i],176,282+i*60,C_STEEL);
  if(multiplayer_guide_step==0&&Button("Open importer",176,544,270,42)){import_return_screen=SCR_MULTIPLAYER_GUIDE;screen=SCR_IMPORT;}
  if(multiplayer_guide_step==3&&Button("Friends on the portal",176,544,300,42))SDL_OpenURL((ZPortal_URL()+"/community").c_str());
  if(Button("Back",176,636,190,44)){if(multiplayer_guide_step) --multiplayer_guide_step;else screen=guide_return;}
  if(kb_back){kb_back=false;screen=guide_return;}
- if(Button(multiplayer_guide_step==3?"Open server browser":"Next",780,636,324,44,true,true)||kb_activate){kb_activate=false;if(multiplayer_guide_step<3)++multiplayer_guide_step;else {SDL_CreateDirectory(ZAsset_Profile().c_str());std::ofstream seen(ZAsset_Profile()+"multiplayer-guide-seen");seen<<"1\n";seen.close();guide_completed_session=true;screen=SCR_MULTIPLAYER_MENU;actions.push_back(Action(FE_OPEN_MULTIPLAYER));}}
+ if(Button(multiplayer_guide_step==3?"Open server browser":"Next",780,636,324,44,true,true)||kb_activate){kb_activate=false;if(multiplayer_guide_step<3)++multiplayer_guide_step;else {SDL_CreateDirectory(ZAsset_Profile().c_str());std::ofstream seen(ZAsset_Profile()+"multiplayer-guide-seen");seen<<"1\n";seen.close();guide_completed_session=true;screen=SCR_ONLINE_MENU;actions.push_back(Action(FE_OPEN_MULTIPLAYER));}}
 }
 
 void ZFrontEnd::RenderBuildInfo(){

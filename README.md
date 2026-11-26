@@ -367,12 +367,12 @@ Escape returns to the previous page or resumes the battle.
 
 | Item | What it does |
 |------|--------------|
-| **Single Player** | Choose Original Campaign or an installed community campaign |
+| **Campaigns** | Single Player: Original 1996 Campaigns and Custom Campaigns; Cooperative: future content |
 | **Load Game** | Return to your saved battle, or restart the level the campaign has reached |
 | **Replay Level** | Planet-by-planet level picker: locked, beaten and best score per level |
-| **Skirmish** | Random map generator (`zod_mapgen`) |
+| **Multiplayer → Play Offline → Play against AI** | Local AI battles and random map generator (`zod_mapgen`) |
 | **Map Editor** | Open the fullscreen integrated editor and Campaign Studio |
-| **Multi-Player** | The existing match browser / lobby |
+| **Multiplayer → Play Online** | Planetary Conquest (planned) and Server Browser: Public, Private and LAN Servers |
 | **High Score** | Local top 10 (`~/.zod_highscores`); every won match is scored |
 | **Quit to Desktop** | Asks first |
 
@@ -456,7 +456,7 @@ existing level, Save As and Campaign Studio are available inside the editor.
 Original maps can be edited as new copies and cannot be overwritten. The editor
 includes terrain/object/territory tools, Undo/Redo, zoom, grid, and play testing.
 
-**Single Player** keeps **Original Campaign** and imported campaigns as separate
+**Campaigns > Single Player** keeps **Original 1996 Campaigns** and **Custom Campaigns** as separate
 choices with independent progress. Campaign Studio creates ordered mission packs
 with text briefings, animated portraits and optional owned videos. See
 [Campaign packs and editor](docs/Campaigns.md) for authoring, installation and
