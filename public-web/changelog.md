@@ -1,3 +1,11 @@
+## Public server operations (unreleased)
+
+- Add server consoles with scoped moderator/admin/owner permissions, temporary bans and kick delivery status.
+- Let owners disable hosting or revoke credentials; show recent role, authorization and operations audit history.
+- Add named match presets, installed-map rotation, tactical previews and one-vote-per-participant between-round voting.
+- Report heartbeat/health freshness, cloud connectivity, simulation timing and statistics queue size.
+- Requires MariaDB migration 006 and matching engine/agent updates. Production deployment remains separate.
+
 # Website changelog
 
 Changes to the zod-enhanced public website, PHP API and deployment are recorded

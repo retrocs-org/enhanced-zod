@@ -44,6 +44,11 @@ class ZServer : public ZCore
         ZMPAsync<ZCloudRoles> cloud_roles_task;ZCloudRoles cloud_roles;
         double cloud_roles_next=0,cloud_roles_until=0;std::map<int,int> cloud_role_sent;
         bool CloudAdmin(int player);void RefreshCloudRoles();
+        int CloudRank(const std::string &account);void ApplyCloudOperations();std::string NextCloudMap();
+        ZCloudRoles cloud_settings;std::string cloud_round="boot";long long cloud_applied_revision=0;
+        double cloud_voting_until=0,cloud_boot=0,cloud_tick_ms=0,cloud_ack_after=0;
+        ZMPAsync<bool> cloud_ack_task;std::vector<std::string> cloud_ack_batch;
+        std::map<std::string,bool> cloud_command_results;std::map<std::string,double> cloud_seen_commands;
         int cloud_kills[MAX_TEAM_TYPES]={}, cloud_lost[MAX_TEAM_TYPES]={}, cloud_captures[MAX_TEAM_TYPES]={};
         std::set<int> cloud_deaths;
         double cloud_match_start=0;

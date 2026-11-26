@@ -245,6 +245,65 @@ class PHPBackend(unittest.TestCase):
         self.assertEqual(status,429);self.assertIn(b'reviewed',body)
 
 
+    def test_11_server_operations_roles_bans_rotation_presets_health_and_owner_security(self):
+        sql('DELETE FROM rate_limits')
+        owner=api('/api/login',{'username':'ApiCommander','password':'a different test password'})['session']
+        admin=api('/api/login',{'username':'LegacyCommander','password':'legacy test password'})['session']
+        people={}
+        for name in ['OpsModerator','OpsPlayer']:
+            api('/api/accounts',{'username':name,'password':'server operations test password'},expected=201)
+            people[name]=api('/api/login',{'username':name,'password':'server operations test password'})['session']
+        moderator=people['OpsModerator'];player=people['OpsPlayer'];key='3'*64
+        request_id=api('/api/server-auth/start',{'server':'ops-server','name':'Operations','key':key})
+        api('/api/server-auth/approve',{'code':request_id['user_code']},owner)
+        api('/api/servers/heartbeat',{'name':'Operations','host':'127.0.0.1','port':2301,'map':'maps/a.map','capacity':2,'players':1,'started':True,'version':'0.7.0'},key)
+        api('/api/server-console?server=ops-server',token=admin,expected=403) # site operator is not a server owner
+        sql('DELETE FROM rate_limits')
+        api('/api/my-servers/admin',{'server':'ops-server','username':'LegacyCommander','action':'add','role':'admin'},owner)
+        api('/api/my-servers/admin',{'server':'ops-server','username':'OpsModerator','action':'add','role':'moderator'},owner)
+        ids={name:api('/api/me',token=token)['id'] for name,token in [('owner',owner),('mod',moderator),('player',player)]}
+        maps=[{'map':'maps/'+name+'.map','title':name,'width':64,'height':80,'forts':[[4,4,1],[50,60,2]],'zones':[[0,0,32,80]]} for name in ['a','b']]
+        snapshot={'maps':maps,'roster':[{'account':ids['owner'],'name':'ApiCommander'},{'account':ids['player'],'name':'OpsPlayer'}],'round':'ops-round','intermission':True,'vote_remaining':25,'tick_ms':2.5,'uptime':40,'role_age':1,'outbox':2,'cloud_ok':True,'next_map':'maps/b.map','applied_revision':0}
+        api('/api/server/health',{'snapshot':snapshot},key)
+        api('/api/server-console?server=ops-server',token=player,expected=403)
+        self.assertEqual(api('/api/server-console?server=ops-server',token=moderator)['role'],1)
+        settings={'rotation':['maps/a.map','maps/b.map'],'bots':[2],'difficulty':2,'speed':150,'voting':True}
+        api('/api/server-console',{'server':'ops-server','action':'configure','settings':settings},moderator,expected=403)
+        api('/api/server-console',{'server':'ops-server','action':'configure','settings':settings},admin)
+        api('/api/server-console',{'server':'ops-server','action':'configure','settings':{**settings,'rotation':['/private/secret.map']}},admin,expected=400)
+        api('/api/server-console',{'server':'ops-server','action':'save-preset','name':'Practice','settings':settings},admin)
+        api('/api/server-console',{'server':'ops-server','action':'load-preset','name':'Practice'},admin)
+        console=api('/api/server-console?server=ops-server',token=owner);self.assertEqual(console['config']['settings'],settings);self.assertTrue(console['health']['fresh']);self.assertTrue(console['audit'])
+        self.assertEqual(request('/server-console?server=ops-server',token=moderator)[0],200)
+        view=api('/api/server-rotation?server=ops-server');self.assertEqual(len(view['maps']),2);self.assertNotIn('map',view['maps'][0]);self.assertIn(b'<svg',request('/server-rotation?server=ops-server')[1])
+        api('/api/server-rotation/vote',{'server':'ops-server','round':'ops-round','map':view['maps'][1]['id']},player)
+        api('/api/server-rotation/vote',{'server':'ops-server','round':'ops-round','map':view['maps'][0]['id']},player)
+        self.assertEqual(len(sql("SELECT * FROM server_map_votes WHERE server_id='ops-server'")),1)
+        api('/api/server-rotation/vote',{'server':'ops-server','round':'old-round','map':view['maps'][0]['id']},player,expected=409)
+        api('/api/server-rotation/vote',{'server':'ops-server','round':'ops-round','map':view['maps'][0]['id']},admin,expected=403)
+        sql('DELETE FROM rate_limits')
+        ticket=api('/api/tickets',{'server':'ops-server'},player)['ticket']
+        api('/api/server-console',{'server':'ops-server','action':'ban','username':'ApiCommander','reason':'no','minutes':15},moderator,expected=403)
+        api('/api/server-console',{'server':'ops-server','action':'kick','username':'LegacyCommander','reason':'no'},moderator,expected=403)
+        api('/api/server-console',{'server':'ops-server','action':'ban','username':'OpsPlayer','reason':'Temporary test ban','minutes':15},moderator)
+        api('/api/tickets',{'server':'ops-server'},player,expected=403)
+        api('/api/tickets/redeem',{'ticket':ticket},key,expected=403)
+        control=api('/api/server/control',token=key);self.assertIn(ids['mod'],control['moderators']);self.assertTrue(control['bans']);self.assertTrue(control['commands'])
+        command=str(control['commands'][0]['id']);api('/api/server/control/ack',{'results':[{'id':command,'applied':True}]},'a'*64)
+        self.assertTrue(api('/api/server/control',token=key)['commands'])
+        api('/api/server/control/ack',{'results':[{'id':command,'applied':True}]},key)
+        self.assertFalse(api('/api/server/control',token=key)['commands'])
+        api('/api/server-console',{'server':'ops-server','action':'unban','username':'OpsPlayer'},moderator)
+        self.assertTrue(api('/api/tickets',{'server':'ops-server'},player)['ticket'])
+        for action in ['disable','enable','revoke-host']:api('/api/server-console',{'server':'ops-server','action':action},admin,expected=403)
+        sql('DELETE FROM rate_limits')
+        api('/api/server-console',{'server':'ops-server','action':'disable'},owner);api('/api/server/identity',token=key,expected=401)
+        api('/api/server-console',{'server':'ops-server','action':'enable'},owner);self.assertEqual(api('/api/server/identity',token=key)['id'],'ops-server')
+        api('/api/server-console',{'server':'ops-server','action':'revoke-host'},owner);api('/api/server/identity',token=key,expected=401)
+        replacement=api('/api/server-auth/start',{'server':'ops-server','name':'Renewed','key':'0'*64});api('/api/server-auth/approve',{'code':replacement['user_code']},owner)
+        self.assertEqual(api('/api/server/identity',token='0'*64)['id'],'ops-server')
+        self.assertEqual(request('/server-console',token=owner,raw=b'server=ops-server&action=disable',headers={'Content-Type':'application/x-www-form-urlencoded'})[0],403)
+
     def test_10_server_ownership_and_owner_only_admin_delegation(self):
         sql('DELETE FROM rate_limits')
         owner=api('/api/login',{'username':'ApiCommander','password':'a different test password'})['session']

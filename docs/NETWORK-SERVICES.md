@@ -528,3 +528,39 @@ docker compose -f compose.public.yaml up -d
 Existing operator-created keys remain usable for first sign-in with `--key-file`;
 the agent copies that scoped credential into its private identity file. They do
 not bypass the owner check, and a disabled server cannot re-enable itself.
+
+## Public server operations
+
+Deploy the website, engine and agent together and apply migration 006 with
+`php _app/bin/migrate.php` from the deployed public-web directory. Back up the
+database first. These changes do not run production migrations automatically.
+
+My servers links to each server console. Owners manage hosting, credentials and
+membership. Administrators configure matches and moderate players; moderators
+can kick, temporarily ban and unban players but cannot change match settings.
+Staff cannot moderate the owner or accounts of equal/higher rank. Bans last up to
+seven days and apply to both existing connections and fresh authentication.
+Kicks expire after sixty seconds if undelivered and show acknowledged delivery
+status. Pending kicks recheck the actor's current permissions on the host.
+
+Owners can disable/re-enable their listing or revoke its scoped host credential.
+Revocation requires a fresh `--login` authorization. Neither action overrides a
+site-operator disable. Existing gameplay may finish while cloud actions stop.
+The console audit includes authorization, membership and portal operations.
+
+Administrators select installed rotation maps and save named presets with bot
+teams, difficulty, game speed and optional map voting. Settings apply in a paused
+pre-start lobby; active rounds retain their settings. The host independently
+checks every map against its installed selectable-map list. Add maps locally and
+restart the host to refresh that list. No remote arbitrary filesystem paths are
+accepted. Tactical previews show forts and territory boundaries, not terrain art.
+Connected authenticated participants can vote at `/server-rotation?server=ID`
+during the 25-second between-round window. One account has one replaceable vote;
+the next map falls back to rotation order when no vote wins.
+
+The agent reports health every five seconds: roster, simulation work per tick,
+uptime, role-cache age, pending statistics and desired/applied configuration.
+Reports older than thirty seconds are marked stale. Values are host-reported,
+not an independent monitoring guarantee. Public disconnect recovery opens the
+online browser with the same server selected and requests fresh browser approval;
+it never reuses an already consumed join ticket.

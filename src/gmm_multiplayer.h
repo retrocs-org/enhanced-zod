@@ -12,6 +12,7 @@ public:
     bool KeyPress(int c) override;
     bool UnClick(int px,int py) override { return ZGuiMainMenuBase::UnClick(px,py); }
     void SetError(const string &error);
+    void SetReconnectTarget(const string &host,int port,const string &id);
     ~GMMMultiplayer();
 private:
     friend class ZLANRegression;
@@ -27,7 +28,7 @@ private:
     vector<MatchInfo> matches,discovered;
     bool lan_mode=true, joining=false, sticky_error=false;
     int join_delay=0;
-    MatchInfo requested;
+    MatchInfo requested,reconnect_target;bool has_reconnect_target=false;
     struct RefreshResult { bool ok=false; vector<MatchInfo> matches; string error; };
     ZMPAsync<RefreshResult> refresh_task;
     ZMPAsync<ZPortalResponse> auth_begin,auth_poll;

@@ -80,7 +80,7 @@ void GMMLobby::RebuildPlayers()
     else status_label.SetText("Waiting for ready: "+clip(waiting,45)+" ("+to_string(ready)+"/"+to_string(humans)+")");
     if(cancelled_at&&SDL_GetTicks()-cancelled_at<5000&&countdown<0)status_label.SetText("Countdown cancelled: a player or team is no longer ready.");
     hint_label.SetText(eligible ? "Not ready cancels countdown. Bot changes use a player vote." : "Spectators do not hold a team or block match startup.");
-    if(public_server){bots_button.SetText(server_role?"Admin: manage bots":"Bots: server admins only");hint_label.SetText(server_role==2?"Server owner: manage admins in My servers; match changes apply directly.":server_role==1?"Server administrator: match controls apply directly.":"Server owners/admins manage match settings. Players control teams and ready state.");}
+    if(public_server){bots_button.SetText((server_role==1||server_role==2)?"Admin: manage bots":"Bots: server admins only");hint_label.SetText(server_role==2?"Server owner: manage admins in My servers; match changes apply directly.":server_role==1?"Server administrator: match controls apply directly.":"Server owners/admins manage match settings. Players control teams and ready state.");}
     player_list.CheckViewI();
 }
 void GMMLobby::Process()
@@ -120,7 +120,7 @@ void GMMLobby::HandleWidgetEvent(int type,ZGMMWidget *widget)
             if(!taken && team!=me->team) { gmm_flags.change_team=true; gmm_flags.change_team_type=team; error_label.SetText(""); return; }
         }
         SetError("No open fort team. A player must leave or a bot must be removed.");
-    } else if(widget==&bots_button && world_loaded && (!public_server||server_role>0)) {
+    } else if(widget==&bots_button && world_loaded && (!public_server||server_role==1||server_role==2)) {
         gmm_flags.open_main_menu=true; gmm_flags.open_main_menu_type=GMM_MANAGE_BOTS;
     }
 }

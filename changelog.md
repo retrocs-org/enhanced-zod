@@ -10,6 +10,16 @@ are retained below; new website changes belong in that separate log.
 
 ## Unreleased
 
+- Make embedded release provenance timestamps deterministic so independently prepared source archives can be collected together.
+
+### Public server operations
+
+- Separate moderators from match administrators; enforce temporary account bans and durable, acknowledged kicks per server.
+- Add fresh browser approval directly from public-server disconnect recovery, preserving the selected server.
+- Apply hosted rotations, bot teams, difficulty and speed presets at lobby boundaries; expose tactical next-map previews and connected-player voting.
+- Report simulation timing, authenticated roster, cloud freshness and pending statistics through the dedicated agent.
+
+
 ### Account-owned public hosting
 
 - Authenticate a dedicated public host through a browser code; persist only its server-scoped credential for restarts, never an account password/session.

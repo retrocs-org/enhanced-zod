@@ -318,7 +318,7 @@ void ZPlayer::ReturnToMenu()
 	OpenStartMenu();
 }
 
-void ZPlayer::JoinHostedMatch(const string &host, int port, int team, ZGuiMainMenuBase *menu,string ticket)
+void ZPlayer::JoinHostedMatch(const string &host, int port, int team, ZGuiMainMenuBase *menu,string ticket,string portalId)
 {
     if(!menu) return;
     if(join_task.Pending()) {
@@ -330,8 +330,8 @@ void ZPlayer::JoinHostedMatch(const string &host, int port, int team, ZGuiMainMe
     }
     int origin=menu->GetMenuType();
     std::uint64_t id=menu->GetInstanceId(); join_origin_id=id;
-    join_task.Start([host,port,team,origin,id,ticket]() {
-        PendingJoin result; result.host=host; result.port=port; result.team=team; result.origin=origin; result.menu_id=id;result.ticket=ticket;
+    join_task.Start([host,port,team,origin,id,ticket,portalId]() {
+        PendingJoin result; result.host=host; result.port=port; result.team=team; result.origin=origin; result.menu_id=id;result.ticket=ticket;result.portalId=portalId;
         try { if(ZNetCheckVersion(host,port,result.error)) result.connection=ZNetConnect(host,port,result.error); }
         catch(...) { result.error="Could not open connection. Please retry."; }
         return result;
@@ -365,7 +365,7 @@ bool ZPlayer::PollHostedJoin()
             lobby->SetError(retry ? "Reconnecting: attempt "+to_string(reconnect_attempt)+"/3 failed. Leave to cancel." : error);
         return false;
     }
-    cloud_join_ticket=std::move(result.ticket);cloud_server_role=0;
+    cloud_join_ticket=std::move(result.ticket);cloud_server_role=0;cloud_portal_id=result.portalId;
     bool resumed=reconnecting;reconnecting=false;
     hosted_remote_session=true;
     hosted_setup_available=false;
@@ -1275,7 +1275,9 @@ void ZPlayer::ProcessDisconnect()
     if(was_lobby || hosted_remote_session) {
         CloseAllMenus(); LoadMainMenu(GMM_MULTIPLAYER);
         for(auto *menu:gui_menu_list) if(auto *browser=dynamic_cast<GMMMultiplayer*>(menu))
-            browser->SetError(cloud_disconnect_reason.empty() ? (public_remote_session ? "Connection lost. Get a fresh join ticket from the website, then join again." : "Connection lost. Refresh the server list or join again.") : cloud_disconnect_reason);
+            {if(public_remote_session)browser->SetReconnectTarget(remote_address,port,cloud_portal_id);
+             else browser->SetError(cloud_disconnect_reason.empty()?"Connection lost. Refresh the server list or join again.":cloud_disconnect_reason);
+             if(!cloud_disconnect_reason.empty())browser->SetError(cloud_disconnect_reason);}
     }
 }
 
@@ -1820,7 +1822,7 @@ void ZPlayer::ProcessGame()
                 string host = flags.join_host;
                 int port = flags.join_port, team = flags.join_team;
                 flags.join_match = false;
-                JoinHostedMatch(host, port, team, menu,std::move(flags.join_ticket));
+                JoinHostedMatch(host, port, team, menu,std::move(flags.join_ticket),flags.join_server_id);
                 return; //connecting destroys the old menus
             }
         }
@@ -4950,7 +4952,7 @@ bool ZPlayer::MainMenuAbsorbLUnClick()
 			{
                 string host = the_flags.join_host;
                 int port = the_flags.join_port, team = the_flags.join_team;
-                JoinHostedMatch(host, port, team, *i,std::move(the_flags.join_ticket));
+                JoinHostedMatch(host, port, team, *i,std::move(the_flags.join_ticket),the_flags.join_server_id);
 			}
 
 			return true;
@@ -5632,7 +5634,7 @@ void ZPlayer::LoadMainMenu(int menu_type, bool kill_if_open, gmm_warning_flag wa
 	{
 	case GMM_MAIN_MAIN: new_menu = new GMMMainMenu(!zmap.Loaded(),
 		zod_frontend && (remote_address == "127.0.0.1" || remote_address == "localhost"),
-        !hosted_setup_available && (remote_address == "127.0.0.1" || remote_address == "localhost"),frontend.EditorTesting()); break;	//#79: compact start menu when no game is loaded
+        !hosted_setup_available && (remote_address == "127.0.0.1" || remote_address == "localhost"),frontend.EditorTesting(),(public_remote_session?cloud_portal_id:string()),cloud_server_role); break;	//#79: compact start menu when no game is loaded
 	case GMM_CHANGE_TEAMS: new_menu = new GMMChangeTeams(); break;
 	case GMM_MANAGE_BOTS: new_menu = new GMMManageBots(); break;
 	case GMM_PLAYER_LIST: new_menu = new GMMPlayerList(); break;

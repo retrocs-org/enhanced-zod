@@ -172,34 +172,84 @@ func (a *Agent) Roles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var roles struct {
-		Owner  string
-		Admins []string
+		Owner              string
+		Admins, Moderators []string
+		Bans               []struct {
+			Account, Reason string
+			Expires         int64
+		}
+		Commands []struct {
+			ID                    json.Number
+			Actor, Target, Reason string
+		}
+		Config struct {
+			Revision int64
+			Settings struct {
+				Rotation          []string
+				Bots              []int
+				Difficulty, Speed int
+				Voting            bool
+			}
+		}
+		Winner      string
+		WinnerRound string `json:"winner_round"`
 	}
-	if e := a.request(r.Context(), "GET", "/api/server/admins", nil, &roles); e != nil {
+	if e := a.request(r.Context(), "GET", "/api/server/control", nil, &roles); e != nil {
+		a.lastRoleSuccess.Store(0)
 		http.Error(w, "server roles unavailable", 503)
 		return
 	}
-	if len(roles.Owner) != 64 || len(roles.Admins) > 32 {
+	if !validAccount(roles.Owner) || len(roles.Admins) > 32 || len(roles.Moderators) > 32 || len(roles.Bans) > 128 || len(roles.Commands) > 32 {
 		http.Error(w, "invalid roles", 502)
 		return
 	}
-	if _, e := hex.DecodeString(roles.Owner); e != nil {
-		http.Error(w, "invalid owner", 502)
-		return
-	}
-	for _, id := range roles.Admins {
-		if len(id) != 64 {
-			http.Error(w, "invalid role", 502)
-			return
-		}
-		if _, e := hex.DecodeString(id); e != nil {
+	for _, id := range append(append([]string{}, roles.Admins...), roles.Moderators...) {
+		if !validAccount(id) {
 			http.Error(w, "invalid role", 502)
 			return
 		}
 	}
+	for _, ban := range roles.Bans {
+		if !validAccount(ban.Account) || len(ban.Reason) > 160 {
+			http.Error(w, "invalid ban", 502)
+			return
+		}
+	}
+	for _, cmd := range roles.Commands {
+		if _, err := cmd.ID.Int64(); err != nil || !validAccount(cmd.Actor) || !validAccount(cmd.Target) || len(cmd.Reason) > 160 {
+			http.Error(w, "invalid command", 502)
+			return
+		}
+	}
+	a.lastRoleSuccess.Store(time.Now().Unix())
 	w.Header().Set("Content-Type", "text/plain")
 	fmt.Fprintln(w, roles.Owner)
 	for _, id := range roles.Admins {
 		fmt.Fprintln(w, id)
+	}
+	for _, id := range roles.Moderators {
+		fmt.Fprintln(w, "m:"+id)
+	}
+	for _, ban := range roles.Bans {
+		fmt.Fprintf(w, "b:%s:%d:%s\n", ban.Account, ban.Expires, hex.EncodeToString([]byte(ban.Reason)))
+	}
+	for _, cmd := range roles.Commands {
+		fmt.Fprintf(w, "k:%s:%s:%s:%s\n", cmd.ID.String(), cmd.Actor, cmd.Target, hex.EncodeToString([]byte(cmd.Reason)))
+	}
+	if roles.Config.Revision > 0 {
+		voting := 0
+		if roles.Config.Settings.Voting {
+			voting = 1
+		}
+		fmt.Fprintf(w, "c:%d:%d:%d:%d\n", roles.Config.Revision, roles.Config.Settings.Difficulty, roles.Config.Settings.Speed, voting)
+		for _, path := range roles.Config.Settings.Rotation {
+			fmt.Fprintln(w, "r:"+hex.EncodeToString([]byte(path)))
+		}
+		for _, team := range roles.Config.Settings.Bots {
+			fmt.Fprintf(w, "t:%d\n", team)
+		}
+	}
+	if roles.Winner != "" {
+		fmt.Fprintf(w, "w:%s:%s\n", hex.EncodeToString([]byte(roles.WinnerRound)), hex.EncodeToString([]byte(roles.Winner)))
 	}
 }

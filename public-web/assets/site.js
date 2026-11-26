@@ -100,3 +100,15 @@ function filterServers(){
   document.querySelector('#server-filter-status').textContent=visible+' matching server(s)';
 }
 const serverFilters=document.querySelector('#server-filters');if(serverFilters){serverFilters.addEventListener('input',filterServers);serverFilters.addEventListener('change',filterServers);filterServers();}
+
+// DOM option order is also the submitted rotation order; no scripting is needed to save selections.
+for(const select of document.querySelectorAll('[data-rotation-order]')){
+ const controls=document.createElement('span');controls.className='button-row';
+ for(const [label,up] of [['Move up',true],['Move down',false]]){
+  const button=document.createElement('button');button.type='button';button.className='button';button.textContent=label;
+  button.addEventListener('click',()=>{
+   const options=Array.from(select.options);if(!up)options.reverse();
+   for(const option of options)if(option.selected){const sibling=up?option.previousElementSibling:option.nextElementSibling;if(sibling&&!sibling.selected){if(up)select.insertBefore(option,sibling);else select.insertBefore(sibling,option);}}
+  });controls.append(button);
+ }select.after(controls);
+}

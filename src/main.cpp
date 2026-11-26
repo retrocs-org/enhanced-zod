@@ -190,12 +190,13 @@ int main(int argc, char **argv)
 		string mp = argv[2];
 		size_t slash = mp.find_last_of("/\\");
 		string base = (slash == string::npos) ? mp : mp.substr(slash + 1);
-        printf("{\"map\":\"%s\",\"players\":%d,\"teams\":[", base.c_str(), players);
+        printf("{\"map\":%s,\"players\":%d,\"width\":%d,\"height\":%d,\"teams\":[", ZCloud_JSON(base).c_str(), players,m.GetMapBasics().width,m.GetMapBasics().height);
         bool comma = false;
         for(int t = 1; t < MAX_TEAM_TYPES; ++t) if(team_has_fort[t]) {
             printf("%s\"%s\"", comma ? "," : "", team_type_string[t].c_str()); comma = true;
         }
-        printf("]}\n");
+        printf("],\"forts\":[");comma=false;int count=0;for(auto &object:m.GetObjectList())if(object.object_type==BUILDING_OBJECT&&(object.object_id==FORT_FRONT||object.object_id==FORT_BACK)&&object.owner>NULL_TEAM&&++count<=8){printf("%s[%d,%d,%d]",comma?",":"",object.x,object.y,object.owner);comma=true;}
+        printf("],\"zones\":[");comma=false;count=0;for(auto &zone:m.GetZoneList()){if(++count>16)break;printf("%s[%d,%d,%d,%d]",comma?",":"",zone.x,zone.y,zone.w,zone.h);comma=true;}printf("]}\n");
 		return 0;
 	}
 

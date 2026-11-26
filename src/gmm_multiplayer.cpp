@@ -51,6 +51,9 @@ void GMMMultiplayer::Refresh()
 void GMMMultiplayer::ApplyRefresh(const RefreshResult &result)
 {
     discovered=result.matches;Refilter();
+    if(has_reconnect_target)for(size_t i=0;i<matches.size();++i)if((!reconnect_target.id.empty()&&matches[i].id==reconnect_target.id)||(reconnect_target.id.empty()&&matches[i].host==reconnect_target.host&&matches[i].port==reconnect_target.port)){
+        reconnect_target=matches[i];address_entry.SetText(matches[i].host+":"+to_string(matches[i].port));for(auto &row:match_list.GetEntryList())if(row.ref_id==(int)i)row.state=MMLIST_PRESSED;break;
+    }
     match_list.CheckViewI();
     if(!joining && !sticky_error) {
         status_label.SetText(!result.ok ? result.error : matches.empty() ? "No games found. Create one or enter an address." : to_string(matches.size())+" game(s) found");
@@ -133,6 +136,7 @@ void GMMMultiplayer::HandleWidgetEvent(int type,ZGMMWidget *widget)
 {
     if(!widget || (joining&&widget!=&back_button&&widget!=&portal_button)) return;
     if(type==GMM_CLICK_EVENT && widget==&match_list) {
+        has_reconnect_target=false;join_button.SetText("Join Selected Game");
         int index=match_list.GetGMMWFlags().mmlist_entry_selected;
         if(index>=0) {
             match_list.UnSelectAll(index);
@@ -159,6 +163,7 @@ void GMMMultiplayer::HandleWidgetEvent(int type,ZGMMWidget *widget)
     else if(widget==&back_button) { CancelAuthorization();killme=true; }
     else if(widget==&address_button) JoinAddress();
     else if(widget==&join_button) {
+        if(has_reconnect_target){if(reconnect_target.id.empty()){SetError("Public server not found yet. Refresh and retry approval.");return;}QueueJoin(reconnect_target);return;}
         int selected=match_list.GetFirstSelected();
         if(selected<0) { SetError("Select a game first"); return; }
         auto &entry=match_list.GetEntryList()[selected];
@@ -195,7 +200,7 @@ void GMMMultiplayer::PollAuthorization(){
         }
         if(state=="approved"){
             if(!ZPortal_String(response.body,"ticket",ticket)||!hexToken(ticket,64)||!ZPortal_String(response.body,"server",server)||server!=requested.id){SetError("Invalid server authorization. Please retry.");return;}
-            auth_device.clear();auth_url.clear();auth_deadline=0;gmm_flags.join_ticket=std::move(ticket);
+            auth_device.clear();auth_url.clear();auth_deadline=0;gmm_flags.join_ticket=std::move(ticket);gmm_flags.join_server_id=requested.id;
             gmm_flags.join_match=true;gmm_flags.join_host=requested.host;gmm_flags.join_port=requested.port;gmm_flags.join_team=NULL_TEAM;
             status_label.SetText("Approved. Connecting to "+requested.name+"...");return;
         }
@@ -210,4 +215,11 @@ void GMMMultiplayer::CheckCompatibility(const MatchInfo &match){
  detail_label.SetText("Checking engine compatibility before joining...");
  auto address=compatibility_address,host=match.host,map=match.map;int port=match.port;
  compatibility_task.Start([address,host,port,map](){Compatibility result;result.address=address;result.map=map;result.compatible=ZNetCheckVersion(host,port,result.error,2000,&result.version);return result;});
+}
+
+void GMMMultiplayer::SetReconnectTarget(const string &host,int port,const string &id){
+ refresh_task.Cancel();lan_mode=false;mode_button.SetText("Online games");has_reconnect_target=true;
+ reconnect_target.host=host;reconnect_target.port=port;reconnect_target.id=id;reconnect_target.portal=true;reconnect_target.name="Previous public server";
+ address_entry.SetText(host+":"+to_string(port));join_button.SetText("Get fresh approval and rejoin");Refresh();
+ SetError("Connection interrupted. Rejoin requests fresh browser approval.");
 }

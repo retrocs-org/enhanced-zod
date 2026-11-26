@@ -107,8 +107,8 @@ void ZPlayer::lobby_countdown_event(ZPlayer *p,char *data,int size,int)
 }
 
 void ZPlayer::cloud_server_role_event(ZPlayer *p,char *data,int size,int){
- int role;if(!data||size!=sizeof(role))return;memcpy(&role,data,sizeof(role));if(role<0||role>2)return;p->cloud_server_role=role;
- p->AddNewsEntry(role==2?"You own this public server.":role==1?"You are a server administrator.":"Server administration is limited to the owner and delegated administrators.");
+ int role;if(!data||size!=sizeof(role))return;memcpy(&role,data,sizeof(role));if(role<0||role>3)return;p->cloud_server_role=role;
+ p->AddNewsEntry(role==2?"You own this public server.":role==1?"You are a server administrator.":role==3?"You are a server moderator. Use the server console for kick/ban controls.":"Server administration is limited to the owner and delegated administrators.");
 }
 void ZPlayer::cloud_required_event(ZPlayer *p,char *data,int size,int)
 {

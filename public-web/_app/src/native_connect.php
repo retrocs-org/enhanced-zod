@@ -12,7 +12,7 @@ trait NativeConnectService {
     }
     public function nativeConnectInfo(string $code): array {
         if(!preg_match('/\A[A-F0-9]{12}\z/D',$code))fail(404,'Connection request not found.');
-        $row=query('SELECT n.user_code,n.account_id,s.id,s.name,s.host,s.port,s.map_name FROM native_connections n JOIN servers s ON s.id=n.server_id JOIN server_keys k ON k.id=s.id JOIN server_owners owned ON owned.server_id=k.id WHERE n.user_code=? AND n.expires_at>UTC_TIMESTAMP(6) AND k.enabled=1 AND s.last_seen>UTC_TIMESTAMP(6)-INTERVAL 90 SECOND',[$code])->fetch();
+        $row=query('SELECT n.user_code,n.account_id,s.id,s.name,s.host,s.port,s.map_name FROM native_connections n JOIN servers s ON s.id=n.server_id JOIN server_keys k ON k.id=s.id JOIN server_owners owned ON owned.server_id=k.id WHERE n.user_code=? AND n.expires_at>UTC_TIMESTAMP(6) AND k.enabled=1 AND owned.hosting_enabled=1 AND owned.host_revoked=0 AND s.last_seen>UTC_TIMESTAMP(6)-INTERVAL 90 SECOND',[$code])->fetch();
         if(!$row)fail(404,'This request expired or the server is offline. Start again from the game.');return $row;
     }
     public function approveNativeConnect(array $in): array {
@@ -21,7 +21,7 @@ trait NativeConnectService {
             query('SELECT id FROM accounts WHERE id=? FOR UPDATE',[$me['id']]);
             $row=query('SELECT account_id FROM native_connections WHERE user_code=? AND expires_at>UTC_TIMESTAMP(6) FOR UPDATE',[$code])->fetch();
             if(!$row)fail(404,'This request expired or was cancelled. Start again from the game.');
-            $this->nativeConnectInfo($code);
+            $info=$this->nativeConnectInfo($code);$this->accountAllowed($info['id'],$me['id']);
             if($row['account_id']!==null&&$row['account_id']!==$me['id'])fail(409,'This request was approved by another account.');
             query('UPDATE native_connections SET account_id=? WHERE user_code=?',[$me['id'],$code]);
             return ['ok'=>true];
@@ -40,9 +40,9 @@ trait NativeConnectService {
             if($row['too_fast'])fail(429,'Poll no more than once every two seconds.');
             query('UPDATE native_connections SET last_poll=UTC_TIMESTAMP(6) WHERE device_hash=?',[$hash]);
             if($row['account_id']===null||$snapshot['account_id']===null)return ['state'=>'pending'];
-            if(!query('SELECT s.id FROM servers s JOIN server_keys k ON k.id=s.id JOIN server_owners owned ON owned.server_id=k.id WHERE s.id=? AND k.enabled=1 AND s.last_seen>UTC_TIMESTAMP(6)-INTERVAL 90 SECOND',[$row['server_id']])->fetchColumn())fail(404,'Server is offline. Refresh and retry.');
+            if(!query('SELECT s.id FROM servers s JOIN server_keys k ON k.id=s.id JOIN server_owners owned ON owned.server_id=k.id WHERE s.id=? AND k.enabled=1 AND owned.hosting_enabled=1 AND owned.host_revoked=0 AND s.last_seen>UTC_TIMESTAMP(6)-INTERVAL 90 SECOND',[$row['server_id']])->fetchColumn())fail(404,'Server is offline. Refresh and retry.');
             // Match regular ticket issuance: serialize per account and replace unused tickets.
-            query('SELECT id FROM accounts WHERE id=? FOR UPDATE',[$row['account_id']]);$ticket=random_token();
+            query('SELECT id FROM accounts WHERE id=? FOR UPDATE',[$row['account_id']]);$this->accountAllowed($row['server_id'],$row['account_id']);$ticket=random_token();
             query('DELETE FROM join_tickets WHERE account_id=?',[$row['account_id']]);
             query('INSERT INTO join_tickets(token_hash,account_id,server_id,expires_at) VALUES(?,?,?,UTC_TIMESTAMP(6)+INTERVAL 2 MINUTE)',[token_hash($ticket),$row['account_id'],$row['server_id']]);
             query('DELETE FROM native_connections WHERE device_hash=?',[$hash]);return ['state'=>'approved','ticket'=>$ticket,'server'=>$row['server_id']];

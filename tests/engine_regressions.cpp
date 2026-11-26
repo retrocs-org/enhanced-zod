@@ -436,6 +436,11 @@ public:
         server->CheckResetGame();
         REQUIRE(server->game_on && server->zmap.Loaded() && server->ztime.IsPaused());
         REQUIRE(!server->end_return_to_menu && !server->lan_match_started);
+        server->cloud_roles.valid=true;server->cloud_roles.revision=1;server->cloud_roles.speed=125;server->cloud_roles.difficulty=2;server->cloud_roles.rotation={server->map_name};server->cloud_roles_until=current_time()+15;
+        server->ApplyCloudOperations();REQUIRE(server->cloud_applied_revision==1&&zod_bot_difficulty==2);
+        server->lan_match_started=true;server->cloud_roles.revision=2;server->cloud_roles.difficulty=3;
+        server->ApplyCloudOperations();REQUIRE(server->cloud_applied_revision==1&&zod_bot_difficulty==2);
+
     }
     static void offline_policy() {
         REQUIRE(getenv("ZOD_REQUIRE_CLOUD") && string(getenv("ZOD_REQUIRE_CLOUD")) == "1");
@@ -446,6 +451,14 @@ public:
         server->cloud_peers[500].account=string(64,'b');REQUIRE(!server->CloudAdmin(0));REQUIRE(server->CloudFilter(TCP_EVENT,SET_READY,nullptr,0,0));
         server->cloud_roles.admins.insert(string(64,'b'));REQUIRE(server->CloudFilter(TCP_EVENT,SET_GAME_PAUSED,nullptr,0,0));server->cloud_roles.admins.clear();REQUIRE(!server->CloudAdmin(0));
         server->cloud_roles.admins.insert(string(64,'b'));server->cloud_roles_until=current_time()-1;REQUIRE(!server->CloudAdmin(0));
+
+        auto roles=ZCloud_ParseRoles(string(64,'a')+"\n"+string(64,'b')+"\nm:"+string(64,'c')+"\nc:4:2:125:1\nr:6d6170732f612e6d6170\nt:2\n");
+        REQUIRE(roles.valid&&roles.revision==4&&roles.speed==125&&roles.rotation.size()==1&&roles.moderators.count(string(64,'c')));
+        REQUIRE(!ZCloud_ParseRoles(string(64,'a')+"\nc:1:2:999:1\n").valid);
+        REQUIRE(!ZCloud_ParseRoles(string(64,'a')+"\nr:0a\n").valid);
+        server->cloud_roles=roles;server->cloud_roles_until=current_time()+15;
+        server->cloud_peers[500].account=string(64,'c');REQUIRE(server->CloudRank(string(64,'c'))==1&&!server->CloudAdmin(0));
+        server->cloud_settings=roles;server->map_name="maps/a.map";REQUIRE(server->NextCloudMap()=="maps/a.map");
 
         server->SetCloudRequired(false); // same policy used by the local campaign launcher
         REQUIRE(!server->cloud_required);
@@ -1184,6 +1197,10 @@ public:
         ZServerToggleFavorite(full);REQUIRE(ZServerFavorite(full));menu.view=1;menu.Refilter();REQUIRE(menu.match_list.GetEntryList().size()==1);
         ZServerRemember(full);ZServerRemember(full);REQUIRE(ZServerBookmarks(true).size()==1);menu.view=2;menu.Refilter();REQUIRE(menu.match_list.GetEntryList().size()==1);
         ZServerToggleFavorite(full);REQUIRE(!ZServerFavorite(full));menu.view=0;menu.search_entry.SetText("");menu.region_entry.SetText("");menu.Refilter();
+        {GMMMultiplayer recovery;recovery.SetReconnectTarget("127.0.0.1",2301,"retained-server");
+         REQUIRE(recovery.has_reconnect_target&&!recovery.lan_mode&&recovery.reconnect_target.id=="retained-server");
+         full.id="retained-server";full.port=2302;result.matches={full};recovery.ApplyRefresh(result);
+         REQUIRE(recovery.reconnect_target.port==2302&&recovery.auth_device.empty());}
         menu.GetGMMFlags().clear();menu.HandleWidgetEvent(GMM_UNCLICK_EVENT,&menu.back_button);
         REQUIRE(menu.KillMe() && !menu.GetGMMFlags().open_main_menu);
         // Let the asynchronous scan release its own socket before process exit.

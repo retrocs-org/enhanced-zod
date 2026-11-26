@@ -30,10 +30,10 @@ public:
 	//#79: compact = the start menu (no game loaded) - hides the in-game/lobby
 	//admin entries (Change Teams / Manage Bots / Player List) that don't apply yet.
 	//allow_exit: show "Main Menu" (back to the Z-style front-end; local games only)
-	GMMMainMenu(bool compact = false, bool allow_exit = false, bool single_player = false,bool editor_test=false);
+	GMMMainMenu(bool compact = false, bool allow_exit = false, bool single_player = false,bool editor_test=false,const string &portalId="",int role=0);
 private:
     friend class ZPlayerUIRegression;
-	bool return_to_frontend=false;
+	bool return_to_frontend=false;GMMWButton portal_button;string portal_path;
 	GMMWButton menu_button[MAX_GMMMM_BUTTONS];
 
 	void HandleWidgetEvent(int event_type, ZGMMWidget *event_widget);

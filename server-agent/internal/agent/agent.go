@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -28,9 +29,11 @@ type Config struct {
 	Extra                                                    []string
 }
 type Agent struct {
-	cfg    Config
-	client *http.Client
-	secret string
+	cfg             Config
+	client          *http.Client
+	secret          string
+	catalog         map[string]map[string]any
+	lastRoleSuccess atomic.Int64
 }
 
 func New(c Config) (*Agent, error) {
@@ -59,7 +62,7 @@ func New(c Config) (*Agent, error) {
 	if _, e := rand.Read(b); e != nil {
 		return nil, e
 	}
-	return &Agent{c, &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, hex.EncodeToString(b)}, nil
+	return &Agent{cfg: c, client: &http.Client{Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}, secret: hex.EncodeToString(b)}, nil
 }
 
 type hubStatusError struct{ Code int }
@@ -195,6 +198,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/verify", a.Verify)
 	mux.HandleFunc("/roles", a.Roles)
+	mux.HandleFunc("/ack", a.Ack)
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 2 * time.Second, ReadTimeout: 3 * time.Second, WriteTimeout: 7 * time.Second, MaxHeaderBytes: 4096}
 	defer srv.Close()
 	go srv.Serve(listener)
@@ -221,6 +225,8 @@ func (a *Agent) Run(ctx context.Context) error {
 	}
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
+	healthTicker := time.NewTicker(5 * time.Second)
+	defer healthTicker.Stop()
 	ticker := time.NewTicker(20 * time.Second)
 	defer ticker.Stop()
 	initial := time.NewTimer(time.Second)
@@ -234,9 +240,14 @@ func (a *Agent) Run(ctx context.Context) error {
 				cancel()
 			}
 			return e
+		case <-healthTicker.C:
+			if a.cfg.Mode == "public" {
+				a.publishHealth(ctx)
+			}
 		case <-initial.C:
 			if a.cfg.Mode == "public" {
 				a.publish(ctx)
+				a.publishHealth(ctx)
 			}
 		case <-ticker.C:
 			if a.cfg.Mode == "public" {

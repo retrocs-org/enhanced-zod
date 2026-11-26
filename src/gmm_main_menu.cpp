@@ -1,6 +1,7 @@
 #include "gmm_main_menu.h"
+#include "zportal.h"
 
-GMMMainMenu::GMMMainMenu(bool compact, bool allow_exit, bool single_player,bool editor_test) : ZGuiMainMenuBase()
+GMMMainMenu::GMMMainMenu(bool compact, bool allow_exit, bool single_player,bool editor_test,const string &portalId,int role) : ZGuiMainMenuBase()
 {
 	int i;
 
@@ -45,6 +46,7 @@ GMMMainMenu::GMMMainMenu(bool compact, bool allow_exit, bool single_player,bool 
 		if(i == GMMMM_SELECT_MAP_BUTTON) y += section_gap;   //section break after Play Campaign
 	}
 
+    if(!portalId.empty()){portal_path=ZPortal_URL()+(role?"/server-console?server=":"/server-rotation?server=")+portalId;portal_button.SetType(MMGENERIC_BUTTON);portal_button.SetCoords(GMM_SIDE_MARGIN,y);portal_button.SetDimensions(w-GMM_SIDE_MARGIN*2,GMMWBUTTON_HEIGHT);portal_button.SetText(role?"Server console / maps":"Next map / voting");AddWidget(&portal_button);y+=GMMWBUTTON_HEIGHT+3;}
 	//cheap hack for h
 	h = y + GMM_BOTTOM_MARGIN;
 
@@ -57,6 +59,7 @@ void GMMMainMenu::HandleWidgetEvent(int event_type, ZGMMWidget *event_widget)
 	int w_ref_id;
 
 	if(!event_widget) return;
+    if(event_type==GMM_UNCLICK_EVENT&&event_widget==&portal_button){SDL_OpenURL(portal_path.c_str());return;}
 
 	w_ref_id = event_widget->GetRefID();
 

@@ -28,7 +28,7 @@ void ZServer::CloudConnected(int player) {
 }
 bool ZServer::CloudAdmin(int player){
  if(!cloud_required||player<0||player>=(int)player_info.size()||!cloud_roles.valid||current_time()>=cloud_roles_until)return false;
- auto peer=cloud_peers.find(player_info[player].p_id);return peer!=cloud_peers.end()&&!peer->second.account.empty()&&(peer->second.account==cloud_roles.owner||cloud_roles.admins.count(peer->second.account));
+ auto peer=cloud_peers.find(player_info[player].p_id);return peer!=cloud_peers.end()&&!peer->second.account.empty()&&(CloudRank(peer->second.account)>=2);
 }
 void ZServer::RefreshCloudRoles(){
  double now=current_time();ZCloudRoles update;
@@ -37,12 +37,11 @@ void ZServer::RefreshCloudRoles(){
   int port=getenv("ZOD_CLOUD_AGENT_PORT")?atoi(getenv("ZOD_CLOUD_AGENT_PORT")):0;std::string secret=getenv("ZOD_CLOUD_AGENT_SECRET")?getenv("ZOD_CLOUD_AGENT_SECRET"):"";
   cloud_roles_next=now+5;cloud_roles_task.Start([port,secret](){ZCloudRoles roles;if(port<1||port>65535||secret.size()!=64)return roles;
    auto response=ZHttp_Post("127.0.0.1",port,"/roles","{\"Secret\":"+ZCloud_JSON(secret)+"}");if(!response.ok||response.status!=200)return roles;
-   auto valid=[](const std::string &id){return id.size()==64&&id.find_first_not_of("0123456789abcdef")==std::string::npos;};
-   std::istringstream input(response.body);if(!std::getline(input,roles.owner)||!valid(roles.owner))return ZCloudRoles{};std::string id;while(std::getline(input,id)){if(!valid(id)||roles.admins.size()>=32)return ZCloudRoles{};roles.admins.insert(id);}roles.valid=true;return roles;
+   return ZCloud_ParseRoles(response.body);
   });
  }
  for(size_t i=0;i<player_info.size();++i)if(CloudAuthorized(i)&&!player_info[i].bot_logged_in){
-  int id=player_info[i].p_id,role=0;if(CloudAdmin(i))role=cloud_peers[id].account==cloud_roles.owner?2:1;
+  int id=player_info[i].p_id,role=0;int rank=CloudRank(cloud_peers[id].account);if(rank>0)role=rank==3?2:rank==2?1:3;
   auto previous=cloud_role_sent.find(id);if(previous==cloud_role_sent.end()||previous->second!=role){server_socket.SendMessage(i,CLOUD_SERVER_ROLE,(char*)&role,sizeof(role));cloud_role_sent[id]=role;}
  }
  for(auto i=cloud_role_sent.begin();i!=cloud_role_sent.end();)if(!cloud_peers.count(i->first))i=cloud_role_sent.erase(i);else ++i;
@@ -95,7 +94,7 @@ void ZServer::cloud_ticket_event(ZServer *p,char *data,int size,int player) {
 }
 void ZServer::CheckCloud() {
     if(!cloud_required) return;
-    RefreshCloudRoles();
+    RefreshCloudRoles();ApplyCloudOperations();
     ZCloudClaim claim;
     if(cloud_task.Poll(claim)) for(size_t i=0;i<player_info.size();++i) if(player_info[i].p_id==claim.peer) {
         bool duplicate=false;for(const auto &v:cloud_peers) if(v.first!=claim.peer && !claim.account.empty() && v.second.account==claim.account) duplicate=true;
@@ -133,6 +132,7 @@ void ZServer::FreezeCloudRoster() {
     }
 }
 void ZServer::ResetCloudMatch() {
+    cloud_round=std::to_string(SDL_GetTicksNS());cloud_applied_revision=0;cloud_voting_until=0;cloud_roles.winner.clear();cloud_roles.winnerRound.clear();
     cloud_roster_fixed=false;cloud_reported=false;cloud_roster.clear();cloud_deaths.clear();cloud_match_start=ztime.ztime;
     for(int t=0;t<MAX_TEAM_TYPES;++t) cloud_kills[t]=cloud_lost[t]=cloud_captures[t]=0;
 }

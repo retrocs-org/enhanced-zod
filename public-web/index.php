@@ -17,7 +17,7 @@ try {
         if (!in_array($method,['GET','HEAD'],true)) require_origin();
         $route=$method.' '.$path;
         $result=match($route) {
-            'GET /healthz'=>['ok'=>(int)query('SELECT MAX(version) FROM schema_migrations')->fetchColumn()>=5],
+            'GET /healthz'=>['ok'=>(int)query('SELECT MAX(version) FROM schema_migrations')->fetchColumn()>=6],
             'POST /api/accounts'=>$service->register(json_input()),
             'POST /api/login'=>$service->login(json_input()),
             'POST /api/logout'=>$service->logout(),
@@ -28,6 +28,13 @@ try {
             'POST /api/server-auth/approve'=>$service->approveServerAuth(json_input()),
             'POST /api/server-auth/poll'=>$service->serverAuthPoll(json_input()),
             'POST /api/server-auth/cancel'=>$service->serverAuthCancel(json_input()),
+            'POST /api/server/health'=>$service->postServerHealth(json_input()),
+            'GET /api/server/control'=>$service->serverControl(),
+            'POST /api/server/control/ack'=>$service->acknowledgeServerCommands(json_input()),
+            'GET /api/server-console'=>$service->serverConsole(is_string($_GET['server']??null)?$_GET['server']:''),
+            'POST /api/server-console'=>$service->operateServer(json_input()),
+            'GET /api/server-rotation'=>$service->rotationView(is_string($_GET['server']??null)?$_GET['server']:''),
+            'POST /api/server-rotation/vote'=>$service->voteServerMap(json_input()),
             'GET /api/server/identity'=>$service->serverIdentity(),
             'GET /api/server/admins'=>$service->serverRoles(),
             'GET /api/my-servers'=>$service->ownedServers(),
@@ -59,6 +66,7 @@ try {
         };
         json_response($result,$route==='POST /api/accounts'?201:200);
     }
+    if($method==='POST'&&in_array($path,['/server-console','/server-rotation/vote'],true)){require_csrf();$data=$_POST;unset($data['csrf']);if(isset($data['configure_form'])){if(!is_array($data['rotation']??[])||!is_array($data['bots']??[]))fail(400,'Invalid rotation or bot selection.');$data['settings']=['rotation'=>array_values($data['rotation']??[]),'bots'=>array_map('intval',$data['bots']??[]),'difficulty'=>(int)($data['difficulty']??1),'speed'=>(int)($data['speed']??100),'voting'=>isset($data['voting'])];unset($data['configure_form'],$data['rotation'],$data['bots'],$data['difficulty'],$data['speed'],$data['voting']);}if(isset($data['settings'])&&is_string($data['settings'])){try{$data['settings']=json_decode($data['settings'],true,32,JSON_THROW_ON_ERROR);}catch(Throwable){fail(400,'Invalid settings JSON.');}}if(isset($data['minutes']))$data['minutes']=(int)$data['minutes'];if($path==='/server-console')$service->operateServer($data);else $service->voteServerMap($data);header('Location: '.route_url($path==='/server-console'?'/server-console':'/server-rotation').'?server='.rawurlencode($data['server']),true,303);exit;}
     if($method==='POST'&&$path==='/my-servers/admin'){require_csrf();$data=$_POST;unset($data['csrf']);$service->manageServerAdmin($data);header('Location: '.route_url('/my-servers'),true,303);exit;}
     if($method==='POST'&&$path==='/server-auth/approve'){require_csrf();$data=$_POST;unset($data['csrf']);$service->approveServerAuth($data);require_once __DIR__.'/_app/src/views.php';page_header('my-servers',$service->currentAccount());echo '<section class="shell section"><h1>Server host authorized</h1><p>Return to your dedicated host. Manage administrators in <a href="'.e(route_url('/my-servers')).'">My servers</a>.</p></section>';page_footer();exit;}
     if($method==='POST'&&in_array($path,['/admin/action','/reports'],true)){require_csrf();$data=$_POST;unset($data['csrf']);if($path==='/admin/action')$service->moderate($data);else $service->report($data);header('Location: '.route_url($path==='/admin/action'?'/admin':'/account').'?message=Saved',true,303);exit;}

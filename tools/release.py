@@ -141,7 +141,9 @@ def _prepare(root,out,artifacts,allow_dirty=False,notes=None):
     source=out/f'zod-enhanced-{v}-source.zip'
     with zipfile.ZipFile(source,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=9) as archive:
         for name in record['files']: add_file(archive,root/name,'zod-enhanced-'+v+'/'+name)
-        archive.writestr('zod-enhanced-'+v+'/BUILD-PROVENANCE.json',encoded(record))
+        info=zipfile.ZipInfo('zod-enhanced-'+v+'/BUILD-PROVENANCE.json',(2020,1,1,0,0,0));info.compress_type=zipfile.ZIP_DEFLATED
+        info.create_system=3;info.external_attr=(stat.S_IFREG|0o644)<<16
+        archive.writestr(info,encoded(record))
     names.append(source.name)
     website=out/f'zod-enhanced-{v}-web.zip'
     with zipfile.ZipFile(website,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=9) as archive:

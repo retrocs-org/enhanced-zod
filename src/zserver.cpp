@@ -485,6 +485,11 @@ void ZServer::ProcessEndGame()
 		next_reset_game_time = current_time() + 120.0;
 	}
 
+    if(cloud_required&&!cloud_settings.rotation.empty()){
+        end_return_to_menu=true;do_reset_game=true;
+        cloud_voting_until=cloud_settings.voting?current_time()+25:0;
+        if(cloud_settings.voting){next_reset_game_time=cloud_voting_until;BroadCastNews("Map voting is open for 25 seconds. Open Next map / voting from the battle menu.");}
+    }
 	//give clients the game over message
 	BroadCastNews("The game has ended");
 
@@ -603,9 +608,10 @@ void ZServer::CheckResetGame()
 	//summary forever. The now-idle match is reaped by the orchestrator's empty-exit.
 	if(end_return_to_menu)
 	{
+        if(cloud_required&&cloud_voting_until>current_time())return;
 		if(current_time() < next_reset_game_time) return;
         if(getenv("ZOD_PERSISTENT_SERVER") && std::string(getenv("ZOD_PERSISTENT_SERVER"))=="1") {
-            end_return_to_menu=false;do_reset_game=false;DoResetGame(map_name);return;
+            end_return_to_menu=false;do_reset_game=false;DoResetGame(cloud_required?NextCloudMap():map_name);return;
         }
 		server_socket.SendMessageAll(RETURN_TO_MENU, NULL, 0);
 		end_return_to_menu = false;
@@ -1531,7 +1537,7 @@ void ZServer::Run()
 		//insert history
 		CheckUpdateOnlineHistory();
 
-		whole_time = current_time() - whole_time;
+		whole_time = current_time() - whole_time;cloud_tick_ms=cloud_tick_ms*.9+whole_time*1000*.1;
 		//printf("server:: whole_time:%lf \t process_objects:%lf\n", whole_time, process_objects_time);
 		
 		//pause
@@ -1615,12 +1621,11 @@ void ZServer::CheckStatusAndIdle()
 		int c = accept(admin_fd, NULL, NULL);
 		if(c >= 0)
 		{
-			char buf[1024];
-			//"started" = the match has un-paused (game running, no longer a joinable
-			//lobby), so the orchestrator can stop offering it for matchmaking.
-			int n = snprintf(buf, sizeof(buf), "{\"players\":%d,\"started\":%d,\"capacity\":%d,\"map\":%s,\"version\":%s}\n",
-                players, lan_match_started ? 1 : 0, MapPlayerCapacity(), ZCloud_JSON(map_name).c_str(),ZCloud_JSON(GAME_VERSION).c_str());
-			if(n > 0 && n < (int)sizeof(buf)) write(c, buf, (size_t)n);
+            double now=current_time();if(!cloud_boot)cloud_boot=now;
+            std::ostringstream report;report<<"{\"players\":"<<players<<",\"started\":"<<(lan_match_started?1:0)<<",\"capacity\":"<<MapPlayerCapacity()<<",\"map\":"<<ZCloud_JSON(map_name)<<",\"version\":"<<ZCloud_JSON(GAME_VERSION)<<",\"round\":"<<ZCloud_JSON(cloud_round)<<",\"intermission\":"<<(!game_on&&cloud_voting_until>now?"true":"false")<<",\"vote_remaining\":"<<std::max(0.0,cloud_voting_until-now)<<",\"tick_ms\":"<<cloud_tick_ms<<",\"uptime\":"<<now-cloud_boot<<",\"role_age\":"<<(cloud_roles.valid?std::max(0.0,now-cloud_roles_until+15):999999)<<",\"applied_revision\":"<<cloud_applied_revision<<",\"next_map\":"<<ZCloud_JSON(NextCloudMap())<<",\"maps\":[";
+            bool comma=false;int count=0;for(auto &path:selectable_map_list){if(++count>64)break;if(comma)report<<",";comma=true;report<<ZCloud_JSON(path);}report<<"],\"roster\":[";comma=false;
+            for(auto &player:player_info){auto peer=cloud_peers.find(player.p_id);if(peer==cloud_peers.end()||peer->second.account.empty())continue;if(comma)report<<",";comma=true;report<<"{\"account\":"<<ZCloud_JSON(peer->second.account)<<",\"name\":"<<ZCloud_JSON(player.name)<<"}";}report<<"]}\n";
+            std::string payload=report.str();if(payload.size()<65536)write(c,payload.data(),payload.size());
 			close(c);
 		}
 	}

@@ -138,7 +138,20 @@ with tempfile.TemporaryDirectory(prefix='zod-cloud-') as tmp:
    api(base,'/api/my-servers/admin',{'server':'test','username':'CloudBob','action':'remove'},session)
    role(bob,0);bob.send('SET_GAME_PAUSED',b'\0');bob.send('GET_GAME_PAUSED');assert bob.until('UPDATE_GAME_PAUSED')[0]==b'\1','revoked administrator retained control'
    role(alice,2);alice.send('SET_GAME_PAUSED',b'\0');assert alice.until('UPDATE_GAME_PAUSED')[0]==b'\0','owner could not resume directly'
+   api(base,'/api/my-servers/admin',{'server':'test','username':'CloudBob','action':'add','role':'moderator'},session)
+   role(bob,3);bob.send('SET_GAME_PAUSED',b'\1');bob.send('GET_GAME_PAUSED');assert bob.until('UPDATE_GAME_PAUSED')[0]==b'\0','moderator gained match control'
+   health=wait(lambda:api(base,'/api/server-console?server=test',token=session)['health']['data'].get('maps'),15)
+   settings={'rotation':[health[0]['map']],'bots':[2],'difficulty':2,'speed':125,'voting':True}
+   api(base,'/api/server-console',{'server':'test','action':'configure','settings':settings},session)
+   api(base,'/api/server-console',{'server':'test','action':'kick','username':'CloudBob','reason':'Integration moderation'},session)
+   bob.s.settimeout(12)
+   try:
+    while bob.s.recv(65536):pass
+   except ConnectionResetError:pass
    bob.close()
+   def delivered():
+    commands=api(base,'/api/server-console?server=test',token=session)['commands'];return commands and commands[0]['status']=='applied'
+   wait(delivered,15)
    # A fresh public host enrolls through the actual agent CLI, without an operator-created key.
    reset_limits();device_state=root/'device-host';device_log=root/'device-host.log';device_port=port()
    device_args=[AGENT,'--mode','public','--engine',ENGINE,'--data',DATA,'--port',str(device_port),'--state',str(device_state),'--hub',base,'--id','device-host','--name','Browser-owned host']

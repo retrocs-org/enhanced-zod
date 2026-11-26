@@ -83,6 +83,8 @@ class ReleaseTests(unittest.TestCase):
         self.assertFalse(self.out.exists())
     def test_collect_matching_platform_releases(self):
         self.prepare()
+        with zipfile.ZipFile(self.out/'zod-enhanced-1.2.3-source.zip') as archive:
+            self.assertEqual(archive.getinfo('zod-enhanced-1.2.3/BUILD-PROVENANCE.json').date_time,(2020,1,1,0,0,0))
         second=self.root/'outputs/second';r.prepare(self.root,second,[])
         combined=self.root/'outputs/combined';r.collect(self.root,combined,[self.out,second])
         self.assertEqual(r.verify(self.root,combined)['version'],'1.2.3')
