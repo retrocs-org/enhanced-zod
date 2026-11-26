@@ -111,7 +111,7 @@ std::shared_ptr<ZConnectedSocket> ZNetConnect(const std::string &host, int port,
 }
 
 // A disposable preflight leaves the player's current session untouched on failure.
-bool ZNetCheckVersion(const std::string &host,int port,std::string &error,int milliseconds,std::string *serverVersion) {
+bool ZNetCheckVersion(const std::string &host,int port,std::string &error,int milliseconds,std::string *serverVersion,std::string *mapHash) {
     auto started=std::chrono::steady_clock::now();
     auto connection=ZNetConnect(host,port,error,milliseconds);
     if(!connection) return false;
@@ -127,6 +127,7 @@ bool ZNetCheckVersion(const std::string &host,int port,std::string &error,int mi
         probe.Process();
         for(auto *event:events) {
             if(event->event_type==OTHER_EVENT && event->event_number==DISCONNECT_EVENT)closed=true;
+            if(mapHash&&event->event_type==TCP_EVENT&&event->event_number==MAP_FINGERPRINT&&event->size==65&&event->data&&event->data[64]==0){std::string hash(event->data,64);if(hash.find_first_not_of("0123456789abcdef")==std::string::npos)*mapHash=hash;}
             if(event->event_type==TCP_EVENT && event->event_number==GIVE_VERSION) {
                 received=true;
                 if(event->size!=sizeof(version_packet) || !event->data || !memchr(event->data,0,sizeof(version_packet)))

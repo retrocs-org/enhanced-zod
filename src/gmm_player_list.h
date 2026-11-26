@@ -6,11 +6,12 @@
 class GMMPlayerList : public ZGuiMainMenuBase
 {
 public:
-	GMMPlayerList();
+	GMMPlayerList(bool staff=false);
 
 	void Process();
 private:
 	GMMWList player_list;
+    bool staff=false;int selected=-1;GMMWTextEntry reason;GMMWButton kick,ban;GMMWLabel help;
 	GMMWLabel players_on_label;
 	GMMWLabel players_onnum_label;
 

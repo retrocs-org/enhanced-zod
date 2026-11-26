@@ -9,6 +9,7 @@ function render_network_services(ZodService $service): void {
     <div class="info-grid">
     <?php foreach([
         ['Server directory','Live lobbies, player counts, connection addresses and join tickets. Listings expire after 90 seconds without a heartbeat.','/servers','Browse servers'],
+        ['Match history','Completed public battles, teams and privacy-aware participant results.','/match-history','Browse match records'],
         ['Accounts & access','Your commander identity, public match history and single-use join tickets. Private games remain independent.','/account','Your account'],
         ['Battle records','Public-server results power commander profiles, leaderboards and map statistics. Private matches are not uploaded.','/statistics','Network statistics'],
         ['Commander leaderboard','See public match records and find commanders by their victories, units destroyed and captured territory.','/leaderboard','View leaderboard'],

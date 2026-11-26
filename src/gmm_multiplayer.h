@@ -39,7 +39,7 @@ private:
     void ApplyRefresh(const RefreshResult &result);
     void HandleWidgetEvent(int type,ZGMMWidget *widget) override;
     void Refresh();
-    struct Compatibility {string address,version,error,map;bool compatible=false;};
+    struct Compatibility {string address,version,error,map,hash,localHash;bool compatible=false;};
     ZMPAsync<Compatibility> compatibility_task;string compatibility_address;
     void CheckCompatibility(const MatchInfo &match);
     void JoinAddress();

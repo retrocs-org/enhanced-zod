@@ -13,7 +13,8 @@ import (
 
 func main() {
 	var c agent.Config
-	var keyfile string
+	var keyfile, stageEngine, checksum string
+	var rollback bool
 	var login, loginOnly bool
 	flag.StringVar(&c.Mode, "mode", "private", "public or private")
 	flag.StringVar(&c.Engine, "engine", "/app/build/zod-enhanced", "engine executable")
@@ -29,6 +30,9 @@ func main() {
 	flag.IntVar(&c.Capacity, "capacity", 2, "map fort slots, 2-8")
 	flag.BoolVar(&login, "login", false, "authorize this public host with its cloud owner in a browser")
 	flag.BoolVar(&loginOnly, "login-only", false, "authorize this public host and exit without starting the engine")
+	flag.StringVar(&stageEngine, "stage-engine", "", "stage a local dedicated engine for the next scheduled restart")
+	flag.StringVar(&checksum, "sha256", "", "trusted SHA-256 of the staged engine")
+	flag.BoolVar(&rollback, "rollback-engine", false, "select the retained previous engine, then exit; stop the agent first")
 	flag.Parse()
 	c.Extra = flag.Args()
 	if keyfile != "" {
@@ -40,6 +44,20 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if stageEngine != "" {
+		if e := agent.StageRuntime(ctx, c, stageEngine, checksum); e != nil {
+			log.Fatal(e)
+		}
+		log.Print("Engine staged and verified; schedule restart after this round.")
+		return
+	}
+	if rollback {
+		if e := agent.RollbackRuntime(c); e != nil {
+			log.Fatal(e)
+		}
+		log.Print("Previous engine selected; start the agent normally.")
+		return
+	}
 	if e := agent.LoadIdentity(&c); e != nil {
 		log.Fatal(e)
 	}

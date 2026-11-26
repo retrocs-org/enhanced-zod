@@ -128,7 +128,7 @@ void ZPlayer::cloud_result_event(ZPlayer *p,char *data,int size,int)
     int success=0;if(size!=sizeof(success)||!data)return;memcpy(&success,data,size);
     if(success==1) p->ProcessConnect();
     else {
-        p->cloud_disconnect_reason="Cloud login failed. Select the server in Online games for a fresh browser approval.";
+        if(p->cloud_disconnect_reason.empty())p->cloud_disconnect_reason="Cloud login failed. Select the server in Online games for a fresh browser approval.";
         p->AddNewsEntry(p->cloud_disconnect_reason);
         for(auto *menu:p->gui_menu_list) if(auto *lobby=dynamic_cast<GMMLobby*>(menu)) lobby->SetError(p->cloud_disconnect_reason);
     }

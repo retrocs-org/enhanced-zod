@@ -10,6 +10,19 @@ are retained below; new website changes belong in that separate log.
 
 ## Unreleased
 
+### Multiplayer reliability and operations
+
+- Fix maintenance/status broadcasts addressing a negative client index; guard socket send/access methods against invalid indices.
+
+- Include team identity in public results and link profiles to detailed match records.
+- Add keyboard-accessible native kick/ban controls with current-role checks and reasons.
+- Schedule maintenance at round boundaries; stage checksum-verified standalone dedicated engines with retained rollback copies and startup readiness checks.
+- Diagnose portal DNS/TLS/timeouts, expired approvals, denied access and maintenance failures.
+- Show/compare map SHA-256 during preflight and verify bounded, ordered map downloads before parsing.
+- Validate campaign reachability and expose `--validate-campaign`; retain export/portability checks for maps, objectives and videos.
+- Add Home/End list navigation and explicit team markers; preserve readable menu scaling.
+
+
 - Make embedded release provenance timestamps deterministic so independently prepared source archives can be collected together.
 
 ### Public server operations

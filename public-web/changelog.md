@@ -1,3 +1,11 @@
+## Match history and maintenance (unreleased)
+
+- Add detailed, paginated public match history with teams, participants and privacy-aware identities; link profiles, server consoles and statistics to results.
+- Add scoped native moderation and scheduled-maintenance APIs with timestamp-bound acknowledgements.
+- Support administrator/owner maintenance scheduling and cancellation from the console.
+- Improve keyboard focus, reduced-motion and forced-color support.
+- Requires migration 007 plus matching agent/engine updates. Existing report retries remain compatible; legacy teams are shown as unknown.
+
 ## Public server operations (unreleased)
 
 - Add server consoles with scoped moderator/admin/owner permissions, temporary bans and kick delivery status.

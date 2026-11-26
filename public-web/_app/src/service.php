@@ -122,10 +122,10 @@ final class ZodService {
         if (!is_array($players)||!array_is_list($players)||count($players)<1||count($players)>8) fail(400,'Invalid player list.');
         $out=[];$seen=[];
         foreach ($players as $p) {
-            if (!is_array($p)) fail(400,'Invalid player result.');fields($p,['account','grant','won','kills','lost','captures']);
+            if (!is_array($p)) fail(400,'Invalid player result.');fields($p,['account','grant','won','kills','lost','captures','team']);
             if (!is_hex_id($p['account']??null)||!is_hex_id($p['grant']??null)||!is_bool($p['won']??null)||isset($seen[$p['account']])) fail(400,'Invalid authenticated player result.');
             $seen[$p['account']]=true;
-            $out[]=['account'=>$p['account'],'grant'=>$p['grant'],'won'=>$p['won'],'kills'=>int_value($p['kills']??null,0,100000),'lost'=>int_value($p['lost']??null,0,100000),'captures'=>int_value($p['captures']??null,0,100000)];
+            $entry=['account'=>$p['account'],'grant'=>$p['grant'],'won'=>$p['won'],'kills'=>int_value($p['kills']??null,0,100000),'lost'=>int_value($p['lost']??null,0,100000),'captures'=>int_value($p['captures']??null,0,100000)];if(array_key_exists('team',$p))$entry['team']=int_value($p['team'],0,4);$out[]=$entry;
         }
         usort($out,fn($a,$b)=>strcmp($a['account'],$b['account']));
         return ['id'=>$in['id'],'map'=>$map,'duration'=>$duration,'players'=>$out];
@@ -138,7 +138,7 @@ final class ZodService {
                 foreach ($result['players'] as $p) {
                     $valid=query('SELECT account_id FROM connection_grants WHERE token_hash=? AND server_id=? AND account_id=? AND expires_at>UTC_TIMESTAMP(6)',[token_hash($p['grant']),$server,$p['account']])->fetchColumn();
                     if (!$valid) fail(400,'Invalid or expired player grant.');
-                    query('INSERT INTO match_players (match_pk,account_id,won,kills,lost,captures) VALUES (?,?,?,?,?,?)',[$match,$p['account'],(int)$p['won'],$p['kills'],$p['lost'],$p['captures']]);
+                    query('INSERT INTO match_players (match_pk,account_id,won,kills,lost,captures,team) VALUES (?,?,?,?,?,?,?)',[$match,$p['account'],(int)$p['won'],$p['kills'],$p['lost'],$p['captures'],$p['team']??0]);
                 }
             });
         } catch (PDOException $e) {
@@ -164,9 +164,18 @@ final class ZodService {
         if(($viewer['id']??'')!==$account['id'] && ($visibility==='private'||($visibility==='friends'&&(!$viewer||!$this->areFriends($viewer['id'],$account['id'])))||($viewer&&$this->blocked($viewer['id'],$account['id']))))return null;
         $stats=query('SELECT COUNT(*) AS matches,COALESCE(SUM(won),0) AS wins,COALESCE(SUM(kills),0) AS kills,COALESCE(SUM(lost),0) AS lost,COALESCE(SUM(captures),0) AS captures FROM match_players WHERE account_id=?',[$account['id']])->fetch();
         foreach ($stats as &$n)$n=(int)$n;
-        $recent=query('SELECT m.map_name,m.duration,m.finished_at,m.server_id,p.won,p.kills,p.lost,p.captures FROM match_players p JOIN matches m ON m.id=p.match_pk WHERE p.account_id=? ORDER BY m.finished_at DESC LIMIT 15',[$account['id']])->fetchAll();
+        $recent=query('SELECT m.id,m.map_name,m.duration,m.finished_at,m.server_id,p.team,p.won,p.kills,p.lost,p.captures FROM match_players p JOIN matches m ON m.id=p.match_pk WHERE p.account_id=? ORDER BY m.finished_at DESC LIMIT 15',[$account['id']])->fetchAll();
         return ['account'=>$account,'stats'=>$stats,'recent'=>$recent];
     }
     public function recent(): array { return query('SELECT m.*, (SELECT GROUP_CONCAT(a.username ORDER BY a.username SEPARATOR ", ") FROM match_players p JOIN accounts a ON a.id=p.account_id WHERE p.match_pk=m.id AND p.won=1 AND COALESCE((SELECT visibility FROM account_preferences WHERE account_id=a.id),\'public\')=\'public\') AS winners FROM matches m ORDER BY m.finished_at DESC LIMIT 12')->fetchAll(); }
     public function maps(): array { return query('SELECT map_name,COUNT(*) AS matches FROM matches GROUP BY map_name ORDER BY matches DESC,map_name LIMIT 6')->fetchAll(); }
+    public function matchHistory(string $server='',string $before=''): array {
+        $args=[];$where=[];if($server!==''){$where[]='server_id=?';$args[]=clean_text($server,64);}if($before!==''){if(!ctype_digit($before)||strlen($before)>18)fail(400,'Invalid history cursor.');$where[]='id<?';$args[]=$before;}
+        return query('SELECT id,server_id,map_name,duration,finished_at FROM matches'.($where?' WHERE '.implode(' AND ',$where):'').' ORDER BY id DESC LIMIT 25',$args)->fetchAll();
+    }
+    public function matchDetails(string $id): array {
+        if(!ctype_digit($id)||strlen($id)>18)fail(400,'Invalid match identifier.');$match=query('SELECT id,server_id,map_name,duration,finished_at FROM matches WHERE id=?',[$id])->fetch();if(!$match)fail(404,'Match not found.');
+        $viewer=$this->currentAccount();$match['players']=[];foreach(query('SELECT a.id AS account_id,a.username,p.team,p.won,p.kills,p.lost,p.captures,COALESCE(pref.visibility,\'public\') AS visibility FROM match_players p JOIN accounts a ON a.id=p.account_id LEFT JOIN account_preferences pref ON pref.account_id=a.id WHERE p.match_pk=? ORDER BY p.team,a.username',[$id])->fetchAll() as $p){$own=($viewer['id']??'')===$p['account_id'];if(!$own&&($p['visibility']==='private'||($p['visibility']==='friends'&&(!$viewer||!$this->areFriends($viewer['id'],$p['account_id'])))||($viewer&&$this->blocked($viewer['id'],$p['account_id']))))$p['username']='Private player';unset($p['account_id'],$p['visibility']);foreach(['team','won','kills','lost','captures'] as $key)$p[$key]=(int)$p[$key];$match['players'][]=$p;}return $match;
+    }
+
 }

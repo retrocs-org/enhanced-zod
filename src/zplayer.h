@@ -376,6 +376,8 @@ class ZPlayer : public ZClient
 		static void test_event(ZPlayer *p, char *data, int size, int dummy);
 		static void connect_event(ZPlayer *p, char *data, int size, int dummy);
 		static void disconnect_event(ZPlayer *p, char *data, int size, int dummy);
+		static void cloud_notice_event(ZPlayer*,char*,int,int);
+        static void map_fingerprint_event(ZPlayer*,char*,int,int);
 		static void store_map_event(ZPlayer *p, char *data, int size, int dummy);
 		static void add_new_object_event(ZPlayer *p, char *data, int size, int dummy);
 		static void set_zone_info_event(ZPlayer *p, char *data, int size, int dummy);

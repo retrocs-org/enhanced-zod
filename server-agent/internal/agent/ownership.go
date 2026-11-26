@@ -191,6 +191,10 @@ func (a *Agent) Roles(w http.ResponseWriter, r *http.Request) {
 				Voting            bool
 			}
 		}
+		Maintenance struct {
+			At             json.Number
+			Action, Reason string
+		}
 		Winner      string
 		WinnerRound string `json:"winner_round"`
 	}
@@ -222,8 +226,18 @@ func (a *Agent) Roles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	a.lastRoleSuccess.Store(time.Now().Unix())
+	if roles.Maintenance.At != "" {
+		at, e := roles.Maintenance.At.Int64()
+		if e != nil || at < 0 || len(roles.Maintenance.Reason) > 160 || (roles.Maintenance.Action != "stop" && roles.Maintenance.Action != "restart") {
+			http.Error(w, "invalid maintenance", 502)
+			return
+		}
+	}
 	w.Header().Set("Content-Type", "text/plain")
 	fmt.Fprintln(w, roles.Owner)
+	if at, _ := roles.Maintenance.At.Int64(); at > 0 {
+		fmt.Fprintf(w, "s:%d:%s:%s\n", at, roles.Maintenance.Action, hex.EncodeToString([]byte(roles.Maintenance.Reason)))
+	}
 	for _, id := range roles.Admins {
 		fmt.Fprintln(w, id)
 	}

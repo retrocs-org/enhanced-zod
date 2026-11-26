@@ -75,3 +75,9 @@ textarea { width: 100%; max-width: 100%; min-height: 8rem; font: inherit; color:
 .map-tactical {width:100%;max-height:240px;background:#243541;border:1px solid #64727d;}
 .server-health {display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;}
 .server-health dd {margin:.3rem 0;font-size:1.3rem;}
+
+/* Keep navigation usable without color or animation cues. */
+:focus-visible{outline:3px solid #ffc76b;outline-offset:4px}
+.table-scroll{overflow-x:auto}caption{text-align:left;padding:.8rem;font-weight:600}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+@media(forced-colors:active){.button,.panel,input,select{border:1px solid CanvasText}.button:focus-visible{outline:3px solid Highlight}}

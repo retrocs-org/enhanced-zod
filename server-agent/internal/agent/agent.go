@@ -34,6 +34,7 @@ type Agent struct {
 	secret          string
 	catalog         map[string]map[string]any
 	lastRoleSuccess atomic.Int64
+	runtimeTrial    bool
 }
 
 func New(c Config) (*Agent, error) {
@@ -107,7 +108,12 @@ func (a *Agent) Verify(w http.ResponseWriter, r *http.Request) {
 	}
 	var claim struct{ Account, Username, Grant string }
 	if e := a.request(r.Context(), "POST", "/api/tickets/redeem", map[string]string{"Ticket": in.Ticket}, &claim); e != nil {
-		http.Error(w, "Cloud login failed. Get a new ticket or retry when the service is available.", 401)
+		code := 503
+		var status *hubStatusError
+		if errors.As(e, &status) && (status.Code == 401 || status.Code == 403) {
+			code = status.Code
+		}
+		http.Error(w, "Cloud verification unavailable, denied, or approval expired.", code)
 		return
 	}
 	if len(claim.Account) != 64 || len(claim.Grant) != 64 || strings.ContainsAny(claim.Username, "\r\n") {
@@ -142,6 +148,9 @@ func (a *Agent) publish(ctx context.Context) {
 	if e = a.request(ctx, "POST", "/api/servers/heartbeat", map[string]any{"name": a.cfg.Name, "host": a.cfg.Host, "port": a.cfg.Port, "map": m, "players": n, "capacity": a.cfg.Capacity, "started": started, "version": version}, nil); e != nil {
 		log.Printf("public listing: %v", e)
 	}
+	a.flushResults(ctx)
+}
+func (a *Agent) flushResults(ctx context.Context) {
 	entries, e := os.ReadDir(filepath.Join(a.cfg.State, "outbox"))
 	if e != nil {
 		return
@@ -171,7 +180,7 @@ func (a *Agent) publish(ctx context.Context) {
 		}
 	}
 }
-func (a *Agent) Run(ctx context.Context) error {
+func (a *Agent) runOnce(ctx context.Context) error {
 	if a.cfg.Mode == "public" {
 		var identity struct{ ID, Owner string }
 		if e := a.request(ctx, "GET", "/api/server/identity", nil, &identity); e != nil {
@@ -190,6 +199,7 @@ func (a *Agent) Run(ctx context.Context) error {
 		return e
 	}
 	os.Remove(filepath.Join(a.cfg.State, "status.sock"))
+	os.Remove(filepath.Join(a.cfg.State, "maintenance-ready.json"))
 	listener, e := net.Listen("tcp", "127.0.0.1:0")
 	if e != nil {
 		return e
@@ -199,6 +209,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	mux.HandleFunc("/verify", a.Verify)
 	mux.HandleFunc("/roles", a.Roles)
 	mux.HandleFunc("/ack", a.Ack)
+	mux.HandleFunc("/moderate", a.Moderate)
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 2 * time.Second, ReadTimeout: 3 * time.Second, WriteTimeout: 7 * time.Second, MaxHeaderBytes: 4096}
 	defer srv.Close()
 	go srv.Serve(listener)
@@ -229,17 +240,52 @@ func (a *Agent) Run(ctx context.Context) error {
 	defer healthTicker.Stop()
 	ticker := time.NewTicker(20 * time.Second)
 	defer ticker.Stop()
+	startup := time.NewTimer(15 * time.Second)
+	defer startup.Stop()
 	initial := time.NewTimer(time.Second)
 	defer initial.Stop()
 	for {
 		select {
 		case e := <-done:
 			if a.cfg.Mode == "public" {
-				c, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+				c, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				a.flushResults(c)
+				cancel()
+				c, cancel = context.WithTimeout(context.Background(), 3*time.Second)
 				a.request(c, "DELETE", "/api/servers/self", nil, nil)
 				cancel()
 			}
+			marker := filepath.Join(a.cfg.State, "maintenance-ready.json")
+			b, _ := os.ReadFile(marker)
+			os.Remove(marker)
+			var maintenance struct {
+				At     int64
+				Action string
+			}
+			if json.Unmarshal(b, &maintenance) == nil && maintenance.At > 0 && maintenance.At <= time.Now().Unix() {
+				c, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				err := a.request(c, "POST", "/api/server/maintenance-complete", map[string]any{"at": maintenance.At}, nil)
+				cancel()
+				if err != nil {
+					return fmt.Errorf("maintenance complete but portal acknowledgement failed: %w", err)
+				}
+				a.runtimeTrial = false
+				if maintenance.Action == "restart" {
+					return restartEngine
+				}
+				return nil
+			}
 			return e
+		case <-startup.C:
+			if a.runtimeTrial {
+				if _, err := a.readStatus(); err != nil {
+					cmd.Process.Kill()
+					<-done
+					return errors.New("updated engine did not report ready within 15 seconds")
+				}
+				a.runtimeTrial = false
+				log.Print("Updated engine reported ready")
+			}
 		case <-healthTicker.C:
 			if a.cfg.Mode == "public" {
 				a.publishHealth(ctx)

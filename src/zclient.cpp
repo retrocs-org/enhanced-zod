@@ -1,4 +1,5 @@
 #include "zclient.h"
+#include "zhash.h"
 #include "packet_io.h"
 #include "common.h"
 #include "zpath_debug.h"
@@ -87,13 +88,20 @@ int ZClient::ProcessMapDownload(char *data, int size)
 	if(size < 4) return 1;
 	
 	memcpy(&pack_num, data, 4);
+    if(pack_num==0){map_download_next=0;map_download_error.clear();}
+    if(pack_num < -1 || (pack_num>=0&&pack_num!=map_download_next) || data_size<0 || map_data_size>16*1024*1024-data_size){map_download_error="Invalid map transfer sequence or size. Reconnect; check the host version if this repeats.";free(map_data);map_data=nullptr;map_data_size=0;return -1;}
+    if(pack_num>=0)++map_download_next;
+
 	
 	//last packet?
 	if(pack_num == -1) 
 	{
 		if(map_data && map_data_size > 0)
 		{
-			//load map
+			// Verify the complete transfer before parsing any map objects.
+            if(!expected_map_hash.empty()&&ZSHA256(map_data,map_data_size)!=expected_map_hash){map_download_error="Map checksum mismatch. Reconnect to download a fresh map; ask the host to check its map if this repeats.";free(map_data);map_data=nullptr;map_data_size=0;expected_map_hash.clear();return -1;}
+            expected_map_hash.clear();
+            //load map
 			printf("map_data_size:%d\n", map_data_size);
 			zmap.Read(map_data, map_data_size);
 			

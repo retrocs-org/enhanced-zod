@@ -41,10 +41,14 @@ class ZServer : public ZCore
         std::map<int,ZCloudPeer> cloud_peers;
         std::map<std::string,ZCloudRoster> cloud_roster;
         ZMPAsync<ZCloudClaim> cloud_task;
-        ZMPAsync<ZCloudRoles> cloud_roles_task;ZCloudRoles cloud_roles;
+        ZMPAsync<ZCloudRoles> cloud_roles_task;long long cloud_maintenance_notice=0;
+    ZCloudRoles cloud_roles;
         double cloud_roles_next=0,cloud_roles_until=0;std::map<int,int> cloud_role_sent;
         bool CloudAdmin(int player);void RefreshCloudRoles();
-        int CloudRank(const std::string &account);void ApplyCloudOperations();std::string NextCloudMap();
+        int CloudRank(const std::string &account);void ApplyCloudOperations();
+    std::string MapFingerprint();std::string map_fingerprint;
+    static void cloud_moderate_event(ZServer*,char*,int,int);
+    ZMPAsync<bool> cloud_moderation_task;std::string NextCloudMap();
         ZCloudRoles cloud_settings;std::string cloud_round="boot";long long cloud_applied_revision=0;
         double cloud_voting_until=0,cloud_boot=0,cloud_tick_ms=0,cloud_ack_after=0;
         ZMPAsync<bool> cloud_ack_task;std::vector<std::string> cloud_ack_batch;

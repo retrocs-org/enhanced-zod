@@ -143,7 +143,8 @@ with tempfile.TemporaryDirectory(prefix='zod-cloud-') as tmp:
    health=wait(lambda:api(base,'/api/server-console?server=test',token=session)['health']['data'].get('maps'),15)
    settings={'rotation':[health[0]['map']],'bots':[2],'difficulty':2,'speed':125,'voting':True}
    api(base,'/api/server-console',{'server':'test','action':'configure','settings':settings},session)
-   api(base,'/api/server-console',{'server':'test','action':'kick','username':'CloudBob','reason':'Integration moderation'},session)
+   bob.send('REQUEST_PLAYER_ID');bob_id=struct.unpack('=i',bob.until('GIVE_PLAYER_ID')[0])[0]
+   alice.send('CLOUD_MODERATE',struct.pack('=ii',bob_id,0)+b'Integration native moderation\0')
    bob.s.settimeout(12)
    try:
     while bob.s.recv(65536):pass
@@ -163,9 +164,15 @@ with tempfile.TemporaryDirectory(prefix='zod-cloud-') as tmp:
     assert enrollment.wait(timeout=10)==0,'login-only did not exit after authorization'
     saved=json.loads((device_state/'credentials/identity.json').read_text());assert set(saved)=={'Hub','Server','Key'} and saved['Server']=='device-host'
     assert saved['Key'] not in device_log.read_text(),'host credential leaked to console'
-   with process(device_args,env,root/'device-restart.log'):
+   with process(device_args,env,root/'device-restart.log') as maintained:
     wait(lambda:any(row['id']=='device-host' for row in api(base,'/api/servers')),15)
     assert '/server-auth?code=' not in (root/'device-restart.log').read_text(),'restart required interactive sign-in'
+    api(base,'/api/server-console',{'server':'device-host','action':'schedule-maintenance','delay':30,'reason':'Integration safe stop','maintenance_action':'stop'},session)
+    # Advance only this isolated test database's scheduled time.
+    subprocess.run([PHP,'-r','require '+json.dumps(str(pathlib.Path(ROOT)/'public-web/_app/src/bootstrap.php'))+';query("UPDATE server_owners SET maintenance_at=UNIX_TIMESTAMP()-1 WHERE server_id=\'device-host\'");'],check=True,capture_output=True)
+    assert maintained.wait(timeout=15)==0,'maintenance did not safely stop idle host'
+    assert not any(row['id']=='device-host' for row in api(base,'/api/servers'))
+    console=api(base,'/api/server-console?server=device-host',token=session);assert int(console['owner']['maintenance_at'])==0,'completed maintenance was not acknowledged'
    alice.close()
    # Fail closed if the account service becomes unavailable.
    offline_ticket=api(base,'/api/tickets',{'Server':'test'},session)['ticket'];hub.terminate();hub.wait(timeout=5)

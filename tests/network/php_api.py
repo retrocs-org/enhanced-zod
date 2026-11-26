@@ -422,4 +422,31 @@ class PHPBackend(unittest.TestCase):
         api('/api/connect/poll',{'device':expired['device']},expected=401)
         self.assertNotIn(started['device'],str(sql('SELECT * FROM native_connections')))
 
+    def test_12_history_native_moderation_and_maintenance(self):
+        sql('DELETE FROM rate_limits')
+        # Existing test account session is refreshed without depending on password changes.
+        owner=api('/api/login',{'username':'OpsModerator','password':'server operations test password'})['session']
+        actor=api('/api/me',token=owner)['id'];target=sql("SELECT id FROM accounts WHERE username='OpsPlayer'")[0]['id']
+        # ops-server was reauthorized with a new scoped credential by test_11.
+        key='0'*64
+        api('/api/servers/heartbeat',{'name':'Operations','host':'127.0.0.1','port':2301,'map':'maps/a.map','capacity':2,'players':1,'started':True,'version':'test'},key)
+        api('/api/server/moderate',{'actor':actor,'target':target,'action':'kick','reason':'Native request','minutes':60},key)
+        api('/api/server/moderate',{'actor':target,'target':actor,'action':'ban','reason':'Unauthorized','minutes':60},key,expected=403)
+        api('/api/server-console',{'server':'ops-server','action':'schedule-maintenance','delay':30,'reason':'Update','maintenance_action':'restart'},owner,expected=403)
+        # Use the immutable owner's session from the existing ownership fixture.
+        owner_id=sql("SELECT account_id FROM server_owners WHERE server_id='ops-server'")[0]['account_id']
+        session='9'*64;sql("INSERT INTO sessions(token_hash,account_id,expires_at) VALUES('"+hashlib.sha256(session.encode()).hexdigest()+"','"+owner_id+"',UTC_TIMESTAMP()+INTERVAL 1 HOUR)")
+        api('/api/server-console',{'server':'ops-server','action':'schedule-maintenance','delay':30,'reason':'Update','maintenance_action':'restart'},session)
+        control=api('/api/server/control',token=key);at=int(control['maintenance']['at']);self.assertGreater(at,time.time());self.assertEqual(control['maintenance']['action'],'restart')
+        sql("UPDATE server_owners SET maintenance_at=UNIX_TIMESTAMP()-1 WHERE server_id='ops-server'")
+        api('/api/tickets',{'server':'ops-server'},owner,expected=503)
+        api('/api/server/maintenance-complete',{'at':at},key) # stale completion cannot clear a newer schedule
+        self.assertNotEqual(int(api('/api/server/control',token=key)['maintenance']['at']),0)
+        api('/api/server-console',{'server':'ops-server','action':'cancel-maintenance'},session)
+        self.assertEqual(int(api('/api/server/control',token=key)['maintenance']['at']),0)
+        history=api('/api/matches');self.assertTrue(history)
+        match=api('/api/match?id='+str(history[0]['id']));self.assertTrue(match['players']);self.assertIn('team',match['players'][0]);self.assertNotIn('grant',str(match));self.assertNotIn('payload_hash',match)
+        self.assertEqual(request('/match-history?id='+str(history[0]['id']))[0],200)
+        api('/api/matches?before=oops',expected=400)
+
 if __name__=='__main__':unittest.main()

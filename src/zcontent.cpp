@@ -58,6 +58,10 @@ vector<ZContentIssue> ZContent_ValidateMap(ZMap &map){
 vector<ZContentIssue> ZContent_ValidateCampaign(const ZCampaign &campaign,bool distribution){
  vector<ZContentIssue> out;ZCampaign parsed;string error;
  if(!ZCampaign_Load(campaign.root+"/campaign.ini",parsed,error)){out.push_back({true,error});return out;}
+ vector<bool> reached(parsed.missions.size(),false);vector<int> pending{0};bool canFinish=false;
+ while(!pending.empty()){int i=pending.back();pending.pop_back();if(i<0||i>=(int)reached.size()||reached[i])continue;reached[i]=true;const auto &m=parsed.missions[i];for(int branch:{m.nextWin,m.nextLoss}){if(branch==-2){canFinish=true;continue;}int next=branch==-1?i+1:branch;if(next==(int)reached.size())canFinish=true;else pending.push_back(next);}}
+ for(size_t i=0;i<reached.size();++i)if(!reached[i])out.push_back({false,"Mission "+to_string(i+1)+": unreachable from the opening mission; check win/loss links"});
+ if(!canFinish)out.push_back({false,"Campaign has no reachable ending; all mission branches loop"});
  set<string> usedMaps;
  for(size_t i=0;i<parsed.missions.size();++i){auto &m=parsed.missions[i];string path;ZMap map;
   const string prefix="Mission "+to_string(i+1)+": ";

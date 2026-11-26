@@ -4,6 +4,7 @@
 #include <tuple>
 #include <map>
 #include "zserver.h"
+#include <ctime>
 #include "zasset_import.h"
 #include "packet_io.h"
 #include "map_gen_core.h"
@@ -560,7 +561,8 @@ void ZServer::LoadFallbackGeneratedMap()
 	if(MapGen::Generate(out_path, enemies, width, height, terrain, tech, seed, vehicles,ZAsset_TerrainDirectory(terrain)))
 	{
 		zmap.ClearMap();
-		if(zmap.Read(out_path.c_str()))
+		map_fingerprint.clear();
+        if(zmap.Read(out_path.c_str()))
 		{
 			map_name = out_path;
 
@@ -596,6 +598,8 @@ void ZServer::DoResetGame(string map_name)
 
 void ZServer::CheckResetGame()
 {
+ if(cloud_required&&cloud_roles.valid&&current_time()<cloud_roles_until&&cloud_roles.maintenanceAt>0&&std::time(nullptr)>=cloud_roles.maintenanceAt)return;
+
 	if(game_on) return;
     if(!allow_remote_clients&&server_socket.PlayersConnected()>0&&!user_continue_requested)return;
 	//#79: while idling on the menu, don't auto-load the first map - wait for the
@@ -3618,6 +3622,8 @@ void ZServer::PublishLobbyCountdown(int seconds)
 }
 void ZServer::CheckAutoStart()
 {
+ if(cloud_required&&cloud_roles.valid&&current_time()<cloud_roles_until&&cloud_roles.maintenanceAt>0&&std::time(nullptr)>=cloud_roles.maintenanceAt)return;
+
     if(!game_on || lan_match_started || !ztime.IsPaused()) return;
 
 	int humans = 0, ready = 0, bots = 0;

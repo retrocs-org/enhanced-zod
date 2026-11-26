@@ -144,6 +144,7 @@ static void chdir_to_data_dir()
 #endif
 int main(int argc, char **argv)
 {
+    if(argc==3&&string(argv[1])=="--validate-campaign"){SDL_Init(0);ZMap::ServerInit();ZCampaign campaign;std::string error;if(!ZCampaign_Load(argv[2],campaign,error)){printf("error: %s\n",error.c_str());SDL_Quit();return 1;}auto issues=ZContent_ValidateCampaign(campaign,true);for(auto &issue:issues)printf("%s: %s\n",issue.error?"error":"warning",issue.text.c_str());bool valid=!ZContent_HasErrors(issues);if(issues.empty())printf("Campaign validation passed.\n");SDL_Quit();return valid?0:1;}
     if(argc==2&&string(argv[1])=="--check-content"){SDL_Init(0);chdir_to_data_dir();bool ready=ZAsset_RuntimeReady();for(const auto &check:ZAsset_CheckContent())printf("%s: %d/%d\n",check.category.c_str(),check.present,check.total);SDL_Quit();return ready?0:2;}
     if(argc==2&&string(argv[1])=="--diagnostics"){SDL_Init(0);chdir_to_data_dir();string path;bool ok=ZAsset_ExportDiagnostics(path,"idle");if(ok)printf("%s\n",path.c_str());SDL_Quit();return ok?0:1;}
     if(argc==3&&string(argv[1])=="--verify-campaign-pack"){SDL_Init(0);chdir_to_data_dir();ZMap::ServerInit();string report,error;bool ok=ZCampaign_CheckPortable(argv[2],report,error);printf("%s\n",report.c_str());SDL_Quit();return ok?0:1;}

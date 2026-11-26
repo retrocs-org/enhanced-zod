@@ -86,7 +86,7 @@ void ZServer::cloud_ticket_event(ZServer *p,char *data,int size,int player) {
         ZCloudClaim result;result.peer=id;
         if(port<1 || port>65535 || secret.size()!=64) return result;
         auto response=ZHttp_Post("127.0.0.1",port,"/verify","{\"Secret\":"+ZCloud_JSON(secret)+",\"Ticket\":"+ZCloud_JSON(ticket)+"}");
-        if(!response.ok || response.status!=200) return result;
+        if(!response.ok||response.status!=200){result.error=response.status==401?"Approval expired or already used. Select the server again for fresh browser approval.":response.status==403?"This account is not permitted on this server. Check server bans or contact its owner.":response.status==503?"Cloud authentication is unavailable or maintenance is pending. Retry later or choose another server.":"The host could not verify cloud approval. Check portal connectivity and retry.";return result;}
         std::istringstream input(response.body);std::getline(input,result.account);std::getline(input,result.name);std::getline(input,result.grant);
         if(result.account.size()!=64 || result.grant.size()!=64 || result.name.size()<3 || result.name.size()>24) {result.account.clear();result.grant.clear();}
         return result;
@@ -103,6 +103,7 @@ void ZServer::CheckCloud() {
             auto &peer=cloud_peers[claim.peer];peer.account=claim.account;peer.grant=claim.grant;
             player_info[i].name=claim.name; RelayLPlayerName((int)i);
         }
+        if(!success){auto reason=duplicate?std::string("This account already has a connection to this server."):claim.error;if(!reason.empty())server_socket.SendMessage((int)i,CLOUD_NOTICE,reason.c_str(),reason.size()+1);}
         server_socket.SendMessage((int)i,CLOUD_RESULT,(char*)&success,sizeof(success));
         if(!success) {auto *handler=server_socket.GetHandler((int)i);if(handler) handler->Disconnect();}
     }
@@ -132,7 +133,7 @@ void ZServer::FreezeCloudRoster() {
     }
 }
 void ZServer::ResetCloudMatch() {
-    cloud_round=std::to_string(SDL_GetTicksNS());cloud_applied_revision=0;cloud_voting_until=0;cloud_roles.winner.clear();cloud_roles.winnerRound.clear();
+    map_fingerprint.clear();cloud_round=std::to_string(SDL_GetTicksNS());cloud_applied_revision=0;cloud_voting_until=0;cloud_roles.winner.clear();cloud_roles.winnerRound.clear();
     cloud_roster_fixed=false;cloud_reported=false;cloud_roster.clear();cloud_deaths.clear();cloud_match_start=ztime.ztime;
     for(int t=0;t<MAX_TEAM_TYPES;++t) cloud_kills[t]=cloud_lost[t]=cloud_captures[t]=0;
 }
@@ -143,7 +144,7 @@ void ZServer::ReportCloudMatch() {
     bool alive[MAX_TEAM_TYPES]={};for(auto *object:object_list) {unsigned char type,id;object->GetObjectID(type,id);int team=object->GetOwner();if(team>NULL_TEAM&&team<MAX_TEAM_TYPES&&!object->IsDestroyed()&&(type==ROBOT_OBJECT||type==VEHICLE_OBJECT||type==CANNON_OBJECT))alive[team]=true;}
     std::random_device random;std::ostringstream uuid;for(int n=0;n<8;++n) uuid<<std::hex<<std::setw(8)<<std::setfill('0')<<(std::uint32_t)random();
     std::ostringstream report;report<<"{\"id\":"<<ZCloud_JSON(uuid.str())<<",\"map\":"<<ZCloud_JSON(map_name)<<",\"duration\":"<<std::max(0,(int)(ztime.ztime-cloud_match_start))<<",\"players\":[";
-    bool comma=false;for(const auto &entry:cloud_roster) {int team=entry.second.team;if(team<1||team>=MAX_TEAM_TYPES)continue;if(comma)report<<",";comma=true;report<<"{\"account\":"<<ZCloud_JSON(entry.first)<<",\"grant\":"<<ZCloud_JSON(entry.second.grant)<<",\"won\":"<<(alive[team]?"true":"false")<<",\"kills\":"<<cloud_kills[team]<<",\"lost\":"<<cloud_lost[team]<<",\"captures\":"<<cloud_captures[team]<<"}";}
+    bool comma=false;for(const auto &entry:cloud_roster) {int team=entry.second.team;if(team<1||team>=MAX_TEAM_TYPES)continue;if(comma)report<<",";comma=true;report<<"{\"account\":"<<ZCloud_JSON(entry.first)<<",\"grant\":"<<ZCloud_JSON(entry.second.grant)<<",\"team\":"<<team<<",\"won\":"<<(alive[team]?"true":"false")<<",\"kills\":"<<cloud_kills[team]<<",\"lost\":"<<cloud_lost[team]<<",\"captures\":"<<cloud_captures[team]<<"}";}
     report<<"]}";
     std::string path=std::string(folder)+"/"+uuid.str()+".json";
     const auto text=report.str();ZSaveWriter writer;writer.Raw(text.data(),(int)text.size());

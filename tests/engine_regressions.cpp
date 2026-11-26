@@ -1,4 +1,7 @@
 #include "zserver.h"
+#include "zhash.h"
+#include "gmm_player_list.h"
+#include <ctime>
 #include "zgamepad.h"
 #include "zperf.h"
 #include "zreplay.h"
@@ -215,6 +218,9 @@ struct ZFrontEndRegression {
         string rejected;REQUIRE(!ZCampaign_Export(campaign,rejected,error));REQUIRE(rejected.empty());
         campaign.missions[0].video.clear();campaign.missions[0].objectives.push_back({"capture","Invalid territory",999,0});REQUIRE(ZCampaign_Write(campaign,error));REQUIRE(ZContent_HasErrors(ZContent_ValidateCampaign(campaign,true)));
         campaign.missions[0].objectives.pop_back();campaign.missions[0].objectives.push_back({"escort","Escort a building",0,0});REQUIRE(ZCampaign_Write(campaign,error));REQUIRE(ZContent_HasErrors(ZContent_ValidateCampaign(campaign,true)));campaign.missions[0].objectives.pop_back();REQUIRE(ZCampaign_Write(campaign,error));auto issues=ZContent_ValidateCampaign(campaign);REQUIRE(!ZContent_HasErrors(issues));
+        campaign.missions[0].nextWin=-2;campaign.missions[0].nextLoss=-2;campaign.missions.push_back(mission);REQUIRE(ZCampaign_Write(campaign,error));
+        auto graphIssues=ZContent_ValidateCampaign(campaign,true);REQUIRE(std::any_of(graphIssues.begin(),graphIssues.end(),[](const ZContentIssue &i){return i.text.find("unreachable")!=string::npos;}));
+        campaign.missions={mission};REQUIRE(ZCampaign_Write(campaign,error));
         string archive;REQUIRE(ZCampaign_Export(campaign,archive,error));ZCampaign summary;REQUIRE(ZCampaign_InspectPack(archive,summary,error));REQUIRE(summary.description==campaign.description&&summary.missions[0].objectives.size()==2);
         REQUIRE(!ZCampaign_ImportPack(archive,error));REQUIRE(error.find("already installed")!=string::npos);
         REQUIRE(SDL_RenamePath(campaign.root.c_str(),(root+"/author-backup").c_str()));REQUIRE(ZCampaign_ImportPack(archive,error));auto installed=ZCampaign_List();REQUIRE(installed.size()==1);string marker;REQUIRE(!ZCampaign_SafeAsset(installed[0].root,".zod-authoring",marker));
@@ -440,6 +446,9 @@ public:
         server->ApplyCloudOperations();REQUIRE(server->cloud_applied_revision==1&&zod_bot_difficulty==2);
         server->lan_match_started=true;server->cloud_roles.revision=2;server->cloud_roles.difficulty=3;
         server->ApplyCloudOperations();REQUIRE(server->cloud_applied_revision==1&&zod_bot_difficulty==2);
+        server->cloud_required=true;server->cloud_roles.maintenanceAt=std::time(nullptr)-1;server->game_on=false;server->CheckResetGame();REQUIRE(!server->game_on);server->ApplyCloudOperations();
+        ServerSocket empty;REQUIRE(empty.SendMessage(-1,NEWS_EVENT,nullptr,0)==0&&empty.GetHandler(-1)==nullptr&&empty.SendMessageAscii(99,NEWS_EVENT,"test")==0);
+
 
     }
     static void offline_policy() {
@@ -453,6 +462,7 @@ public:
         server->cloud_roles.admins.insert(string(64,'b'));server->cloud_roles_until=current_time()-1;REQUIRE(!server->CloudAdmin(0));
 
         auto roles=ZCloud_ParseRoles(string(64,'a')+"\n"+string(64,'b')+"\nm:"+string(64,'c')+"\nc:4:2:125:1\nr:6d6170732f612e6d6170\nt:2\n");
+        auto maintenance=ZCloud_ParseRoles(string(64,'a')+"\ns:1900000000:restart:557064617465\n");REQUIRE(maintenance.valid&&maintenance.maintenanceAt==1900000000&&maintenance.maintenanceReason=="Update");
         REQUIRE(roles.valid&&roles.revision==4&&roles.speed==125&&roles.rotation.size()==1&&roles.moderators.count(string(64,'c')));
         REQUIRE(!ZCloud_ParseRoles(string(64,'a')+"\nc:1:2:999:1\n").valid);
         REQUIRE(!ZCloud_ParseRoles(string(64,'a')+"\nr:0a\n").valid);
@@ -1158,6 +1168,15 @@ public:
 
 class ZLANRegression {
 public:
+    static void integrity(){
+        REQUIRE(ZSHA256("",0)=="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+        REQUIRE(ZSHA256("abc",3)=="ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+        string million(1000000,'a');REQUIRE(ZSHA256(million.data(),million.size())=="cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0");
+        GMMPlayerList moderation(true);vector<p_info> humans{p_info(42)};humans[0].mode=PLAYER_MODE;humans[0].team=RED_TEAM;humans[0].name="Target";moderation.SetPlayerInfoList(&humans);moderation.Process();
+        REQUIRE(moderation.KeyPress(9));REQUIRE(moderation.KeyPress(SDLK_HOME));REQUIRE(moderation.KeyPress(9));for(char c:string("Test reason"))moderation.KeyPress(c);moderation.KeyPress(9);moderation.KeyPress(13);REQUIRE(moderation.GetGMMFlags().moderate_target==42&&moderation.GetGMMFlags().moderate_minutes==0);
+        auto player=std::make_unique<ZPlayer>();auto &p=*player;p.expected_map_hash=string(64,'0');char data[7]={};memcpy(data+4,"abc",3);REQUIRE(p.ProcessMapDownload(data,7)==0);int end=-1;REQUIRE(p.ProcessMapDownload((char*)&end,4)==-1&&!p.map_download_error.empty()&&!p.zmap.Loaded());
+        int sequence=2;REQUIRE(p.ProcessMapDownload((char*)&sequence,4)==-1);std::cout<<"map-integrity-ok";
+    }
     static void portal_join(int port,const string &approvalFile,const string &expected){
         REQUIRE(SDL_Init(SDL_INIT_VIDEO));ZMap::ServerInit();auto player=std::make_unique<ZPlayer>();auto &p=*player;
         p.LoadMainMenu(GMM_MULTIPLAYER);auto *menu=dynamic_cast<GMMMultiplayer*>(p.gui_menu_list.front());REQUIRE(menu);menu->open_approval=false;
@@ -1402,11 +1421,12 @@ int main(int argc, char **argv) {
         else if(std::string(argv[1]) == "script-save"){REQUIRE(argc==3);ZServerRegression::script_save(argv[2]);}
         else if(std::string(argv[1]) == "stress"){REQUIRE(argc==5);ZServerRegression::scripted_stress(argv[2],atoi(argv[3]),atoi(argv[4]));}
         else if(std::string(argv[1]) == "save") { REQUIRE(argc == 3); ZServerRegression::roundtrip(argv[2]); }
+        else if(std::string(argv[1]) == "integrity") ZLANRegression::integrity();
         else if(std::string(argv[1]) == "packets") packets();
         else if(std::string(argv[1]) == "protocol") {
 #define EMIT(value) std::cout << "\"" #value "\":" << (int)value << ",";
             std::cout << "{";
-            EMIT(SET_LPLAYER_NAME) EMIT(CLOUD_SERVER_ROLE) EMIT(SET_GAME_SPEED) EMIT(UPDATE_GAME_SPEED) EMIT(CLOUD_REQUIRED) EMIT(CLOUD_TICKET) EMIT(CLOUD_RESULT) EMIT(REQUEST_VERSION) EMIT(GIVE_VERSION) EMIT(SET_LPLAYER_READY) EMIT(LOBBY_COUNTDOWN) EMIT(RESET_MAP) EMIT(RESET_GAME) EMIT(REQUEST_MAP) EMIT(STORE_MAP) EMIT(REQUEST_OBJECTS) EMIT(ADD_NEW_OBJECT)
+            EMIT(CLOUD_MODERATE) EMIT(CLOUD_NOTICE) EMIT(MAP_FINGERPRINT) EMIT(SET_LPLAYER_NAME) EMIT(CLOUD_SERVER_ROLE) EMIT(SET_GAME_SPEED) EMIT(UPDATE_GAME_SPEED) EMIT(CLOUD_REQUIRED) EMIT(CLOUD_TICKET) EMIT(CLOUD_RESULT) EMIT(REQUEST_VERSION) EMIT(GIVE_VERSION) EMIT(SET_LPLAYER_READY) EMIT(LOBBY_COUNTDOWN) EMIT(RESET_MAP) EMIT(RESET_GAME) EMIT(REQUEST_MAP) EMIT(STORE_MAP) EMIT(REQUEST_OBJECTS) EMIT(ADD_NEW_OBJECT)
             EMIT(REQUEST_ZONES) EMIT(SET_ZONE_INFO) EMIT(REQUEST_PLAYER_ID) EMIT(GIVE_PLAYER_ID)
             EMIT(SET_READY) EMIT(SET_LPLAYER_TEAM) EMIT(SET_LPLAYER_MODE) EMIT(REQUEST_PLAYER_LIST) EMIT(BOT_MODE) EMIT(SET_NAME) EMIT(SET_TEAM) EMIT(SET_PLAYER_MODE) EMIT(PLAYER_MODE)
             EMIT(GET_GAME_PAUSED) EMIT(UPDATE_GAME_PAUSED) EMIT(SET_GAME_PAUSED)

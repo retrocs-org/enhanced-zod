@@ -365,7 +365,7 @@ bool ZPlayer::PollHostedJoin()
             lobby->SetError(retry ? "Reconnecting: attempt "+to_string(reconnect_attempt)+"/3 failed. Leave to cancel." : error);
         return false;
     }
-    cloud_join_ticket=std::move(result.ticket);cloud_server_role=0;cloud_portal_id=result.portalId;
+    expected_map_hash.clear();map_download_error.clear();cloud_join_ticket=std::move(result.ticket);cloud_server_role=0;cloud_portal_id=result.portalId;
     bool resumed=reconnecting;reconnecting=false;
     hosted_remote_session=true;
     hosted_setup_available=false;
@@ -4807,6 +4807,8 @@ bool ZPlayer::MainMenuWheelDown()
 //normally applied - so apply the volume/speed ones here.
 void ZPlayer::ApplyMenuWheelFlags(gmm_flag &the_flags)
 {
+ if(the_flags.moderate_target>=0){std::string packet(8,'\0');memcpy(&packet[0],&the_flags.moderate_target,4);memcpy(&packet[4],&the_flags.moderate_minutes,4);packet+=the_flags.moderate_reason;packet+='\0';client_socket.SendMessage(CLOUD_MODERATE,packet.data(),packet.size());the_flags.moderate_target=-1;}
+
 	if(the_flags.set_volume) SetSoundSetting(the_flags.set_volume_value);
     if(the_flags.set_music){SetMusicOff(!zod_music);ZMusicEngine::Stop();ZMusicEngine::ApplyStyle();if(zod_music)ZMusicEngine::PlayPlanetMusic(zmap.GetMapBasics().terrain_type);}
 
@@ -4822,8 +4824,7 @@ void ZPlayer::ApplyMenuWheelFlags(gmm_flag &the_flags)
 bool ZPlayer::MainMenuKeyPress(int c)
 {
 	if(!gui_menu_list.empty())
-        if(gui_menu_list.front()->KeyPress(c))
-			return true;
+        if(gui_menu_list.front()->KeyPress(c)){ApplyMenuWheelFlags(gui_menu_list.front()->GetGMMFlags());return true;}
 
 	return false;
 }
@@ -4863,7 +4864,8 @@ bool ZPlayer::MainMenuAbsorbLUnClick()
 
 			if(the_flags.open_main_menu) LoadMainMenu(the_flags.open_main_menu_type, false, the_flags.warning_flags);
 
-			if(the_flags.reshuffle_teams) client_socket.SendMessage(RESHUFFLE_TEAMS, NULL, 0);
+			ApplyMenuWheelFlags(the_flags);
+            if(the_flags.reshuffle_teams) client_socket.SendMessage(RESHUFFLE_TEAMS, NULL, 0);
 
 			if(the_flags.change_team) SendPlayerTeam(the_flags.change_team_type);
 
@@ -5637,7 +5639,7 @@ void ZPlayer::LoadMainMenu(int menu_type, bool kill_if_open, gmm_warning_flag wa
         !hosted_setup_available && (remote_address == "127.0.0.1" || remote_address == "localhost"),frontend.EditorTesting(),(public_remote_session?cloud_portal_id:string()),cloud_server_role); break;	//#79: compact start menu when no game is loaded
 	case GMM_CHANGE_TEAMS: new_menu = new GMMChangeTeams(); break;
 	case GMM_MANAGE_BOTS: new_menu = new GMMManageBots(); break;
-	case GMM_PLAYER_LIST: new_menu = new GMMPlayerList(); break;
+	case GMM_PLAYER_LIST: new_menu = new GMMPlayerList(public_remote_session&&cloud_server_role>0); break;
 	case GMM_SELECT_MAP: new_menu = new GMMSelectMap(); break;
 	case GMM_GENERATE_MAP: new_menu = new GMMGenerateMap(); break;
 	case GMM_MULTIPLAYER: new_menu = new GMMMultiplayer(); break;

@@ -40,7 +40,11 @@ ZPortalResponse ZPortal_Request(const std::string &path,const std::string &json)
     CURLcode status=curl_easy_perform(curl);long code=0;curl_easy_getinfo(curl,CURLINFO_RESPONSE_CODE,&code);response.status=(int)code;
     char *content=nullptr;curl_easy_getinfo(curl,CURLINFO_CONTENT_TYPE,&content);
     response.ok=status==CURLE_OK&&content&&std::string(content).find("application/json")==0;
-    if(status!=CURLE_OK)response.error="Portal connection failed. Check network access and certificate trust.";
+    if(status==CURLE_COULDNT_RESOLVE_HOST)response.error="Portal DNS lookup failed. Check your network or configured portal hostname.";
+    else if(status==CURLE_OPERATION_TIMEDOUT)response.error="Portal timed out. Retry shortly; an outage does not require changing your password.";
+    else if(status==CURLE_PEER_FAILED_VERIFICATION||status==CURLE_SSL_CACERT_BADFILE)response.error="Portal certificate verification failed. Check the system clock and certificate trust.";
+    else if(status==CURLE_COULDNT_CONNECT)response.error="Portal is unreachable. Check network access; try again when the service returns.";
+    else if(status!=CURLE_OK)response.error="Portal transport failed. Check network access and certificate trust.";
     else if(!response.ok)response.error="Portal did not return JSON. Check its URL and webserver routing.";
     else if(code>=300&&code<400){response.ok=false;response.error="Portal redirected the request. Configure the final HTTPS portal URL.";}
     curl_slist_free_all(headers);curl_easy_cleanup(curl);return response;

@@ -564,3 +564,76 @@ Reports older than thirty seconds are marked stale. Values are host-reported,
 not an independent monitoring guarantee. Public disconnect recovery opens the
 online browser with the same server selected and requests fresh browser approval;
 it never reuses an already consumed join ticket.
+
+## Match records, diagnostics and maintenance
+
+Migration 007 adds team identifiers to new public match reports and scheduled
+maintenance. Deploy website, agent and engine together, then run
+`php _app/bin/migrate.php` in the deployed public-web directory. Existing match
+reports remain readable; their team is shown as unknown. Retried pre-upgrade
+reports keep their original canonical payload identity.
+
+`/match-history` lists completed public matches; filter with `?server=SERVER_ID`
+and open `?id=MATCH_ID` for participants, team, outcome, duration and statistics.
+Profiles and server consoles link to those details. Privacy/friends/blocking rules
+anonymize identities in shared match records. The API equivalents are
+`GET /api/matches?server=ID&before=CURSOR` and `GET /api/match?id=ID`. No connection
+grants or report payload hashes are exposed. Private games are never submitted.
+
+During a public match, open **Player List** to moderate without a browser. Current
+staff can select a player, enter a reason, then kick or apply a 60-minute ban.
+The host and portal independently check current scoped roles and target rank.
+Actions use the durable queue and audit log; revoking a role also invalidates
+pending actions. The portal console supports other ban durations and unbanning.
+
+Administrators/owners can schedule maintenance from the server console, thirty
+seconds to one day ahead. The engine announces it, blocks a new round once due,
+and lets an active round finish. Fresh cloud approvals stop at the deadline.
+Choose Stop or Restart; cancelling is available before shutdown. A completed
+schedule is acknowledged using its exact timestamp, so an old acknowledgement
+cannot clear a newer schedule. A portal outage stops automatic maintenance
+restart rather than skipping the acknowledgement. Pending results are flushed
+best-effort and any unsent records remain in the private outbox.
+
+Engine-version preflight explains mismatches before approval. The browser shows
+the host map's SHA-256 and checks an installed local copy when available. A
+different local map is not overwritten: the host's copy is downloaded. New hosts
+send a SHA-256 for each map transfer, which is verified before parsing; malformed,
+out-of-order and oversized transfers fail with recovery guidance. This detects
+content mismatch/corruption, not an untrusted host's authenticity. Portal errors
+distinguish DNS, timeout, certificate, routing, expired approval, denied access,
+maintenance and service outages. Moderation disconnects retain their reason.
+
+## Staging a dedicated-engine update
+
+This workflow targets a standalone Linux dedicated engine with its normal system
+libraries and an existing data installation. It does not replace the agent,
+website, imported assets or operating-system dependencies. Obtain an engine built
+for the same architecture and its SHA-256 through a trusted release channel.
+The portal cannot upload binaries or execute arbitrary update commands.
+
+As the local service account, stage the executable while the old engine runs:
+
+```sh
+zod-agent --state /var/lib/zod --data /opt/zod-enhanced \
+  --map maps/p02_bb_orig01.map \
+  --stage-engine /tmp/zod-enhanced-new --sha256 TRUSTED_RELEASE_SHA256
+```
+
+The agent checks the complete checksum, executes `--version` and `--map-info`,
+then records the staged runtime in its private state. In the server console,
+schedule **Restart / apply staged update**. Activation waits for the round boundary,
+verifies the staged file again and retains a separate verified copy of the
+previous engine. Startup failures, early unexpected exits or failure to report
+ready within fifteen seconds restore the previous engine once. Failed versions
+are not selected again automatically. Logs explain a rejected update/rollback.
+
+For a manual rollback, stop the service first:
+
+```sh
+zod-agent --state /var/lib/zod --rollback-engine
+# Start your normal dedicated-server service again.
+```
+
+Keep the state directory and its private permissions. Database/website upgrades
+are a separate deployment step and require their own backup/rollback plan.

@@ -53,6 +53,7 @@ void ZServer::SetupEHandler()
 	ehandler.AddFunction(TCP_EVENT, LOAD_MAP_FILE, load_map_file_event);
 	ehandler.AddFunction(TCP_EVENT, RESET_MAP, reset_map_event);
 	ehandler.AddFunction(TCP_EVENT, REQUEST_VERSION, request_version_event);
+    ehandler.AddFunction(TCP_EVENT,CLOUD_MODERATE,cloud_moderate_event);
 	ehandler.AddFunction(TCP_EVENT, CONTINUE_AFTER_END, continue_after_end_event);	//#120
 
 	ehandler.AddFunction(OTHER_EVENT, CONNECT_EVENT, connect_event);
@@ -141,6 +142,7 @@ void ZServer::request_map_event(ZServer *p, char *data, int size, int player)
 		int map_data_size;
 
 		p->zmap.GetMapData(map_data, map_data_size);
+        auto fingerprint=p->MapFingerprint();p->server_socket.SendMessage(player,MAP_FINGERPRINT,fingerprint.c_str(),65);
 
 		while(map_data_size > 0)
 		{
@@ -1310,5 +1312,7 @@ void ZServer::reset_map_event(ZServer *p, char *data, int size, int player)
 
 void ZServer::request_version_event(ZServer *p, char *data, int size, int player)
 {
+ if(p->zmap.Loaded()){auto hash=p->MapFingerprint();p->server_socket.SendMessage(player,MAP_FINGERPRINT,hash.c_str(),65);}
+
 	p->RelayVersion(player);
 }

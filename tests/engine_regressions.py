@@ -69,6 +69,11 @@ class Client:
         raise AssertionError(f'timed out waiting for {name}')
 
 class EngineRegressions(unittest.TestCase):
+    def test_map_integrity_sha256_and_transfer_rejection(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result=subprocess.check_output([DRIVER,'integrity'],cwd=WORKSPACE,env=self.environment(directory),text=True,timeout=20)
+            self.assertIn('map-integrity-ok',result)
+
     def test_command_menu_keeps_actions_connected(self):
         with tempfile.TemporaryDirectory(prefix='zod-disc-menu-') as directory:
             root=pathlib.Path(directory);assets=root/'imports/disc-fixture/assets'

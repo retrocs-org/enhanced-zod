@@ -71,7 +71,8 @@ public:
 
 	void clear()
 	{
-		open_main_menu = false;
+		moderate_target=-1;moderate_minutes=0;moderate_reason.clear();
+        open_main_menu = false;
 		open_main_menu_type = -1;
 		reshuffle_teams = false;
 		change_team = false;
@@ -111,6 +112,7 @@ public:
 		warning_flags.clear();
 	}
 
+    int moderate_target,moderate_minutes;string moderate_reason;
 	bool open_main_menu;
 	int open_main_menu_type;
 	bool reshuffle_teams;

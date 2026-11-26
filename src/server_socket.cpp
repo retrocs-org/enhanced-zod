@@ -37,13 +37,13 @@ int ServerSocket::SendMessageAll(int pack_id, const char *data, int size)
 
 int ServerSocket::SendMessage(int player, int pack_id, const char *data, int size)
 {
-	if(client_socket[player]) return client_socket[player]->SendMessage(pack_id, data, size);
+	if(player>=0&&player<(int)client_socket.size()&&client_socket[player]) return client_socket[player]->SendMessage(pack_id, data, size);
 	else return 0;
 }
 
 int ServerSocket::SendMessageAscii(int player, int pack_id, const char *data)
 {
-	if(client_socket[player]) return client_socket[player]->SendMessageAscii(pack_id, data);
+	if(player>=0&&player<(int)client_socket.size()&&client_socket[player]) return client_socket[player]->SendMessageAscii(pack_id, data);
 	else return 0;
 }
 
@@ -54,7 +54,7 @@ void ServerSocket::SetEventList(list<Event*> *event_list_)
 
 SocketHandler* ServerSocket::GetHandler(int id)
 {
-	return client_socket[id];
+	return id>=0&&id<(int)client_socket.size()?client_socket[id]:nullptr;
 }
 
 int ServerSocket::Process()

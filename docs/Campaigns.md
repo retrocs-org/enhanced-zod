@@ -355,3 +355,17 @@ conflicts and non-newer updates block installation. Dependency lists can be scro
 Manage campaign offers previous update versions. Restore preserves the current version
 as another backup, checks the restored pack and the requirements of all installed packs,
 and swaps folders transactionally. Progress/records remain outside the content folders.
+
+Validate a saved campaign before sharing it:
+
+```sh
+zod-enhanced --validate-campaign /absolute/path/to/campaign.ini
+```
+
+The command reports missing/unsafe maps, broken links, invalid objectives and
+script targets, missing referenced videos, unreachable missions and campaigns
+with no reachable ending. Errors return a nonzero exit status and block editor
+export; graph warnings allow intentional looping/optional branches. The editor's
+**Export + check** also imports the generated pack into an isolated workspace and
+checks its portability. Optional original cinematics remain external imported
+assets; briefing fallbacks still work.

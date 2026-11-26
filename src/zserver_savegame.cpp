@@ -330,7 +330,7 @@ bool ZServer::LoadSavedGame(int player, int slot)
 
 	ResetGame();
 
-	zmap.Read(map_file.c_str());
+	map_fingerprint.clear();zmap.Read(map_file.c_str());
 
 	map_name = info.map_name;
 	game_repro_desc = info.one_off_map ? "custom map: " + map_name : map_name;   //high scores key on this

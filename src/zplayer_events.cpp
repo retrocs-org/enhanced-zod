@@ -25,6 +25,7 @@ void ZPlayer::SetupEHandler()
 	ehandler.AddFunction(TCP_EVENT, END_GAME, end_game_event);
     ehandler.AddFunction(TCP_EVENT,CLOUD_REQUIRED,cloud_required_event);
     ehandler.AddFunction(TCP_EVENT, CLOUD_SERVER_ROLE, cloud_server_role_event);
+    ehandler.AddFunction(TCP_EVENT,CLOUD_NOTICE,cloud_notice_event);
     ehandler.AddFunction(TCP_EVENT,CLOUD_RESULT,cloud_result_event);
 	ehandler.AddFunction(TCP_EVENT, RETURN_TO_MENU, return_to_menu_event);	//#136
 	ehandler.AddFunction(TCP_EVENT, RESET_GAME, reset_game_event);
@@ -70,6 +71,7 @@ void ZPlayer::SetupEHandler()
 	ehandler.AddFunction(TCP_EVENT, SET_BUILDING_QUEUE_LIST, set_build_queue_list_event);
 	ehandler.AddFunction(TCP_EVENT, REQUEST_VERSION, request_version_event);
 	ehandler.AddFunction(TCP_EVENT, GIVE_VERSION, get_version_event);
+    ehandler.AddFunction(TCP_EVENT,MAP_FINGERPRINT,map_fingerprint_event);
 	
 	ehandler.AddFunction(OTHER_EVENT, CONNECT_EVENT, connect_event);
 	ehandler.AddFunction(OTHER_EVENT, DISCONNECT_EVENT, disconnect_event);
@@ -861,10 +863,13 @@ void ZPlayer::disconnect_event(ZPlayer *p, char *data, int size, int dummy)
 	p->ProcessDisconnect();
 }
 
+void ZPlayer::cloud_notice_event(ZPlayer *p,char *data,int size,int){if(!data||size<2||size>256||data[size-1]!=0||memchr(data,0,size-1))return;std::string text(data,size-1);for(unsigned char c:text)if(c<32||c==127)return;p->cloud_disconnect_reason=text;p->AddNewsEntry(text);}
+void ZPlayer::map_fingerprint_event(ZPlayer *p,char *data,int size,int){if(size!=65||!data||data[64]!=0)return;std::string hash(data,64);if(hash.find_first_not_of("0123456789abcdef")==std::string::npos)p->expected_map_hash=hash;}
 void ZPlayer::store_map_event(ZPlayer *p, char *data, int size, int dummy)
 {
 	p->frontend.DeploymentStage("Loading terrain and map data");
 	int done = p->ProcessMapDownload(data, size);
+    if(done<0){p->cloud_disconnect_reason=p->map_download_error;p->frontend.DeploymentFailed(p->map_download_error,true);p->client_socket.ClearConnection();p->ProcessDisconnect();return;}
 
 	if(p->zmap.Loaded())
 	{

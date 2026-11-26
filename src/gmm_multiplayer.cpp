@@ -1,3 +1,5 @@
+#include "zhash.h"
+#include <fstream>
 #include "gmm_multiplayer.h"
 #include "zlan.h"
 #include "zserver_bookmarks.h"
@@ -122,7 +124,7 @@ void GMMMultiplayer::Process()
     PollAuthorization();
     Compatibility check;if(compatibility_task.Poll(check)&&check.address==compatibility_address&&!joining){
         status_label.SetText(check.compatible?"Compatible engine: "+check.version:check.error.substr(0,70));
-        detail_label.SetText(!ZAsset_RuntimeReady()?"Import original graphics and sounds before playing.":check.compatible?"Map: "+check.map.substr(0,32)+" / downloaded on join":"Install the same engine version; Refresh checks updated servers.");
+        detail_label.SetText(!ZAsset_RuntimeReady()?"Import original graphics and sounds before playing.":check.compatible?"Map: "+check.map.substr(0,32)+" / SHA-256 "+(check.hash.empty()?string("unavailable"):check.hash.substr(0,12))+" / "+(!check.localHash.empty()&&check.localHash!=check.hash?string("local map differs; host copy downloaded"):string("verified on download")):"Install the same engine version; Refresh checks updated servers.");
     }
     RefreshResult result; if(refresh_task.Poll(result)) ApplyRefresh(result);
     if(applied_search!=search_entry.GetText()||applied_region!=region_entry.GetText())Refilter();
@@ -214,7 +216,9 @@ void GMMMultiplayer::CheckCompatibility(const MatchInfo &match){
  status_label.SetText("Map: "+(match.map.empty()?string("announced on joining"):match.map.substr(0,52)));
  detail_label.SetText("Checking engine compatibility before joining...");
  auto address=compatibility_address,host=match.host,map=match.map;int port=match.port;
- compatibility_task.Start([address,host,port,map](){Compatibility result;result.address=address;result.map=map;result.compatible=ZNetCheckVersion(host,port,result.error,2000,&result.version);return result;});
+ compatibility_task.Start([address,host,port,map](){Compatibility result;result.address=address;result.map=map;result.compatible=ZNetCheckVersion(host,port,result.error,2000,&result.version,&result.hash);
+ if(map.compare(0,5,"maps/")==0&&map.find("..") ==string::npos&&map.find_first_of(":\\")==string::npos){auto path=ZAsset_OverlayPath(map);std::ifstream file(path,std::ios::binary|std::ios::ate);if(!file){file.clear();file.open(ZSDL_DataPath(map),std::ios::binary|std::ios::ate);}if(file&&file.tellg()>0&&file.tellg()<=16*1024*1024){string bytes((size_t)file.tellg(),'\0');file.seekg(0);if(file.read(&bytes[0],bytes.size()))result.localHash=ZSHA256(bytes.data(),bytes.size());}}
+ return result;});
 }
 
 void GMMMultiplayer::SetReconnectTarget(const string &host,int port,const string &id){
