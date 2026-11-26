@@ -237,6 +237,9 @@ class ZPlayer : public ZClient
 		void ProcessFrontEndActions();
 		void RecordHighScore();
 		void SendSaveGame(int slot);
+        struct PendingSavePreview {int slot,elapsed;Uint64 started;std::string previous;};
+        std::vector<PendingSavePreview> pending_save_previews;
+        void ProcessSavePreviews();
 		void CheckAutosave();
 		double MatchElapsed();	//drop the whole GMM menu stack (e.g. when entering the lobby)
 		bool LobbyOpen();	//matchmaking: is the pre-match lobby an open GMM menu?

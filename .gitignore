@@ -5,6 +5,7 @@
 
 # CMake out-of-source build dir
 /build/
+/build-*/
 CMakeCache.txt
 CMakeFiles/
 

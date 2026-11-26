@@ -332,7 +332,9 @@ int run_server_thread(void *nothing)
 	//#158: only an explicit host exposes a network port. A dedicated server (-d) is
 	//inherently for remote clients; a normal host-and-play launch opts in with -L.
 	//Everything else (plain singleplayer) binds 127.0.0.1 only.
-	zserver.SetAllowRemoteClients(starting_conditions.read_is_dedicated || starting_conditions.read_allow_remote);
+	bool offline_ai=SDL_getenv("ZOD_OFFLINE_AI")&&string(SDL_getenv("ZOD_OFFLINE_AI"))=="1";
+    zserver.SetAllowRemoteClients(!offline_ai&&(starting_conditions.read_is_dedicated || starting_conditions.read_allow_remote));
+    if(offline_ai)zserver.SetCloudRequired(false);
 
 	zserver.Setup();
 	zserver.Run();

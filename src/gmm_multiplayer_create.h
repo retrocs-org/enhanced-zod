@@ -8,7 +8,7 @@
 class GMMMultiplayerCreate : public ZGuiMainMenuBase
 {
 public:
-    GMMMultiplayerCreate(const SkirmishPreferences *setup = nullptr, bool rematch = false);
+    GMMMultiplayerCreate(const SkirmishPreferences *setup = nullptr, bool rematch = false, bool offline = false);
     SkirmishPreferences GetSetupPreferences() { Remember(); return preferences; }
     ~GMMMultiplayerCreate() override;
     bool KeyPress(int c) override;
@@ -26,6 +26,7 @@ private:
     GMMWButton bot_button[MAX_TEAM_TYPES - 1], start_button, back_button;
     GMMWLabel map_label, size_label, slots_label, status_label, error_label;
     bool bot_on[MAX_TEAM_TYPES] = {};
+    bool offline_mode=false;
     MatchOptions options;
     SkirmishPreferences preferences;
     RandomMapOptions random;

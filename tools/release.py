@@ -47,7 +47,7 @@ def atomic(path, data):
     try: os.replace(temporary, path)
     finally: temporary.unlink(missing_ok=True)
 
-def git(root, *args): return subprocess.check_output(['git', '-C', str(root), *args], stderr=subprocess.DEVNULL).decode().strip()
+def git(root, *args): return subprocess.check_output(['git', '-C', str(root), *args], stderr=subprocess.DEVNULL,timeout=45).decode().strip()
 def version(root):
     value = (root/'VERSION').read_text().strip()
     need(re.fullmatch(r'\d+\.\d+\.\d+(?:-[A-Za-z0-9][A-Za-z0-9.-]*)?', value), 'VERSION must be a semantic version')
@@ -292,11 +292,11 @@ def push_source(root,config,targets,confirmed=False,dry_run=False):
     remotes={service:destination(config,service) for service in targets};refspec=sha+':refs/heads/'+branch
     for service,remote in remotes.items():
         print('Source preflight: '+service+' -> '+remote['url'],flush=True)
-        subprocess.run(['git','-C',str(root),'push','--dry-run','--no-follow-tags','--',remote['push_url'],refspec],check=True)
+        subprocess.run(['git','-C',str(root),'push','--dry-run','--no-follow-tags','--',remote['push_url'],refspec],check=True,timeout=45)
     if dry_run:return {'commit':sha,'branch':branch,'uploaded':False,'targets':list(remotes)}
     for service,remote in remotes.items():
         need(git(root,'rev-parse','HEAD')==sha and not git(root,'status','--porcelain'),'Source changed before publication')
-        subprocess.run(['git','-C',str(root),'push','--no-follow-tags','--',remote['push_url'],refspec],check=True)
+        subprocess.run(['git','-C',str(root),'push','--no-follow-tags','--',remote['push_url'],refspec],check=True,timeout=45)
         head=git(root,'ls-remote','--heads','--',remote['push_url'],'refs/heads/'+branch)
         need(head and head.split()[0]==sha,'Remote branch verification failed: '+service)
         atomic(root/'outputs/source'/('receipt-'+service+'.json'),encoded({'project':'zod-enhanced','commit':sha,'branch':branch,'repository':remote['url'],'verified':True}))
@@ -364,6 +364,8 @@ def main(argv=None):
 
 if __name__=='__main__':
     try: main()
+    except subprocess.TimeoutExpired:
+        print('Repository operation timed out. Check network access and unlock/reconnect your SSH agent, then retry. No success receipt was written for the unfinished destination.',file=sys.stderr);sys.exit(1)
     except (ReleaseError,OSError,ValueError,subprocess.CalledProcessError,KeyError) as error:
         # External tools handle their own interactive credential prompts. Never echo config/token values.
         print(credentials.redact(str(error)) if isinstance(error,ReleaseError) else 'Release operation failed. Check local configuration and verification results.',file=sys.stderr);sys.exit(1)

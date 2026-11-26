@@ -60,6 +60,9 @@ private:
     void RenderPrefabs();void SavePrefab();void LoadPrefab();void SmoothTerrain(int x,int y);void ConnectedTerrain(int x,int y,bool water);
     bool timelinePanel=false,metadataPanel=false;int timelineIndex=-1,timelineScroll=0;ZMissionObjective objectiveDraft;std::string objectiveTarget="0",objectiveSeconds="30";
     void RenderTimeline();
+    int pickObjective=0; // 1: target, 2: escort destination
+    bool PickObjective(int x,int y);
+    void BeginObjectivePick(int kind);
     void RenderFileTools();void RenderCampaignStudio();void Field(std::string &value,int id,float x,float y,float w,int height=38);
     std::string *Editing();std::string UniqueMapPath(const std::string &name);
     void AddMission();bool SaveCampaign();

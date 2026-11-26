@@ -261,6 +261,10 @@ void ZServer::StartBot(int bot_team)
 		return;
 	}
 
+    const char *levels=SDL_getenv("ZOD_BOT_DIFFICULTIES");
+    bool valid=levels&&strlen(levels)==MAX_TEAM_TYPES;
+    for(int t=0;valid&&t<MAX_TEAM_TYPES;++t)valid=levels[t]>='0'&&levels[t]<='3';
+    bot[bot_team].SetDifficulty(bot_difficulty_settings.size()==MAX_TEAM_TYPES?bot_difficulty_settings[bot_team]:valid?levels[bot_team]-'0':-1);
 	bot_thread[bot_team] = SDL_CreateThread(StartBotThreadFunc, "bot", (void*)&bot[bot_team]);
 
 	printf("ZServer::StartBot: bot started: %s\n", team_type_string[bot_team].c_str());

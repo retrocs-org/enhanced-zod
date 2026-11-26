@@ -2,7 +2,7 @@
 #define ZCONTENT_H
 #include "zmap.h"
 #include "zcampaign.h"
-struct ZContentIssue {bool error;std::string text;int x=-1,y=-1;};
+struct ZContentIssue {bool error;std::string text;int x=-1,y=-1,mission=-1;};
 std::vector<ZContentIssue> ZContent_ValidateMap(ZMap &map);
 std::vector<ZContentIssue> ZContent_ValidateCampaign(const ZCampaign &campaign,bool distribution=false);
 bool ZContent_HasErrors(const std::vector<ZContentIssue> &issues);

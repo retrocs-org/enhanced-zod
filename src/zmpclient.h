@@ -42,6 +42,8 @@ struct MatchOptions
     int human_team = 1;
     int difficulty = 1;
     double game_speed = 1.0;
+    bool local_only = false;
+    std::vector<int> team_difficulties; // empty inherits global; otherwise indexed by team
 };
 struct MapPreview
 {
@@ -73,7 +75,7 @@ bool ZMP_Matchmake(MatchInfo &out);
 
 // GET /maps. The maps the orchestrator can spawn, each with its player-slot count
 // (the create form needs the filenames; the count drives the "(NP)" label).
-bool ZMP_ListMaps(std::vector<MapMeta> &out);
+bool ZMP_ListMaps(std::vector<MapMeta> &out, bool local_only = false);
 
 // Error detail for the last request on this thread.
 std::string ZMP_LastError();

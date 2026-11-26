@@ -2160,14 +2160,18 @@ static string format_when(long long when)
 
 void ZFrontEnd::LoadSaveInfo()
 {
+    SDL_DestroyTexture(map_preview_texture);map_preview_texture=nullptr;map_preview_path.clear();
 	saves.clear();
 
 	for(int slot=ZSAVE_AUTO_SLOT; slot<=ZSAVE_USER_SLOTS; slot++)
 	{
 		ZSaveInfo info;
-		bool recovery=!ZSave_ReadInfo(slot,info);if(recovery&&!ZSave_RecoveryInfo(slot,info))continue;
+		bool recovery=!ZSave_ReadInfo(slot,info);if(recovery&&!ZSave_RecoveryInfo(slot,info)){
+            SDL_PathInfo file;if(!SDL_GetPathInfo(ZSave_Path(slot).c_str(),&file)||file.type!=SDL_PATHTYPE_FILE)continue;
+            SaveSlot invalid;invalid.slot=slot;invalid.compatible=false;invalid.label=slot?"Slot "+to_string(slot):"Autosave";invalid.title="Unreadable or unsupported save";invalid.campaign="No readable backup found";invalid.detail="Keep a copy before trying a different game version.";saves.push_back(invalid);continue;
+        }
 
-		SaveSlot s;s.recovery=recovery;
+		SaveSlot s;s.recovery=recovery;if(!recovery)s.screenshot=ZSave_Preview(slot,&s.build);
         s.map=info.map_name;s.campaign=info.campaign_id=="original"?"Original Campaign":info.campaign_id.empty()?"Standalone battle":info.campaign_id;
         if(info.campaign_id!="original")for(const auto &pack:ZCampaign_List())if(pack.id==info.campaign_id)s.campaign=pack.title;
         if(info.mission_index>=0)s.campaign+=" / Mission "+to_string(info.mission_index+1);
@@ -2192,7 +2196,9 @@ void ZFrontEnd::LoadSaveInfo()
 }
 
 void ZFrontEnd::DrawMapPreview(const string &path,float x,float y,float w,float h){
-    if(path!=map_preview_path){SDL_DestroyTexture(map_preview_texture);map_preview_texture=nullptr;map_preview_path=path;MapPreview preview;if(!path.empty()&&ZMP_ReadMapFilePreview(path,preview)&&preview.valid){SDL_Surface *surface=SDL_CreateSurface(preview.preview_width,preview.preview_height,SDL_PIXELFORMAT_ARGB8888);if(surface){for(int row=0;row<surface->h;++row)memcpy((char*)surface->pixels+row*surface->pitch,preview.pixels.data()+row*surface->w,surface->w*4);map_preview_texture=SDL_CreateTextureFromSurface(renderer,surface);SDL_DestroySurface(surface);}}}
+    if(path!=map_preview_path){SDL_DestroyTexture(map_preview_texture);map_preview_texture=nullptr;map_preview_path=path;
+        if(path.size()>4&&path.substr(path.size()-4)==".png")map_preview_texture=IMG_LoadTexture(renderer,path.c_str());
+        MapPreview preview;if(!map_preview_texture&&!path.empty()&&ZMP_ReadMapFilePreview(path,preview)&&preview.valid){SDL_Surface *surface=SDL_CreateSurface(preview.preview_width,preview.preview_height,SDL_PIXELFORMAT_ARGB8888);if(surface){for(int row=0;row<surface->h;++row)memcpy((char*)surface->pixels+row*surface->pitch,preview.pixels.data()+row*surface->w,surface->w*4);map_preview_texture=SDL_CreateTextureFromSurface(renderer,surface);SDL_DestroySurface(surface);}}}
     FillRect(x,y,w,h,SDL_Color{10,17,23,255});if(map_preview_texture){float tw,th;SDL_GetTextureSize(map_preview_texture,&tw,&th);float fit=min(w/tw,h/th);SDL_FRect dst{x+(w-tw*fit)/2,y+(h-th*fit)/2,tw*fit,th*fit};SDL_RenderTexture(renderer,map_preview_texture,nullptr,&dst);}else DrawLabel(font_ui_medium,18,"Preview unavailable",x+12,y+12,C_STEEL_DIM);
 }
 void ZFrontEnd::RenderLoad(){
@@ -2204,11 +2210,12 @@ void ZFrontEnd::RenderLoad(){
         if(Button("",152,y,450,54,enabled&&delete_pending<0,load_selected==row))load_selected=row;DrawLabel(font_ui,21,label,166,y+3,enabled?C_STEEL_HI:C_STEEL_DIM);
         string clipped=title;while(clipped.size()>3&&TextWidth(font_ui_medium,17,clipped)>420)clipped.pop_back();DrawLabel(font_ui_medium,17,clipped,166,y+31,enabled?C_STEEL_DIM:C_AMBER_DIM);
     }
-    bool level=load_selected==(int)saves.size(),enabled=!level||campaign;string map=level?(campaign?levels[progress_current].file:""):saves[load_selected].map;
-    DrawMapPreview(map,638,164,482,260);
+    bool level=load_selected==(int)saves.size(),enabled=level?campaign:saves[load_selected].compatible;string map=level?(campaign?levels[progress_current].file:""):saves[load_selected].map;
+    DrawMapPreview(!level&&!saves[load_selected].screenshot.empty()?saves[load_selected].screenshot:map,638,164,482,260);
     string title=level?(campaign?levels[progress_current].title:"No mission selected"):saves[load_selected].title;while(title.size()>3&&TextWidth(font_ui,24,title)>480)title.pop_back();DrawLabel(font_ui,24,title,638,442,C_STEEL_HI);
     string context=level?"Current campaign / Start from the beginning":saves[load_selected].campaign;while(context.size()>3&&TextWidth(font_ui_medium,19,context)>480)context.pop_back();DrawLabel(font_ui_medium,19,context,638,486,C_AMBER);
     if(!level){string detail=saves[load_selected].detail;size_t split=detail.find("saved ");DrawLabel(font_ui_medium,18,detail.substr(0,split),638,522,C_STEEL);if(split!=string::npos)DrawLabel(font_ui_medium,18,detail.substr(split),638,552,C_STEEL_DIM);}
+    if(!level&&delete_pending<0&&!saves[load_selected].build.empty())DrawLabel(font_ui_medium,14,saves[load_selected].build==ZBuild_ID()?"Saved with this build":"Saved with another build; backup retained on overwrite",638,426,C_STEEL_DIM);
     if(!level&&delete_pending<0){ZSaveInfo backup;if(ZSave_RecoveryInfo(saves[load_selected].slot,backup)&&Button("Restore previous backup",638,578,300,28)){if(ZSave_Recover(saves[load_selected].slot))LoadSaveInfo();else{status_message="Backup could not be restored; files kept.";status_until=SDL_GetTicks()+5000;}return;}}
     if(delete_pending>=0){DrawPanel(280,250,720,270);DrawLabel(font_ui,28,"DELETE SAVED BATTLE?",312,278,C_AMBER);DrawLabel(font_ui_medium,22,"This cannot be undone. Your campaign progress is kept.",312,338,C_STEEL);if(Button("Delete",312,426,300,48)||kb_activate)remove=delete_pending;if(Button("Keep save",648,426,300,48)||kb_back){delete_pending=-1;kb_back=false;}kb_activate=false;}
     else {if(Button(level?"Restart mission":saves[load_selected].recovery?"Recover backup":"Load battle",638,614,300,48,enabled,true)||(kb_activate&&enabled)){chosen=load_selected;kb_activate=false;}if(!level&&(Button("Delete save",954,614,166,48)||kb_delete))delete_pending=saves[load_selected].slot;}

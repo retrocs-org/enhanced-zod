@@ -18,6 +18,7 @@ installation_check='--installation-check' in sys.argv[4:]
 sys.argv = sys.argv[:1]
 if installation_check:
     sys.argv += ['EngineRegressions.'+name for name in [
+        'test_actual_application_renders_campaign_offline_ai_and_network_battles',
         'test_clean_checkout_can_render_import_screen_without_game_media',
         'test_game_routes_clean_profile_to_import_before_server_startup',
         'test_fresh_profile_imported_authored_level_can_start_save_and_reload',
@@ -71,6 +72,49 @@ class Client:
         raise AssertionError(f'timed out waiting for {name}')
 
 class EngineRegressions(unittest.TestCase):
+    def test_actual_application_renders_campaign_offline_ai_and_network_battles(self):
+        import source_fixtures
+        with tempfile.TemporaryDirectory(prefix='zod-packaged-launch-') as directory:
+            root=pathlib.Path(directory);media=root/'media'
+            source_fixtures.workspace(ROOT,media);source_fixtures.launch_media(media)
+            for mode in ['campaign-level','offline-ai','network-client']:
+                with self.subTest(mode=mode):
+                    profile=root/mode;profile.mkdir()
+                    env=self.environment(str(profile));env.update(ZOD_DATA=str(media),ZOD_LAUNCH_CHECK='1',SDL_RENDER_DRIVER='software')
+                    with socket.socket() as reserve:reserve.bind(('127.0.0.1',0));port=reserve.getsockname()[1]
+                    env['ZOD_PORT']=str(port)
+                    processes=[]
+                    with (profile/'server.log').open('w') as server_log,(profile/'client.log').open('w') as client_log:
+                        try:
+                            if mode!='campaign-level':
+                                server_env=env.copy()
+                                if mode=='offline-ai':server_env.update(ZOD_OFFLINE_AI='1',ZOD_REQUIRE_CLOUD='1',ZOD_BOT_DIFFICULTIES='00100')
+                                server=subprocess.Popen([GAME,'-d','-m',str(media/'maps/p02_bb_orig01.map'),'-b','blue'],cwd=media,env=server_env,stdout=server_log,stderr=subprocess.STDOUT);processes.append(server)
+                                deadline=time.monotonic()+10
+                                while True:
+                                    self.assertIsNone(server.poll(),(profile/'server.log').read_text()[-3000:])
+                                    try:
+                                        with socket.create_connection(('127.0.0.1',port),timeout=.1):break
+                                    except OSError:
+                                        if time.monotonic()>deadline:self.fail('Dedicated app did not open its test port')
+                                        time.sleep(.02)
+                            args=[GAME,'-w','-s','-u','-n','Launch check','-t','red']
+                            args+=['-m',str(media/'maps/p02_bb_orig01.map')] if mode=='campaign-level' else ['-c','127.0.0.1']
+                            client=subprocess.Popen(args,cwd=media,env=env,stdout=client_log,stderr=subprocess.STDOUT);processes.append(client)
+                            deadline=time.monotonic()+15
+                            while True:
+                                output=(profile/'client.log').read_text(errors='replace')
+                                self.assertIsNone(client.poll(),output[-3000:])
+                                if 'launch-check: battle rendered, team=1,' in output:break
+                                if time.monotonic()>deadline:self.fail('Actual application did not render its battle: '+output[-3000:])
+                                time.sleep(.02)
+                        finally:
+                            for process in reversed(processes):
+                                if process.poll() is None:process.terminate()
+                            for process in reversed(processes):
+                                try:process.wait(timeout=5)
+                                except subprocess.TimeoutExpired:process.kill();process.wait(timeout=5)
+
     def test_map_integrity_sha256_and_transfer_rejection(self):
         with tempfile.TemporaryDirectory() as directory:
             result=subprocess.check_output([DRIVER,'integrity'],cwd=WORKSPACE,env=self.environment(directory),text=True,timeout=20)

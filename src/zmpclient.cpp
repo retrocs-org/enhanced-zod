@@ -219,6 +219,10 @@ bool ZMP_ValidateSetup(const MapPreview &map, const vector<string> &bots, const 
     else if(options.difficulty < 0 || options.difficulty >= MAX_BOT_DIFFICULTY) error = "Invalid bot difficulty";
     else if(!std::isfinite(options.game_speed) || options.game_speed < 0.5 || options.game_speed > 2.0) error = "Game speed must be 50-200%";
     else if(map.valid && find(map.teams.begin(), map.teams.end(), options.human_team) == map.teams.end()) error = "Your team has no fort on this map";
+    if(!options.team_difficulties.empty()) {
+        if(options.team_difficulties.size()!=MAX_TEAM_TYPES) error="Invalid per-team difficulty count";
+        for(int difficulty:options.team_difficulties) if(difficulty<0 || difficulty>=MAX_BOT_DIFFICULTY) error="Invalid per-team difficulty";
+    }
     vector<string> used;
     for(const auto &bot : bots) {
         int team = 0;
@@ -305,6 +309,9 @@ static bool local_create_match(const string &map, const vector<string> &bots, Ma
 	LocalMatch lm;
     args.push_back("-D"); args.push_back(to_string(options.difficulty));
 	vector<string> processSettings={"ZOD_GAMESPEED="+to_string(options.game_speed),string("ZOD_PERF=")+(ZPerf_Enabled()?"1":"0")};
+    string difficulties;for(int d:options.team_difficulties) difficulties+=char('0'+d);
+    processSettings.push_back("ZOD_BOT_DIFFICULTIES="+difficulties);
+    processSettings.push_back(string("ZOD_OFFLINE_AI=")+(options.local_only?"1":"0"));
     if(const char *manifest=SDL_getenv("ZOD_EDITOR_TEST_MANIFEST"))processSettings.push_back(string("ZOD_EDITOR_TEST_MANIFEST=")+manifest);
     if(!ZLocalServer_Start(args,port,lm.process,g_last_error,processSettings))return false;
 	lm.info.id = string("local-") + portbuf;
@@ -462,7 +469,8 @@ bool ZMP_CreateMatch(const string &map, const vector<string> &bots, MatchInfo &o
     MapPreview preview;
     ZMP_ReadMapPreview(map, preview);
     if(!ZMP_ValidateSetup(preview, bots, options, g_last_error)) return false;
-    if(ZSkirmish_IsGenerated(map)) return local_create_match(map,bots,out,options);
+    if(options.local_only || ZSkirmish_IsGenerated(map)) return local_create_match(map,bots,out,options);
+    if(!options.team_difficulties.empty()) {g_last_error="Per-opponent difficulty requires local hosting";return false;}
     if(map.empty() || map.find_first_of("/\\\"") != string::npos || map.find("..") != string::npos) { g_last_error = "Invalid map filename"; return false; }
 	string body = "{\"map\":\"" + map + "\",\"bots\":[";
 	for(size_t i = 0; i < bots.size(); i++)
@@ -524,8 +532,9 @@ bool ZMP_Matchmake(MatchInfo &out)
 	return out.port > 0 && !out.host.empty();
 }
 
-bool ZMP_ListMaps(vector<MapMeta> &out)
+bool ZMP_ListMaps(vector<MapMeta> &out, bool local_only)
 {
+    if(local_only) {std::lock_guard<std::mutex> lock(g_local_mutex);out.clear();g_last_error.clear();return local_list_maps(out);}
 	std::lock_guard<std::mutex> lock(g_local_mutex);
 	g_last_error.clear();
 	out.clear();

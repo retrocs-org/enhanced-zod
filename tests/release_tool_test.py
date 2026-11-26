@@ -134,6 +134,17 @@ class ReleaseTests(unittest.TestCase):
         with patch.object(r.subprocess,'run',side_effect=run),patch.object(r,'git',side_effect=git):result=r.push_source(self.root,self.config(),['gitlab','github'],confirmed=True)
         self.assertTrue(result['uploaded']);self.assertEqual(len(calls),4);self.assertTrue(all(c[-1]==sha+':refs/heads/main' and '--force' not in c for c in calls))
         for target in ['gitlab','github']:self.assertTrue(json.loads((self.root/'outputs/source'/('receipt-'+target+'.json')).read_text())['verified'])
+    def test_source_preflight_timeout_writes_no_receipt(self):
+        original=subprocess.run
+        def run(command,**kwargs):
+            if 'push' in command:
+                self.assertEqual(kwargs.get('timeout'),45)
+                raise subprocess.TimeoutExpired(command,45)
+            return original(command,**kwargs)
+        with patch.object(r.subprocess,'run',side_effect=run):
+            with self.assertRaises(subprocess.TimeoutExpired):r.push_source(self.root,self.config(),['github'],confirmed=True)
+        self.assertFalse((self.root/'outputs/source').exists())
+
     def test_source_rejects_committed_token(self):
         (self.root/'leaked.txt').write_text('glpat-'+'a'*25)
         subprocess.run(['git','-C',str(self.root),'add','.'],check=True);subprocess.run(['git','-C',str(self.root),'commit','-qm','unsafe fixture'],check=True)

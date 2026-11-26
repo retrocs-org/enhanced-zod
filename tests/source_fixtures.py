@@ -40,3 +40,16 @@ def workspace(root,destination):
     for line in (root/'map_list.txt').read_text().splitlines():
         if line.startswith('maps/') and line.endswith('.map'):write_map(destination/line)
     for name in ['p03_bb_p03m01.map','p04_bb_p04m01.map','p08_bb_p08m01.map','p08_sc_hunters.map']:write_map(destination/'maps'/name)
+
+
+def launch_media(destination):
+    """Minimal authored sample media for actual executable launch checks."""
+    import wave
+    destination=pathlib.Path(destination)
+    atlas=(destination/'assets/planets/desert.bmp').read_bytes()
+    for name in ['buildings/level_1.bmp','units/robots/stand_red_r000.png','teams/blue_palette.bmp','other/main_menu_gui/list/list_button_down_normal.png','other/map_items/map_object0.png','other/production_gui/base_image.png','other/menus/create_button.png','summary_won.png','frontend/disc/main_menu.png']:
+        target=destination/'assets'/name;target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(atlas)
+    sounds=destination/'assets/sounds';sounds.mkdir(parents=True,exist_ok=True)
+    for name in ['MACHGUN2.wav','RICOCH1.wav']:
+        with wave.open(str(sounds/name),'wb') as out:out.setnchannels(1);out.setsampwidth(2);out.setframerate(22050);out.writeframes(b'\0\0'*2205)
+    (sounds/'AD1.MID').write_bytes(b'MThd'+struct.pack('>IHHH',6,0,1,96)+b'MTrk'+struct.pack('>I',4)+b'\0\xff\x2f\0')

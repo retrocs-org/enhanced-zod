@@ -21,14 +21,16 @@ void GMMMultiplayer::SetupLayout1()
         b.SetType(MMGENERIC_BUTTON); b.SetCoords(px,py); b.SetDimensions(width,18); b.SetText(label); AddWidget(&b);
     };
     button(mode_button,10,24,126,"Public Servers");button(direct_button,142,24,136,"Private Servers");button(lan_button,284,24,126,"LAN Servers");mode_button.SetGreen(true);
-    const char *help[]={"Private servers connect by address, not a public listing.","Use host:port for a custom port. Default game port: 2137.","Private and LAN hosts support guests without cloud sign-in.","For public dedicated servers, use the Public Servers tab."};for(int i=0;i<4;++i){direct_help[i].SetCoords(10,68+i*36);direct_help[i].SetDimensions(400,24);direct_help[i].SetText(help[i]);direct_help[i].SetActive(false);AddWidget(&direct_help[i]);}
+    const char *help[]={"Private servers connect by address, not a public listing.","Use host:port for a custom port. Default game port: 2137.","Private and LAN hosts support guests without cloud sign-in.","For public dedicated servers, use the Public Servers tab."};for(int i=0;i<4;++i){direct_help[i].SetCoords(10,68+i*22);direct_help[i].SetDimensions(400,24);direct_help[i].SetText(help[i]);direct_help[i].SetActive(false);AddWidget(&direct_help[i]);}
     search_entry.SetCoords(10,48);search_entry.SetDimensions(400,GMMWTEXTENTRY_HEIGHT);search_entry.SetLabel("Map/name/mode: ");search_entry.SetMaxText(60);AddWidget(&search_entry);
     region_entry.SetCoords(10,70);region_entry.SetDimensions(400,GMMWTEXTENTRY_HEIGHT);region_entry.SetLabel("Region: ");region_entry.SetMaxText(32);AddWidget(&region_entry);
     button(view_button,10,92,126,"All servers");button(ping_button,144,92,126,"Any ping");button(players_button,278,92,132,"Any players");
     button(state_button,10,114,126,"Any game state");button(favorite_button,144,114,126,"Toggle favorite");button(refresh_button,278,114,132,"Refresh");
-    match_list.SetCoords(10,140); match_list.SetVisibleEntries(7); match_list.SetDimensions(400,105); AddWidget(&match_list);
-    status_label.SetCoords(10,254); AddWidget(&status_label);
-    detail_label.SetCoords(10,270); AddWidget(&detail_label);
+    match_list.SetCoords(10,140); match_list.SetVisibleEntries(7); match_list.SetDimensions(220,105); AddWidget(&match_list);
+    preview_hint.SetCoords(238,140);preview_hint.SetDimensions(170,16);preview_hint.SetText("Select a server");AddWidget(&preview_hint);
+    availability_label.SetCoords(10,242);availability_label.SetDimensions(400,12);AddWidget(&availability_label);
+    status_label.SetCoords(10,254);status_label.SetDimensions(400,14); AddWidget(&status_label);
+    detail_label.SetCoords(10,270);detail_label.SetDimensions(400,14); AddWidget(&detail_label);
     button(join_button,10,290,400,"Join Selected Game");
     address_entry.SetCoords(10,316); address_entry.SetDimensions(400,GMMWTEXTENTRY_HEIGHT);
     address_entry.SetLabel("Address: "); address_entry.SetAddressMode(true); address_entry.SetMaxText(65); AddWidget(&address_entry);
@@ -40,7 +42,9 @@ void GMMMultiplayer::SetupLayout1()
 void GMMMultiplayer::SetBrowserMode(int mode){
  if(joining)return;refresh_task.Cancel();compatibility_task.Cancel();compatibility_address.clear();has_reconnect_target=false;join_button.SetText("Join Selected Game");lan_mode=mode==1;direct_mode=mode==2;sticky_error=false;matches.clear();discovered.clear();match_list.GetEntryList().clear();
  mode_button.SetGreen(mode==0);lan_button.SetGreen(lan_mode);direct_button.SetGreen(direct_mode);
- std::vector<ZGMMWidget*> listing={&match_list,&search_entry,&region_entry,&view_button,&ping_button,&players_button,&state_button,&favorite_button,&refresh_button,&join_button};for(auto *widget:listing)widget->SetActive(!direct_mode);for(auto &label:direct_help)label.SetActive(direct_mode);
+ std::vector<ZGMMWidget*> listing={&match_list,&search_entry,&region_entry,&view_button,&ping_button,&players_button,&state_button,&favorite_button,&refresh_button,&join_button};for(auto *widget:listing)widget->SetActive(!direct_mode);for(int i=0;i<4;++i)direct_help[i].SetActive(direct_mode&&i<2);match_list.SetActive(true);
+ match_list.SetDimensions(direct_mode?400:220,90);match_list.SetVisibleEntries(6);preview_image.Unload();preview_hint.SetActive(!direct_mode);preview_hint.SetText("Select a server");favorite_button.SetActive(true);favorite_button.SetText(direct_mode?"Save / unsave address":"Toggle favorite");availability_label.SetText("");
+ if(direct_mode){matches=ZServerBookmarks(true);auto favorites=ZServerBookmarks(false);for(auto &m:favorites)if(std::none_of(matches.begin(),matches.end(),[&](const MatchInfo &e){return e.host==m.host&&e.port==m.port;}))matches.push_back(m);for(size_t i=0;i<matches.size();++i){auto &m=matches[i];match_list.GetEntryList().push_back(mmlist_entry((ZServerFavorite(m)?"* ":"")+m.host+":"+to_string(m.port),(int)i,(int)i));}}
  address_entry.SetSelected(direct_mode);status_label.SetText(direct_mode?"Private servers: connect by address":"");detail_label.SetText(direct_mode?"Share the host address and game port with invited players.":"");keyboard_focus=-1;
  if(!direct_mode)Refresh();
 }
@@ -131,11 +135,13 @@ void GMMMultiplayer::Process()
 {
     PollAuthorization();
     Compatibility check;if(compatibility_task.Poll(check)&&check.address==compatibility_address&&!joining){
+        preview_hint.SetText(check.preview.valid?"":"Map downloads on join");
+        preview_image.Unload();if(check.preview.valid){auto &preview=check.preview;auto *surface=SDL_CreateSurface(preview.preview_width,preview.preview_height,SDL_PIXELFORMAT_ARGB8888);if(surface){for(int row=0;row<surface->h;++row)memcpy((char*)surface->pixels+row*surface->pitch,preview.pixels.data()+row*surface->w,surface->w*4);float fit=std::min(170.0f/surface->w,90.0f/surface->h);auto *small=SDL_ScaleSurface(surface,std::max(1,(int)(surface->w*fit)),std::max(1,(int)(surface->h*fit)),SDL_SCALEMODE_NEAREST);SDL_DestroySurface(surface);if(small)preview_image.LoadBaseImage(small);}}
         status_label.SetText(check.compatible?"Protocol + build compatible: "+check.version:check.error.substr(0,70));
         detail_label.SetText(!ZAsset_RuntimeReady()?"Import original graphics and sounds before playing.":check.compatible?"Map: "+check.map.substr(0,32)+" / SHA-256 "+(check.hash.empty()?string("unavailable"):check.hash.substr(0,12))+" / "+(!check.localHash.empty()&&check.localHash!=check.hash?string("local map differs; host copy downloaded"):string("verified on download")):"Install matching game/server releases. Refresh to check again.");
     }
     RefreshResult result; if(refresh_task.Poll(result)) ApplyRefresh(result);
-    if(applied_search!=search_entry.GetText()||applied_region!=region_entry.GetText())Refilter();
+    if(!direct_mode&&(applied_search!=search_entry.GetText()||applied_region!=region_entry.GetText()))Refilter();
     if(join_delay>0 && --join_delay==0) {
         gmm_flags.join_match=true; gmm_flags.join_host=requested.host; gmm_flags.join_port=requested.port;
         gmm_flags.join_team=NULL_TEAM;
@@ -164,6 +170,7 @@ void GMMMultiplayer::HandleWidgetEvent(int type,ZGMMWidget *widget)
     else if(widget==&ping_button){max_ping=max_ping==0?100:max_ping==100?200:max_ping==200?500:0;ping_button.SetText(max_ping?"Ping <= "+to_string(max_ping):"Any ping");Refilter();}
     else if(widget==&players_button){players_filter=(players_filter+1)%4;const char *labels[]={"Any players","Open slots","Populated","Empty"};players_button.SetText(labels[players_filter]);Refilter();}
     else if(widget==&state_button){state_filter=(state_filter+1)%3;state_button.SetText(state_filter==0?"Any game state":state_filter==1?"Lobby":"In battle");Refilter();}
+    else if(widget==&favorite_button&&direct_mode){MatchInfo saved;string error;if(!ZMP_ParseAddress(address_entry.GetText(),saved.host,saved.port,error)){SetError(error);return;}ZServerToggleFavorite(saved);SetBrowserMode(2);}
     else if(widget==&favorite_button){int selected=match_list.GetFirstSelected();if(selected>=0){int ref=match_list.GetEntryList()[selected].ref_id;if(ref>=0&&ref<(int)matches.size())ZServerToggleFavorite(matches[ref]);Refilter();}}
     else if(widget==&mode_button)SetBrowserMode(0);
     else if(widget==&lan_button)SetBrowserMode(1);
@@ -182,6 +189,10 @@ void GMMMultiplayer::HandleWidgetEvent(int type,ZGMMWidget *widget)
     }
 }
 
+void GMMMultiplayer::RenderContents(ZMap &map,SDL_Surface *dest){
+ ZGuiMainMenuBase::RenderContents(map,dest);
+ if(!direct_mode&&preview_image.GetBaseSurface())preview_image.BlitSurface(nullptr,x+234,y+140);
+}
 GMMMultiplayer::~GMMMultiplayer(){CancelAuthorization();}
 void GMMMultiplayer::CancelAuthorization(){
     if(!auth_device.empty()){auto device=std::move(auth_device);ZMPAsync<ZPortalResponse> cancel;cancel.Start([device](){return ZPortal_Request("/api/connect/cancel","{\"device\":\""+device+"\"}");});}
@@ -220,12 +231,15 @@ void GMMMultiplayer::PollAuthorization(){
 }
 
 void GMMMultiplayer::CheckCompatibility(const MatchInfo &match){
+ preview_image.Unload();preview_hint.SetText("Checking map...");
+ availability_label.SetText(match.capacity>0?"Players: "+to_string(std::max(0,match.capacity-std::max(0,match.players)))+" open / Spectators: ask host":"Player / spectator slots confirmed in lobby");
  compatibility_task.Cancel();compatibility_address=match.host+":"+to_string(match.port);
  status_label.SetText("Map: "+(match.map.empty()?string("announced on joining"):match.map.substr(0,52)));
  detail_label.SetText("Checking engine compatibility before joining...");
  auto address=compatibility_address,host=match.host,map=match.map;int port=match.port;
  compatibility_task.Start([address,host,port,map](){Compatibility result;result.address=address;result.map=map;result.compatible=ZNetCheckVersion(host,port,result.error,2000,&result.version,&result.hash);
  if(map.compare(0,5,"maps/")==0&&map.find("..") ==string::npos&&map.find_first_of(":\\")==string::npos){auto path=ZAsset_OverlayPath(map);std::ifstream file(path,std::ios::binary|std::ios::ate);if(!file){file.clear();file.open(ZSDL_DataPath(map),std::ios::binary|std::ios::ate);}if(file&&file.tellg()>0&&file.tellg()<=16*1024*1024){string bytes((size_t)file.tellg(),'\0');file.seekg(0);if(file.read(&bytes[0],bytes.size()))result.localHash=ZSHA256(bytes.data(),bytes.size());}}
+ if(result.compatible&&!result.hash.empty()&&result.hash==result.localHash)ZMP_ReadMapFilePreview(ZSDL_DataPath(map),result.preview);
  return result;});
 }
 

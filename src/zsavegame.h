@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-#define ZSAVE_MAGIC "ZODSAVE7"
+#define ZSAVE_MAGIC "ZODSAVE8"
 
 // Slot 0 is the autosave (written by the game itself at the start of a battle
 // and every few minutes); slots 1..ZSAVE_USER_SLOTS are the player's own.
@@ -32,6 +32,7 @@ struct ZSaveInfo
 	bool one_off_map;         //skirmish / custom map: return to the menu afterwards
 	double elapsed;           //game seconds played so far
 	int kills, lost;          //the player's tally so far
+    std::vector<int> team_difficulties;
 	int difficulty;           //bot difficulty the battle was played at
 	long long when;           //unix time of the save
 
@@ -47,6 +48,11 @@ bool ZSave_ReadInfo(int slot, ZSaveInfo &info);
 bool ZSave_RecoveryInfo(int slot,ZSaveInfo &info);
 bool ZSave_Recover(int slot);
 bool ZSave_Delete(int slot);   //remove a saved battle; true if the file is gone
+
+// Preview metadata is bound to the complete save digest; stale images are ignored.
+std::string ZSave_Fingerprint(int slot);
+std::string ZSave_Preview(int slot,std::string *build=nullptr);
+bool ZSave_CommitPreview(int slot,const std::string &pending,const std::string &digest,const std::string &build);
 
 // ---- tiny binary reader / writer used by the server -------------------------
 class ZSaveWriter

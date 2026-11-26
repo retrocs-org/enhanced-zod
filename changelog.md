@@ -10,6 +10,17 @@ are retained below; new website changes belong in that separate log.
 
 ## Unreleased
 
+### Multiplayer, offline setup and authoring polish
+
+- Exercise the actual packaged executable through embedded-level, offline AI and dedicated-client launch checks, alongside the existing lifecycle driver checks.
+- Use the richer preview-based setup for offline AI, with remembered per-opponent difficulty and loopback-only hosting independent of cloud services.
+- Preserve per-opponent difficulty in version 8 saves while continuing to read versions 3–7; bind screenshot and build metadata to exact save contents and explain unreadable slots.
+- Show verified local map thumbnails in the server browser and make saved private addresses selectable.
+- Pick mission objective targets and escort destinations visually; open the correct mission for validation issues, with unsaved edits protected.
+- Bound source-push operations and explain SSH-agent timeouts; ignore local build directories so they cannot enter a source push.
+- Add the Planetary Conquest design specification while leaving implementation paused.
+
+
 ### Campaign and offline/online menu hierarchy
 
 - Group original and custom solo campaigns under Campaigns > Single Player, and reserve Campaigns > Cooperative > Future Campaign for future content.

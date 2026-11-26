@@ -9,6 +9,7 @@ class GMMMultiplayer : public ZGuiMainMenuBase
 public:
     GMMMultiplayer();
     void Process() override;
+    void RenderContents(ZMap &map, SDL_Surface *dest) override;
     bool KeyPress(int c) override;
     bool UnClick(int px,int py) override { return ZGuiMainMenuBase::UnClick(px,py); }
     void SetError(const string &error);
@@ -18,7 +19,8 @@ private:
     friend class ZLANRegression;
     GMMWList match_list;
     GMMWTextEntry address_entry,search_entry,region_entry;
-    GMMWLabel status_label, detail_label,direct_help[4];
+    GMMWLabel status_label, detail_label,direct_help[4],availability_label,preview_hint;
+    ZSDL_Surface preview_image;
     GMMWButton portal_button,creations_button;
     GMMWButton view_button,ping_button,players_button,state_button,favorite_button;
     int view=0,max_ping=0,players_filter=0,state_filter=0;
@@ -40,7 +42,7 @@ private:
     void ApplyRefresh(const RefreshResult &result);
     void HandleWidgetEvent(int type,ZGMMWidget *widget) override;
     void Refresh();
-    struct Compatibility {string address,version,error,map,hash,localHash;bool compatible=false;};
+    struct Compatibility {string address,version,error,map,hash,localHash;bool compatible=false;MapPreview preview;};
     ZMPAsync<Compatibility> compatibility_task;string compatibility_address;
     void CheckCompatibility(const MatchInfo &match);
     void JoinAddress();

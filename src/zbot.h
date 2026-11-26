@@ -2,6 +2,7 @@
 #define _ZBOT_H_
 
 #include "zclient.h"
+#include <atomic>
 
 class PreferredUnit
 {
@@ -16,9 +17,12 @@ class ZBot : public ZClient
 	public:
 		ZBot();
 		
+        void SetDifficulty(int value) { difficulty_override=value; }
+        int Difficulty() const;
 		void Setup();
 		void Run();
 	private:
+        std::atomic<int> difficulty_override{-1};
 		void SetupEHandler();
 
 		void ProcessSocketEvents();

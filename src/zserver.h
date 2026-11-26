@@ -270,6 +270,7 @@ class ZServer : public ZCore
 		ZLANServer lan_discovery;
         double next_lan_poll = 0;
         bool lan_match_started = false;
+        std::vector<int> bot_difficulty_settings;
         bool allow_remote_clients;	//#158: bind the listen socket to all interfaces (host) vs 127.0.0.1 only
 		bool menu_first;	//#79: idle without a map until the player picks one
 		bool menu_mode_session;	//#136: this session is menu-driven (return to menu after a match)

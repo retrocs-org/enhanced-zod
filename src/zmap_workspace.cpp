@@ -113,6 +113,13 @@ void ZMapWorkspace::Paint() {
     }
 }
 void ZMapWorkspace::Event(const SDL_Event &event) {
+    if(pickObjective){
+        if(event.type==SDL_EVENT_MOUSE_MOTION){mx=event.motion.x;my=event.motion.y;}
+        if(event.type==SDL_EVENT_MOUSE_WHEEL){zoom=max(0.25f,min(4.0f,zoom*(event.wheel.y>0?1.2f:1/1.2f)));return;}
+        if(event.type==SDL_EVENT_KEY_DOWN&&event.key.key==SDLK_ESCAPE){pickObjective=0;campaignPanel=true;return;}
+        if(event.type==SDL_EVENT_MOUSE_BUTTON_UP&&event.button.button==SDL_BUTTON_LEFT&&event.button.x>=306&&event.button.x<1250&&event.button.y>=162&&event.button.y<702){int x=(int)(((event.button.x-306)/zoom+cameraX)/16),y=(int)(((event.button.y-162)/zoom+cameraY)/16);if(PickObjective(x,y)){pickObjective=0;campaignPanel=true;}}
+        return;
+    }
     if(pickEventLocation){if(event.type==SDL_EVENT_KEY_DOWN&&event.key.key==SDLK_ESCAPE){pickEventLocation=false;campaignPanel=true;return;}if(event.type==SDL_EVENT_MOUSE_MOTION){mx=event.motion.x;my=event.motion.y;}if(event.type==SDL_EVENT_MOUSE_BUTTON_UP&&event.button.button==SDL_BUTTON_LEFT){int x=(int)(((event.button.x-306)/zoom+cameraX)/16),y=(int)(((event.button.y-162)/zoom+cameraY)/16);auto &h=map.GetMapBasics();if(event.button.x>=306&&event.button.x<1250&&event.button.y>=162&&event.button.y<702&&x>=0&&y>=0&&x<h.width&&y<h.height){eventX=to_string(x);eventY=to_string(y);pickEventLocation=false;campaignPanel=true;}}return;}
     if(terrainConfirm||connectionsPanel){if(event.type==SDL_EVENT_KEY_DOWN&&event.key.key==SDLK_ESCAPE){terrainConfirm=connectionsPanel=false;terrainPreview.clear();return;}if(terrainConfirm&&event.type==SDL_EVENT_KEY_DOWN&&event.key.key==SDLK_RETURN){ApplyTerrainPreview();return;}if(event.type==SDL_EVENT_MOUSE_MOTION){mx=event.motion.x;my=event.motion.y;}if(event.type==SDL_EVENT_MOUSE_BUTTON_DOWN){mx=pressX=event.button.x;my=pressY=event.button.y;}if(event.type==SDL_EVENT_MOUSE_BUTTON_UP){mx=event.button.x;my=event.button.y;clicked=true;}return;}
     if(event.type==SDL_EVENT_KEY_DOWN&&event.key.key==SDLK_TAB){editField=-1;SDL_StopTextInput(SDL_GetKeyboardFocus());int count=max(1,focusCount),step=(event.key.mod&SDL_KMOD_SHIFT)?-1:1;if(focusButton<0&&step<0)focusButton=0;focusButton=(focusButton+step+count)%count;return;}
@@ -191,12 +198,13 @@ bool ZMapWorkspace::Render() {
         const char *modes[]={"Paint","Rectangle","Fill","Smooth","Road","River"};if(Button(modes[terrainMode],158,698,120)){terrainMode=(terrainMode+1)%6;anchorX=anchorY=-1;}
     } else if(tool==1) {
         const auto &objects=editor_objects();
-        Field(search,20,24,306,254);if(search!=lastObjectSearch){objectScroll=0;lastObjectSearch=search;}if(search.empty()&&editField!=20)Text("Search objects...",34,312,18,{120,137,148,255});int row=0;
+        Field(search,20,24,306,190);if(Button("Clear",220,306,58)){search.clear();objectScroll=0;}if(search!=lastObjectSearch){objectScroll=0;lastObjectSearch=search;}if(search.empty()&&editField!=20)Text("Search objects...",34,312,18,{120,137,148,255});int row=0;
         for(int i=0;i<(int)objects.size();++i){string name=objects[i].name,query=search;transform(name.begin(),name.end(),name.begin(),[](unsigned char c){return std::tolower(c);});transform(query.begin(),query.end(),query.begin(),[](unsigned char c){return std::tolower(c);});if(name.find(query)==string::npos)continue;if(row++<objectScroll)continue;if(row>objectScroll+6)continue;int displayRow=row-objectScroll-1;
             if(Button(objects[i].name,62,354+displayRow*42,216,objectKind==i))objectKind=i;
             string planet=planet_type_string[h.terrain_type],teamName=team_type_string[max(1,team)];const string images[]={"assets/buildings/fort/fort_"+planet+"_front.png","assets/buildings/robot/base_"+planet+".png","assets/buildings/vehicle/base_"+planet+".png","assets/other/flag_"+teamName+"_0.png","assets/units/robots/stand_"+teamName+"_r000.png","assets/units/vehicles/light/base_"+teamName+"_r000_n00.png"};
             string icon=i<6?images[i]:"";const auto &entry=objects[i];if(entry.type==ROBOT_OBJECT){char number[24];snprintf(number,sizeof(number),"_r%03d.png",0);icon="assets/units/robots/stand_"+teamName+number;}if(entry.type==VEHICLE_OBJECT)icon="assets/units/vehicles/"+vehicle_type_string[entry.id]+"/base_"+teamName+"_r000_n00.png";if(i==objectKind)placementIcon=icon;auto found=sprites.find(icon);if(found==sprites.end()){SDL_Surface *surface=IMG_Load(ZSDL_DataPath(icon).c_str());SDL_Texture *texture=surface?SDL_CreateTextureFromSurface(renderer,surface):nullptr;SDL_DestroySurface(surface);found=sprites.emplace(icon,texture).first;}Rect(26,358+displayRow*42,26,26,colors[max(0,min(4,team))]);if(found->second){SDL_FRect dst{26,358.0f+displayRow*42,30,30};SDL_RenderTexture(renderer,found->second,nullptr,&dst);}else Text(to_string(i+1),30,359+displayRow*42,18);
         }
+        if(!row)Text("No matching objects",26,370,18,amber);
         if(row>6&&Button("More objects",24,660,254))objectScroll=objectScroll+6>=row?0:objectScroll+6;
         if(Button("Snap: "+to_string(snap)+" tiles",24,704,254))snap=snap==1?2:snap==2?4:1;
         if(Button("Team: "+(team?team_type_string[team]:string("Neutral")),24,620,254))team=(team+1)%5;
@@ -213,7 +221,7 @@ bool ZMapWorkspace::Render() {
     }
     if(terrainTexture){SDL_FRect dst{306-cameraX*zoom,162-cameraY*zoom,h.width*16*zoom,h.height*16*zoom};SDL_RenderTexture(renderer,terrainTexture,nullptr,&dst);}
     if(grid&&zoom>=0.6f){SDL_SetRenderDrawColor(renderer,60,70,80,255);for(int x=0;x<=h.width;++x)SDL_RenderLine(renderer,306+(x*16-cameraX)*zoom,162,306+(x*16-cameraX)*zoom,702);for(int y=0;y<=h.height;++y)SDL_RenderLine(renderer,306,162+(y*16-cameraY)*zoom,1250,162+(y*16-cameraY)*zoom);}
-    int zoneIndex=0;for(const auto &zone:map.GetZoneList()){SDL_FRect dst{306+(zone.x*16-cameraX)*zoom,162+(zone.y*16-cameraY)*zoom,zone.w*16*zoom,zone.h*16*zoom};SDL_SetRenderDrawColor(renderer,244,164,65,255);SDL_RenderRect(renderer,&dst);if(tool==2)Text("Zone "+to_string(zoneIndex),dst.x+4,dst.y+4,17,amber);++zoneIndex;}
+    int zoneIndex=0;for(const auto &zone:map.GetZoneList()){SDL_FRect dst{306+(zone.x*16-cameraX)*zoom,162+(zone.y*16-cameraY)*zoom,zone.w*16*zoom,zone.h*16*zoom};SDL_SetRenderDrawColor(renderer,244,164,65,255);SDL_RenderRect(renderer,&dst);if(tool==2||pickObjective)Text("Zone "+to_string(zoneIndex),dst.x+4,dst.y+4,17,amber);++zoneIndex;}
     int objectIndex=0;for(const auto &object:map.GetObjectList()) {
         float x=306+(object.x*16-cameraX)*zoom,y=162+(object.y*16-cameraY)*zoom;
         if(tool==4&&(objectIndex==selectedObject||selectedObjects.count(objectIndex))){SDL_FRect selection{x-2,y-2,36*zoom+4,36*zoom+4};SDL_SetRenderDrawColor(renderer,255,220,110,255);SDL_RenderRect(renderer,&selection);selection.x-=2;selection.y-=2;selection.w+=4;selection.h+=4;SDL_RenderRect(renderer,&selection);Rect(selection.x,selection.y,5,5,amber);Rect(selection.x+selection.w-5,selection.y+selection.h-5,5,5,amber);}++objectIndex;
@@ -267,14 +275,17 @@ bool ZMapWorkspace::Render() {
     if(historyPanel)RenderHistory();
     if(validationPanel){modalLayer=1;Rect(210,166,860,528,{24,32,39,255});Text("VALIDATION / SELECT AN ISSUE TO LOCATE",236,188,25,amber);
         if(issues.empty())Text("No issues found",236,252,24);
-        for(int i=0;i<8&&i+issueScroll<(int)issues.size();++i){auto &issue=issues[i+issueScroll];if(Button((issue.error?"ERROR: ":"NOTE: ")+issue.text.substr(0,82),236,238+i*46,808)){if(issue.x>=0){cameraX=issue.x*16-472/zoom;cameraY=issue.y*16-270/zoom;}message=issue.text;validationPanel=false;}}
+        for(int i=0;i<8&&i+issueScroll<(int)issues.size();++i){auto &issue=issues[i+issueScroll];if(Button((issue.error?"ERROR: ":"NOTE: ")+issue.text.substr(0,82),236,238+i*46,808)){if(issue.mission>=0&&issue.mission<(int)authorCampaign.missions.size()){
+ if(dirty){message="Save the current map before opening another mission’s validation issue.";continue;}
+ string target;if(!ZCampaign_SafeAsset(authorCampaign.root,authorCampaign.missions[issue.mission].map,target)||!Open(target,directory)){message="The mission map could not be opened. Check its campaign path.";continue;}campaignMission=issue.mission;
+ }if(issue.x>=0){cameraX=issue.x*16-472/zoom;cameraY=issue.y*16-270/zoom;}message=issue.text;validationPanel=false;}}
         if(Button("Close",890,640,154))validationPanel=false;
     }
     if(importPanel){auto requirements=ZCampaign_Compatibility(importSummary,ZCampaign_List());modalLayer=1;Rect(250,220,780,320,{24,32,39,255});Text("IMPORT CAMPAIGN PACK",278,242,28,amber);Text(importSummary.title,278,294,24);Text(to_string(importSummary.missions.size())+" missions / "+importSummary.author,278,338,21);Text(requirements.empty()?"ID: "+importSummary.id+" / existing IDs will not be replaced":requirements.front(),278,380,18);if(Button("Install pack",278,466,300,true)&&requirements.empty()){string error;if(ZCampaign_ImportPack(importArchive,error)){message="Campaign installed";importPanel=false;}else message=error;}if(Button("Cancel",700,466,300))importPanel=false;}
     if(!hoverTip.empty()&&SDL_GetTicks()-hoverSince>650&&!recoveryPrompt&&!helpPanel&&pending.empty()){Rect(306,742,944,36,{28,40,49,255});Text(hoverTip.substr(0,105),316,748,18,amber);}
     if(recoveryPrompt){modalLayer=3;Rect(230,240,820,300,{24,32,39,255});Text("RECOVER UNSAVED WORK?",260,268,28,amber);Text("An editor recovery snapshot from a previous session is available.",260,324,20);Text("Restore opens a new copy; original levels remain protected.",260,360,20);if(Button("Restore",260,444,220,true)){recoveryPrompt=false;Recover();}if(Button("Later",500,444,220)){recoveryPrompt=false;recoveryDeferred=true;message="Previous recovery kept. Restore it from File before starting new edits.";}if(Button("Discard snapshot",740,444,280)){recoveryPrompt=false;ClearRecovery();}}
     if(helpPanel){modalLayer=3;Rect(230,174,820,500,{24,32,39,255});Text("EDITOR SHORTCUTS",260,200,28,amber);const char *lines[]={"1 Terrain / 2 Objects / 3 Territories / 4 Erase / 5 Select","F: Fit map / G: Grid / +/- or mouse wheel: Zoom","WASD / arrows: Pan / Middle mouse: Drag canvas","Ctrl/Cmd+S: Save / Ctrl/Cmd+Z: Undo / Ctrl/Cmd+Y: Redo","Shift-click: Add selection / Drag empty space: Area selection","Ctrl/Cmd+C/V: Copy/paste terrain and objects / Delete: Remove","Ctrl/Cmd+H: Edit history / Escape: Close one panel"};for(int i=0;i<7;++i)Text(lines[i],260,264+i*40,20);if(Button("Close",800,612,220))helpPanel=false;}
-    if(prefabPanel)RenderPrefabs();if(connectionsPanel)RenderConnections();if(terrainConfirm){modalLayer=1;Rect(306,706,944,74,{24,32,39,255});Text(terrainUnresolved?to_string(terrainUnresolved)+" tiles use fallback; configure Connections for exact variants.":"Connected stroke preview: corners and junctions matched.",318,714,18,amber);if(Button("Apply stroke",680,742,260,true))ApplyTerrainPreview();if(Button("Cancel preview",958,742,270)){terrainConfirm=false;terrainPreview.clear();}}if(pickEventLocation)Text("Click a map tile for this event. Escape cancels.",330,714,22,amber);
+    if(prefabPanel)RenderPrefabs();if(connectionsPanel)RenderConnections();if(terrainConfirm){modalLayer=1;Rect(306,706,944,74,{24,32,39,255});Text(terrainUnresolved?to_string(terrainUnresolved)+" tiles use fallback; configure Connections for exact variants.":"Connected stroke preview: corners and junctions matched.",318,714,18,amber);if(Button("Apply stroke",680,742,260,true))ApplyTerrainPreview();if(Button("Cancel preview",958,742,270)){terrainConfirm=false;terrainPreview.clear();}}if(pickObjective)Text("Click the objective target on the map. Escape cancels.",330,738,22,amber);if(pickEventLocation)Text("Click a map tile for this event. Escape cancels.",330,714,22,amber);
     clicked=false;return closed;
 }
 
@@ -401,6 +412,22 @@ void ZMapWorkspace::Autosave(){
 
 void ZMapWorkspace::Recover(){string dir=directory;bool restored=Open(ZAsset_Profile()+"editor-recovery.map",dir);if(!restored)restored=Open(ZAsset_Profile()+"editor-recovery.previous.map",dir);if(restored){recoveryDeferred=false;path=UniqueMapPath("Recovered");dirty=true;std::ifstream view(ZAsset_Profile()+"editor-recovery.view");float cx,cy,z;if(view>>cx>>cy>>z&&std::isfinite(cx)&&std::isfinite(cy)&&std::isfinite(z)&&z>=.1f&&z<=4){cameraX=cx;cameraY=cy;zoom=z;}message="Recovered autosave. Save creates a new custom map.";}else message="Neither recovery snapshot could be read. Current work is unchanged.";}
 
+void ZMapWorkspace::BeginObjectivePick(int kind){
+ if(dirty){message="Save the current map before choosing mission targets.";return;}
+ if(campaignMission<0||campaignMission>=(int)authorCampaign.missions.size())return;
+ string target;if(!ZCampaign_SafeAsset(authorCampaign.root,authorCampaign.missions[campaignMission].map,target)||!Open(target,directory)){message="Could not open this mission map.";return;}
+ pickObjective=kind;campaignPanel=false;editField=-1;
+}
+bool ZMapWorkspace::PickObjective(int x,int y){
+ auto &h=map.GetMapBasics();if(x<0||y<0||x>=h.width||y>=h.height)return false;
+ if(pickObjective==2||objectiveDraft.kind=="capture"){
+  auto &zones=map.GetZoneList();for(size_t i=0;i<zones.size();++i){auto &z=zones[i];if(x>=z.x&&y>=z.y&&x<z.x+z.w&&y<z.y+z.h){(pickObjective==2?objectiveSeconds:objectiveTarget)=to_string(i);message="Territory selected. Add or update the step to save it.";return true;}}
+  message="Click inside an existing territory.";return false;
+ }
+ auto &objects=map.GetObjectList();for(int i=(int)objects.size()-1;i>=0;--i){auto &o=objects[i];bool kind=objectiveDraft.kind=="defend"?o.object_type==BUILDING_OBJECT:o.object_type==ROBOT_OBJECT||o.object_type==VEHICLE_OBJECT;
+  if(kind&&o.owner==RED_TEAM&&x>=o.x&&y>=o.y&&x<o.x+(o.object_type==BUILDING_OBJECT?4:2)&&y<o.y+(o.object_type==BUILDING_OBJECT?4:2)){objectiveTarget=to_string(i);message="Red target selected. Add or update the step to save it.";return true;}}
+ message=objectiveDraft.kind=="defend"?"Click a red building.":"Click a red robot or vehicle.";return false;
+}
 void ZMapWorkspace::RenderTimeline(){
  Rect(150,150,980,600,{24,32,39,255});Text("MISSION OBJECTIVE TIMELINE",176,172,28,amber);
  if(campaignMission<0||campaignMission>=(int)authorCampaign.missions.size()){timelinePanel=false;return;}
@@ -408,13 +435,14 @@ void ZMapWorkspace::RenderTimeline(){
  Text("Ordered steps. No steps uses standard battle victory rules.",176,216,20);
  for(int row=0;row<8&&row+timelineScroll<(int)rules.size();++row){int i=row+timelineScroll;if(Button(to_string(i+1)+". "+rules[i].kind+" / "+rules[i].text.substr(0,19),176,264+row*44,330,timelineIndex==i)){timelineIndex=i;objectiveDraft=rules[i];objectiveTarget=to_string(objectiveDraft.target);objectiveSeconds=to_string(objectiveDraft.seconds);editField=-1;}}
  if(Button("Type: "+objectiveDraft.kind,538,266,558)){const string kinds[]={"message","survive","capture","defend","escort"};int i=0;for(;i<5&&kinds[i]!=objectiveDraft.kind;++i);objectiveDraft.kind=kinds[(i+1)%5];}
- Text("Target: territory or building index (starts at 0)",538,320,18);Field(objectiveTarget,30,538,350,558);
- Text(objectiveDraft.kind=="escort"?"Destination territory index":"Duration / message delay in game seconds",538,404,18);Field(objectiveSeconds,31,538,434,558);
+ Text("Target: territory or building index (starts at 0)",538,320,18);Field(objectiveTarget,30,538,350,330);if(objectiveDraft.kind=="capture"||objectiveDraft.kind=="defend"||objectiveDraft.kind=="escort")if(Button("Pick target",882,350,214)){BeginObjectivePick(1);}
+ Text(objectiveDraft.kind=="escort"?"Destination territory index":"Duration / message delay in game seconds",538,404,18);Field(objectiveSeconds,31,538,434,330);if(objectiveDraft.kind=="escort"&&Button("Pick destination",882,434,214)){BeginObjectivePick(2);}
  Text(objectiveDraft.kind=="message"?"Briefing message shown after the delay":"Briefing message shown when step starts",538,488,18);Field(objectiveDraft.text,32,538,518,558,74);
- if(Button("Add step",538,620,172,true)||Button("Update",724,620,172)){
+ bool appendStep=Button("Add step",538,620,172,true);bool updateStep=Button("Update",724,620,172);
+ if(appendStep||updateStep){
   ZMissionObjective parsed;string line=objectiveDraft.kind+"|"+objectiveTarget+"|"+objectiveSeconds+"|"+objectiveDraft.text;
   if(!ZMission_Parse(line,parsed))message="Invalid objective. Use numeric target/time and no pipe character in text.";
-  else if(mx<710){if(rules.size()<64){rules.push_back(parsed);timelineIndex=rules.size()-1;timelineScroll=max(0,timelineIndex-7);SaveCampaign();}else message="Maximum 64 objective steps";}
+  else if(appendStep){if(rules.size()<64){rules.push_back(parsed);timelineIndex=rules.size()-1;timelineScroll=max(0,timelineIndex-7);SaveCampaign();}else message="Maximum 64 objective steps";}
   else if(timelineIndex>=0&&timelineIndex<(int)rules.size()){rules[timelineIndex]=parsed;SaveCampaign();}
  }
  if(timelineIndex>=0&&timelineIndex<(int)rules.size()){

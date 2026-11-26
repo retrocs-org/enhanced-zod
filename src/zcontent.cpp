@@ -68,6 +68,7 @@ vector<ZContentIssue> ZContent_ValidateCampaign(const ZCampaign &campaign,bool d
  if(!parsed.cover.empty()){string cover;if(!ZCampaign_SafeAsset(parsed.root,parsed.cover,cover))out.push_back({distribution,"Campaign cover image is missing"});}
  set<string> usedMaps;
  for(size_t i=0;i<parsed.missions.size();++i){auto &m=parsed.missions[i];string path;ZMap map;
+  size_t firstIssue=out.size();
   const string prefix="Mission "+to_string(i+1)+": ";
   if(!usedMaps.insert(m.map).second)out.push_back({false,prefix+"reuses a previous mission map; check mission order"});
   if(m.briefing.empty())out.push_back({false,prefix+"no briefing text; add instructions before distributing"});
@@ -81,6 +82,7 @@ vector<ZContentIssue> ZContent_ValidateCampaign(const ZCampaign &campaign,bool d
    }if(o.kind=="capture"&&o.target>=(int)map.GetZoneList().size())out.push_back({true,"Mission "+to_string(i+1)+": capture target territory does not exist"});if(o.kind=="defend"&&(o.target>=(int)map.GetObjectList().size()||map.GetObjectList()[o.target].object_type!=BUILDING_OBJECT||map.GetObjectList()[o.target].owner!=RED_TEAM))out.push_back({true,"Mission "+to_string(i+1)+": defend target must be a red building"});}
   for(auto issue:ZContent_ValidateMap(map)){issue.text="Mission "+to_string(i+1)+": "+issue.text;out.push_back(issue);}}
   for(auto video:{m.video,m.victoryVideo})if(!video.empty()&&video.compare(0,9,"original:")!=0&&!ZCampaign_SafeAsset(parsed.root,video,path))out.push_back({distribution,"Mission "+to_string(i+1)+": missing video "+video+(distribution?"; remove the reference or add the file before export":" (briefing fallback)")});
+  for(size_t issue=firstIssue;issue<out.size();++issue)out[issue].mission=(int)i;
  }
  return out;
 }

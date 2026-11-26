@@ -104,7 +104,7 @@ enable_testing()
 add_test(NAME zod_tests COMMAND zod_tests)
 
 # Headless regressions for save replacement, malformed maps and HTTP deadlines.
-add_executable(zod_runtime_driver tests/runtime_driver.cpp src/zhttp.cpp src/zlocalserver.cpp)
+add_executable(zod_runtime_driver tests/runtime_driver.cpp src/zhttp.cpp src/zlocalserver.cpp src/zhash.cpp)
 target_include_directories(zod_runtime_driver PRIVATE src)
 if(WIN32)
   target_link_libraries(zod_runtime_driver PRIVATE ws2_32)

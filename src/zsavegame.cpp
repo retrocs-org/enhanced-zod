@@ -1,4 +1,6 @@
 #include "zsavegame.h"
+#include "zhash.h"
+
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -119,7 +121,7 @@ bool ZSaveReader::ReadFile(const string &path)
 	size_t got;
 	while((got = fread(chunk, 1, sizeof(chunk), fp)) > 0) buf.insert(buf.end(), chunk, chunk + got);
     bool readError=ferror(fp)!=0;fclose(fp);if(readError){ok=false;return false;}
-    bool checksumRequired=buf.size()>=12&&(memcmp(buf.data()+4,ZSAVE_MAGIC,8)==0||memcmp(buf.data()+4,"ZODSAVE5",8)==0||memcmp(buf.data()+4,"ZODSAVE6",8)==0);
+    bool checksumRequired=buf.size()>=12&&(memcmp(buf.data()+4,ZSAVE_MAGIC,8)==0||memcmp(buf.data()+4,"ZODSAVE5",8)==0||memcmp(buf.data()+4,"ZODSAVE6",8)==0||memcmp(buf.data()+4,"ZODSAVE7",8)==0);
     if(checksumRequired&&(buf.size()<24||memcmp(buf.data()+buf.size()-12,"ZODCRC1!",8)!=0)){ok=false;return false;}
     if(buf.size()>=12&&memcmp(buf.data()+buf.size()-12,"ZODCRC1!",8)==0){unsigned stored=0;for(int i=0;i<4;++i)stored|=(unsigned)buf[buf.size()-4+i]<<(i*8);buf.resize(buf.size()-12);if(save_crc(buf)!=stored){ok=false;return false;}}
 
@@ -172,13 +174,13 @@ void ZSave_WriteInfo(ZSaveWriter &w, const ZSaveInfo &info)
 	w.Int(info.lost);
 	w.Int(info.difficulty);
 	w.Double((double)info.when);
-    w.Str(info.campaign_id);w.Int(info.mission_index);w.Str(info.mission_uid);w.Int(info.session_seed);
+    w.Str(info.campaign_id);w.Int(info.mission_index);w.Str(info.mission_uid);w.Int(info.session_seed);w.Int(info.team_difficulties.size());for(int d:info.team_difficulties)w.Int(d);
 }
 
 bool ZSave_ReadInfo(ZSaveReader &r, ZSaveInfo &info)
 {
 	vector<char> magic = r.Blob();
-	if(!r.Ok()||magic.size()!=8)return false;bool modern=memcmp(magic.data(),ZSAVE_MAGIC,8)==0||memcmp(magic.data(),"ZODSAVE4",8)==0||memcmp(magic.data(),"ZODSAVE5",8)==0||memcmp(magic.data(),"ZODSAVE6",8)==0;if(!modern&&memcmp(magic.data(),"ZODSAVE3",8)!=0)return false;
+	if(!r.Ok()||magic.size()!=8)return false;bool modern=memcmp(magic.data(),ZSAVE_MAGIC,8)==0||memcmp(magic.data(),"ZODSAVE4",8)==0||memcmp(magic.data(),"ZODSAVE5",8)==0||memcmp(magic.data(),"ZODSAVE6",8)==0||memcmp(magic.data(),"ZODSAVE7",8)==0;if(!modern&&memcmp(magic.data(),"ZODSAVE3",8)!=0)return false;
 
 	info.map_name = r.Str();
 	info.map_title = r.Str();
@@ -191,7 +193,8 @@ bool ZSave_ReadInfo(ZSaveReader &r, ZSaveInfo &info)
 	info.when = (long long)r.Double();
     info.campaign_id.clear();info.mission_index=-1;if(modern){info.campaign_id=r.Str();info.mission_index=r.Int();if(info.campaign_id.size()>64||info.mission_index< -1||info.mission_index>4096)return false;}
 
-    info.mission_uid.clear();info.session_seed=0;if(memcmp(magic.data(),ZSAVE_MAGIC,8)==0){info.mission_uid=r.Str();info.session_seed=(unsigned)r.Int();if(info.mission_uid.size()>64)return false;}
+    info.mission_uid.clear();info.session_seed=0;if(memcmp(magic.data(),ZSAVE_MAGIC,8)==0||memcmp(magic.data(),"ZODSAVE7",8)==0){info.mission_uid=r.Str();info.session_seed=(unsigned)r.Int();if(info.mission_uid.size()>64)return false;}
+    info.team_difficulties.clear();if(memcmp(magic.data(),ZSAVE_MAGIC,8)==0){int count=r.Int();if(count<0||count>16)return false;for(int t=0;t<count;++t){int d=r.Int();if(d<0||d>3)return false;info.team_difficulties.push_back(d);}}
 	return r.Ok();
 }
 
@@ -202,9 +205,26 @@ bool ZSave_ReadInfo(int slot, ZSaveInfo &info)
 	return ZSave_ReadInfo(r, info);
 }
 
+string ZSave_Fingerprint(int slot){
+ if(slot<0||slot>ZSAVE_CHECKPOINT_SLOT)return "";
+ ifstream input(ZSave_Path(slot),ios::binary|ios::ate);if(!input||input.tellg()<=0||input.tellg()>64*1024*1024)return "";
+ string data((size_t)input.tellg(),'\0');input.seekg(0);if(!input.read(&data[0],data.size()))return "";return ZSHA256(data.data(),data.size());
+}
+string ZSave_Preview(int slot,string *build){
+ if(build)build->clear();string digest,identity;ifstream meta(ZSave_Path(slot)+".preview.txt");
+ if(!getline(meta,digest)||digest.size()!=64||!getline(meta,identity)||identity.size()>240||digest!=ZSave_Fingerprint(slot))return "";
+ if(build)*build=identity;return ZSave_Path(slot)+".preview.png";
+}
+bool ZSave_CommitPreview(int slot,const string &pending,const string &digest,const string &build){
+ if(digest.empty()||digest!=ZSave_Fingerprint(slot)||build.size()>240||build.find_first_of("\r\n")!=string::npos)return false;
+ auto base=ZSave_Path(slot)+".preview";ofstream meta(base+".txt.tmp",ios::trunc);meta<<digest<<"\n"<<build<<"\n";meta.close();
+ if(!meta||!copy_atomic(pending,base+".png")){remove((base+".txt.tmp").c_str());return false;}
+ bool ok=copy_atomic(base+".txt.tmp",base+".txt");remove((base+".txt.tmp").c_str());if(ok)remove(pending.c_str());return ok;
+}
 bool ZSave_Delete(int slot)
 {
 	string path = ZSave_Path(slot);
+    remove((path+".preview.png").c_str());remove((path+".preview.txt").c_str());remove((path+".preview.pending.png").c_str());
 	for(int generation=1;generation<=3;++generation)remove((path+".bak"+to_string(generation)).c_str());
     if(remove(path.c_str()) == 0) return true;
 	ZSaveInfo still_there;

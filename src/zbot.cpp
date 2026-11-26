@@ -23,12 +23,14 @@ static const bot_diff_profile g_bot_diff[MAX_BOT_DIFFICULTY] =
 	{ 0.5, 2.0, 0.4, 0.5 },	// Expert: fastest, commands most units, very aggressive
 };
 
-static const bot_diff_profile &CurDiff()
+static const bot_diff_profile &CurDiff(int difficulty)
 {
-	int d = zod_bot_difficulty;
+	int d = difficulty;
 	if(d < 0 || d >= MAX_BOT_DIFFICULTY) d = BOT_DIFF_NORMAL;
 	return g_bot_diff[d];
 }
+
+int ZBot::Difficulty() const {int value=difficulty_override.load();return value>=0&&value<MAX_BOT_DIFFICULTY?value:zod_bot_difficulty;}
 
 ZBot::ZBot() : ZClient()
 {
@@ -150,7 +152,7 @@ void ZBot::ProcessAI()
 	if(the_time < next_ai_time) return;
 
 	//#difficulty: how often the bot thinks (Normal = +1s, the original)
-	next_ai_time = the_time + CurDiff().think_interval;
+	next_ai_time = the_time + CurDiff(Difficulty()).think_interval;
 
 	//are we ignored?
 	if(OurPInfo().ignored) return;
@@ -715,7 +717,7 @@ bool ZBot::GoAllOut_3(double &percent_to_order, double &order_delay)
 
 		//#difficulty: scale the "fair share of flags before going all-out (attacking
 		//enemy units)" threshold - lower = turns aggressive sooner. Normal = x1.0.
-		if(percent_owned >= percent_half * CurDiff().aggro_scale)
+		if(percent_owned >= percent_half * CurDiff(Difficulty()).aggro_scale)
 		{
 			all_out = true;
 			percent_to_order = 0.15;
@@ -735,9 +737,9 @@ bool ZBot::GoAllOut_3(double &percent_to_order, double &order_delay)
 
 	//#difficulty: scale how many units it commands per cycle and how often.
 	//Normal = x1.0 (unchanged); higher difficulty orders more, more often.
-	percent_to_order *= CurDiff().order_scale;
+	percent_to_order *= CurDiff(Difficulty()).order_scale;
 	if(percent_to_order > 1.0) percent_to_order = 1.0;
-	order_delay *= CurDiff().delay_scale;
+	order_delay *= CurDiff(Difficulty()).delay_scale;
 
 	return all_out;
 }
@@ -940,10 +942,10 @@ bool ZBot::Stage1AI_2()
 	//that's no fun to lose to - is Expert-only (and still only when all-out). So Easy
 	//and Normal cranes just repair bridges; Hard adds flags; Expert adds the fort.
 	target_list.clear();
-	if(zod_bot_difficulty >= BOT_DIFF_HARD)
+	if(Difficulty() >= BOT_DIFF_HARD)
 		target_list = enemy_flag_list;
 	target_list.insert(target_list.begin(), destroyed_building_list.begin(), destroyed_building_list.end());
-	if(all_out && zod_bot_difficulty >= BOT_DIFF_EXPERT)
+	if(all_out && Difficulty() >= BOT_DIFF_EXPERT)
 	{
 		target_list.insert(target_list.begin(), enemy_fort_list.begin(), enemy_fort_list.end());
 	}

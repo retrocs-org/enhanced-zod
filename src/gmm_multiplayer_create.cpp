@@ -8,18 +8,23 @@ namespace {
 const double speeds[] = {0.5, 1.0, 1.5, 2.0};
 string shorten(const string &text, size_t length) { return text.size() <= length ? text : text.substr(0, length - 3) + "..."; }
 }
-GMMMultiplayerCreate::GMMMultiplayerCreate(const SkirmishPreferences *setup, bool rematch)
+GMMMultiplayerCreate::GMMMultiplayerCreate(const SkirmishPreferences *setup, bool rematch, bool offline)
 {
+    offline=offline||(setup&&setup->match.local_only);offline_mode=offline;
     menu_type = GMM_MULTIPLAYER_CREATE;
     title = "Create Match"; w = 450; h = 348;
     preferences=setup ? *setup : ZSkirmish_Load(zod_bot_difficulty);
     auto_start=rematch;
     options=preferences.match; random=preferences.random; random_mode=preferences.random_mode;
+    options.local_only=offline;
+    if(offline&&preferences.map.empty()&&!preferences.bots)preferences.bots=1u<<BLUE_TEAM;
+    if(offline) {title="Play against AI";options.team_difficulties.resize(MAX_TEAM_TYPES,options.difficulty);}
+    else options.team_difficulties.clear();
     for(int t=1;t<MAX_TEAM_TYPES;++t) bot_on[t]=(preferences.bots&(1u<<t))!=0;
     for(int i=0;i<4;++i) if(speeds[i]==options.game_speed) speed_i=i;
     filter_options.push_back(0);
     SetupLayout1(); status = "Loading maps...";
-    maps_task.Start([]() { MapsResult r; r.ok = ZMP_ListMaps(r.maps); return r; });
+    maps_task.Start([offline]() { MapsResult r; r.ok = ZMP_ListMaps(r.maps,offline); return r; });
     if(random_mode) GenerateRandom(false);
 }
 GMMMultiplayerCreate::~GMMMultiplayerCreate() { Remember(); }
@@ -27,7 +32,8 @@ void GMMMultiplayerCreate::Remember()
 {
     string stock=StockMap(); if(!stock.empty()) preferences.map=stock;
     preferences.random_mode=random_mode; preferences.random=random;
-    preferences.match=options; preferences.match.game_speed=speeds[speed_i];
+    auto difficulties=preferences.match.team_difficulties;
+    preferences.match=options;if(!offline_mode)preferences.match.team_difficulties=difficulties; preferences.match.game_speed=speeds[speed_i];
     preferences.bots=0;
     for(int t=1;t<MAX_TEAM_TYPES;++t) if(bot_on[t] && t!=options.human_team) preferences.bots|=1u<<t;
     if(!ZSkirmish_Save(preferences) && !Busy()) SetError("Could not remember setup choices; check your user folder");
@@ -165,7 +171,7 @@ void GMMMultiplayerCreate::UpdateLabels()
         bool available = !preview.valid || find(preview.teams.begin(), preview.teams.end(), team) != preview.teams.end();
         bot_button[team - 1].SetActive(available && !SelectedMap().empty());
         if(available) bot_button[team - 1].SetCoords(10, 215 + row++ * 20);
-        string value = !available ? "no fort" : team == options.human_team ? "you" : bot_on[team] ? "bot" : "open";
+        string value = !available ? "no fort" : team == options.human_team ? "you" : bot_on[team] ? (offline_mode?string(bot_difficulty_name[options.team_difficulties[team]]):string("bot")) : "open";
         bot_button[team - 1].SetText(team_type_string[team] + ": " + value);
         bot_button[team - 1].SetGreen(bot_on[team] || team == options.human_team);
         bots += bot_on[team] ? 1 : 0;
@@ -240,6 +246,7 @@ void GMMMultiplayerCreate::StartMatch()
     for(const auto &entry : map_names) if(entry.name == map && entry.players > 0 && bots.size() + 1 > (size_t)entry.players) {
         SetError("Too many opponents for this map"); return;
     }
+    if(offline_mode&&bots.empty()){SetError("Choose at least one AI opponent by clicking its team row");return;}
     options.game_speed = speeds[speed_i];
     string error;
     if(!ZMP_ValidateSetup(preview, bots, options, error)) { SetError(error); return; }
@@ -283,12 +290,12 @@ void GMMMultiplayerCreate::HandleWidgetEvent(int type, ZGMMWidget *widget)
         }
         bot_on[options.human_team] = false;
     }
-    else if(widget == &difficulty_button) options.difficulty = (options.difficulty + 1) % MAX_BOT_DIFFICULTY;
+    else if(widget == &difficulty_button) {options.difficulty = (options.difficulty + 1) % MAX_BOT_DIFFICULTY;if(offline_mode)std::fill(options.team_difficulties.begin(),options.team_difficulties.end(),options.difficulty);}
     else if(widget == &speed_button) speed_i = (speed_i + 1) % 4;
     else if(widget == &start_button) StartMatch();
-    else if(widget == &back_button) { gmm_flags.open_main_menu = true; gmm_flags.open_main_menu_type = GMM_MULTIPLAYER; }
+    else if(widget == &back_button) { if(offline_mode)killme=true;else {gmm_flags.open_main_menu = true; gmm_flags.open_main_menu_type = GMM_MULTIPLAYER;} }
     else for(int t = 1; t < MAX_TEAM_TYPES; ++t) if(widget == &bot_button[t - 1] && t != options.human_team
-             && (!preview.valid || find(preview.teams.begin(), preview.teams.end(), t) != preview.teams.end())) bot_on[t] = !bot_on[t];
+             && (!preview.valid || find(preview.teams.begin(), preview.teams.end(), t) != preview.teams.end())) {if(!offline_mode)bot_on[t]=!bot_on[t];else if(!bot_on[t]){bot_on[t]=true;options.team_difficulties[t]=0;}else if(options.team_difficulties[t]<MAX_BOT_DIFFICULTY-1)++options.team_difficulties[t];else bot_on[t]=false;}
     if(random_mode && random_dirty && !generation_task.Pending() && !sticky_error){status="Updating preview...";preview_at=SDL_GetTicks()+350;}
     Remember(); RefreshSelection(); UpdateLabels();
 }

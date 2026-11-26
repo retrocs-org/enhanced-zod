@@ -208,7 +208,8 @@ private:
 	// saved battles: the autosave and the player's slots
 	struct SaveSlot
 	{
-		int slot;bool recovery=false;
+		int slot;bool recovery=false,compatible=true;
+        std::string screenshot,build;
         std::string map,campaign;
 		std::string label;     //"Autosave" / "Slot 2"
 		std::string title;     //"Desert - Level 04 Desert Islands"

@@ -140,6 +140,7 @@ bool ZServer::SaveGame(int player, int kills, int lost, int elapsed, int slot)
 	info.kills = kills;
 	info.lost = lost;
 	info.difficulty = zod_bot_difficulty;
+    for(int t=0;t<MAX_TEAM_TYPES;++t)info.team_difficulties.push_back(bot[t].Difficulty());
 	info.when = (long long)time(NULL);
 	ZSave_WriteInfo(w, info);
 
@@ -264,7 +265,7 @@ bool ZServer::LoadSavedGame(int player, int slot)
 	int count = r.Int();
 
 	vector<saved_object> objs;
-	bool good = r.Ok() && !map_blob.empty() && count >= 0 && count < 100000;
+	bool good = r.Ok() && (info.team_difficulties.empty()||info.team_difficulties.size()==MAX_TEAM_TYPES) && !map_blob.empty() && count >= 0 && count < 100000;
 	for(int i=0; good && i<count; i++)
 	{
 		saved_object s;
@@ -343,6 +344,8 @@ bool ZServer::LoadSavedGame(int player, int slot)
 	}
 
 	zod_bot_difficulty = info.difficulty;
+    bot_difficulty_settings=info.team_difficulties;if(bot_difficulty_settings.empty())bot_difficulty_settings.assign(MAX_TEAM_TYPES,info.difficulty);
+    for(int t=0;t<MAX_TEAM_TYPES;++t)bot[t].SetDifficulty(bot_difficulty_settings[t]);
 
 	//objects, with their original ref ids so saved orders still point at the
 	//right targets

@@ -13,6 +13,7 @@ const int widths[] = {64,80,112}, heights[] = {80,100,140};
 std::string directory() {
     const char *home=getenv("HOME");
     if(!home || !home[0]) home=getenv("USERPROFILE");
+    if(const char *profile=getenv("ZOD_PROFILE_DIR"))if(*profile)return std::string(profile)+"/skirmish";
     if(home && home[0]) return std::string(home)+"/.zod_skirmish";
     char *pref=SDL_GetPrefPath("zodengine","skirmish");
     std::string result=pref ? pref : ""; SDL_free(pref); return result;
@@ -75,12 +76,14 @@ SkirmishPreferences ZSkirmish_Load(int difficulty) {
     std::string path=root+"/setup.dat";
     if(!SDL_GetPathInfo(path.c_str(),&info) || info.size>4096) return result;
     ZSaveReader reader;
-    if(!reader.ReadFile(path) || reader.Str()!="ZODSKIRMISH1") return defaults;
+    if(!reader.ReadFile(path)) return defaults;
+    auto version=reader.Str();if(version!="ZODSKIRMISH1"&&version!="ZODSKIRMISH2")return defaults;
     result.map=reader.Str(); result.random_mode=reader.Int()!=0;
     result.match.human_team=reader.Int(); result.match.difficulty=reader.Int(); result.match.game_speed=reader.Double();
     result.bots=(std::uint32_t)reader.Int(); result.random.seed=(std::uint32_t)reader.Int();
     result.random.players=reader.Int(); result.random.size=reader.Int(); result.random.terrain=reader.Int();
     result.random.tech=reader.Int(); result.random.vehicles=reader.Int();
+    if(version=="ZODSKIRMISH2") {for(int t=0;t<MAX_TEAM_TYPES;++t){int d=reader.Int();if(d<0||d>3)return defaults;result.match.team_difficulties.push_back(d);}}
     bool speed=result.match.game_speed==0.5 || result.match.game_speed==1 || result.match.game_speed==1.5 || result.match.game_speed==2;
     if(!reader.Ok() || !valid_name(result.map) || result.map.find(':')!=std::string::npos || !valid_recipe(result.random)
        || result.match.human_team<1 || result.match.human_team>=MAX_TEAM_TYPES || result.match.difficulty<0 || result.match.difficulty>3 || !speed) return defaults;
@@ -91,9 +94,10 @@ SkirmishPreferences ZSkirmish_Load(int difficulty) {
 bool ZSkirmish_Save(const SkirmishPreferences &p) {
     std::string root=directory(); if(root.empty() || !SDL_CreateDirectory(root.c_str())) return false;
     ZSaveWriter writer;
-    writer.Str("ZODSKIRMISH1"); writer.Str(p.map); writer.Int(p.random_mode ? 1 : 0);
+    writer.Str("ZODSKIRMISH2"); writer.Str(p.map); writer.Int(p.random_mode ? 1 : 0);
     writer.Int(p.match.human_team); writer.Int(p.match.difficulty); writer.Double(p.match.game_speed);
     writer.Int((int)p.bots); writer.Int((int)p.random.seed); writer.Int(p.random.players); writer.Int(p.random.size);
     writer.Int(p.random.terrain); writer.Int(p.random.tech); writer.Int(p.random.vehicles);
+    for(int t=0;t<MAX_TEAM_TYPES;++t)writer.Int(p.match.team_difficulties.size()==MAX_TEAM_TYPES?p.match.team_difficulties[t]:p.match.difficulty);
     return writer.WriteFile(root+"/setup.dat");
 }

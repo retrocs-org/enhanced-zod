@@ -1579,6 +1579,7 @@ void ZPlayer::Run()
 	double render_time;
 	double socket_time;
 
+    int launch_frames=0;bool launch_reported=false;
 	while(allow_run)
 	{
 		//whole_time = current_time();
@@ -1613,6 +1614,7 @@ void ZPlayer::Run()
 		ProcessFrontEndActions();
 
 		CheckAutosave();
+        ProcessSavePreviews();
 		
 		//do stuff
 		//process_time = current_time();
@@ -1622,6 +1624,7 @@ void ZPlayer::Run()
 		//render
 		//render_time = current_time();
 		RenderScreen();
+        if(SDL_getenv("ZOD_LAUNCH_CHECK")&&!launch_reported&&graphics_loaded&&zmap.Loaded()&&!object_list.empty()&&++launch_frames>=30){printf("launch-check: battle rendered, team=%d, objects=%zu\n",(int)our_team,object_list.size());fflush(stdout);launch_reported=true;}
 		//render_time = current_time() - render_time;
 
 		//whole_time = current_time() - whole_time;
@@ -5974,7 +5977,7 @@ void ZPlayer::ProcessFrontEndActions()
 				if(!client_socket.SendMessage(LOAD_MAP_FILE, a.text.c_str(), (int)a.text.size()+1))frontend.DeploymentFailed("No connection to the game server. Retry when connected.");
 			break;
 		case ZFrontEnd::FE_OPEN_SKIRMISH:
-			LoadMainMenu(GMM_GENERATE_MAP);
+            AttachMainMenu(new GMMMultiplayerCreate(nullptr,false,true));
 			break;
 		case ZFrontEnd::FE_OPEN_MULTIPLAYER:
 			LoadMainMenu(GMM_MULTIPLAYER);
@@ -6033,7 +6036,19 @@ void ZPlayer::SendSaveGame(int slot)
 	the_data.lost = match_units_lost;
 	the_data.elapsed = (int)MatchElapsed();
 	the_data.slot = slot;
+    if(slot>=0&&slot<=ZSAVE_USER_SLOTS&&(remote_address=="127.0.0.1"||remote_address=="localhost")){
+        auto pending=ZSave_Path(slot)+".preview.pending.png";
+        if(ZVideo_SaveScreenshot(pending.c_str())){pending_save_previews.erase(std::remove_if(pending_save_previews.begin(),pending_save_previews.end(),[&](const PendingSavePreview &p){return p.slot==slot;}),pending_save_previews.end());pending_save_previews.push_back({slot,the_data.elapsed,SDL_GetTicks(),ZSave_Fingerprint(slot)});}
+    }
 	client_socket.SendMessage(SAVE_GAME, (char*)&the_data, sizeof(save_game_packet));
+}
+
+void ZPlayer::ProcessSavePreviews(){
+ for(auto it=pending_save_previews.begin();it!=pending_save_previews.end();){
+  auto pending=ZSave_Path(it->slot)+".preview.pending.png";ZSaveInfo info;bool done=false;
+  if(ZSave_ReadInfo(it->slot,info)&&info.elapsed==it->elapsed){auto digest=ZSave_Fingerprint(it->slot);if(!digest.empty()&&digest!=it->previous){ZSave_CommitPreview(it->slot,pending,digest,ZBuild_ID());done=true;}}
+  if(done||SDL_GetTicks()-it->started>5000){SDL_RemovePath(pending.c_str());it=pending_save_previews.erase(it);}else ++it;
+ }
 }
 
 //The autosave slot: written shortly after a battle starts and then every few
