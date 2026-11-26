@@ -26,6 +26,7 @@ export ZOD_DB_SOCKET="$TASK_TMP/db.sock" ZOD_DB_NAME=zod_test ZOD_DB_USER=root Z
 "$PHP_BIN" "$ROOT/public-web/_app/bin/migrate.php"
 python3 "$ROOT/tests/network/php_api.py"
 if [ "$#" -eq 3 ]; then
+    mariadb --no-defaults --socket="$TASK_TMP/db.sock" -uroot zod_test -e "DELETE FROM rate_limits"
     python3 "$ROOT/tests/network/integration.py" "$PHP_BIN" "$1" "$2" "$3" "$ROOT"
 elif [ "$#" -ne 0 ]; then
     echo "Usage: run-local.sh [agent-binary engine-binary engine-regression-driver]" >&2

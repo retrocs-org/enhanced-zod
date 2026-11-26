@@ -16,3 +16,7 @@ foreach(FONT GeneralUser-GS.sf2 GeneralUser-GS-LICENSE.txt README.txt)
     file(COPY "${SOURCE}/soundfonts/${FONT}" DESTINATION "${DESTINATION}/soundfonts")
   endif()
 endforeach()
+
+if(EXISTS "${SOURCE}/portal-ca.crt")
+  file(COPY "${SOURCE}/portal-ca.crt" DESTINATION "${DESTINATION}")
+endif()

@@ -208,12 +208,26 @@ no longer a Go `zod-web` executable.
 
 ## Joining and statistics
 
-Sign in at `/account`, open `/servers`, and choose **Join**. The dialog issues a
-server-bound, single-use ticket that expires in two minutes. It gives macOS/Linux
-and Windows PowerShell commands; replace the executable path with your game path.
-The game sends the ticket, never your password, to the server. Accounts are
-case-insensitive; public names come from the account. One account may hold one
-verified connection per public server.
+In the native Multiplayer browser, choose **Online games**, select a server and
+join. The game opens the portal in your browser. Sign in, check the server and
+request code, and approve. The game receives a server-bound, single-use ticket
+and connects automatically. Passwords and website sessions stay in the browser;
+the device secret and two-minute join ticket remain in memory. Back/close cancels
+a pending request; requests expire after five minutes. Accounts are case-insensitive;
+public names come from the account. One account may hold one verified connection
+per public server. The website's manual ticket commands remain available.
+
+The default directory is `https://zodee.retrocs.org/index.php`. Set
+`ZOD_PORTAL_URL` to use another HTTPS portal. Local development alone may set
+`ZOD_PORTAL_DEV_HTTP=1` with a loopback HTTP URL. TLS verifies the certificate and
+hostname; redirects are rejected. Builds copy public system CA roots into
+`assets/portal-ca.crt` when available. `-DZOD_CA_BUNDLE=/path/to/ca.pem` selects a
+build-time bundle; `ZOD_PORTAL_CA_FILE` selects a runtime trust file. These files
+contain public trust roots and are generated packaging inputs, not game media.
+
+Hosting from the game stays local by default. `ZOD_ORCHESTRATOR=local` explicitly
+selects local games; an explicit `ZOD_ORCHESTRATOR=host:port` retains the legacy
+HTTP development service. It is separate from the HTTPS public portal.
 
 The server simulation records kills, unit losses and zone captures. Completed
 reports are atomically spooled and uploaded by the agent. The PHP API verifies

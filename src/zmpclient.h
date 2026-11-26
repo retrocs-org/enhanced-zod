@@ -19,7 +19,7 @@ struct MatchInfo
 	std::string host;
 	int port;
 	int players;
-	bool lan = false, started = false;
+	bool lan = false, started = false, portal = false;
     int ping_ms=-1;
     std::string region="Unspecified",game_mode="Skirmish";
 	int capacity;   //max humans = the map's player slots

@@ -83,7 +83,7 @@ public:
 		change_map = false;
 		change_map_number = -1;
 		join_match = false;
-		join_host.clear();
+		join_host.clear();join_ticket.clear();
 		join_port = -1;
 		join_team = -1;
 		start_match = false;
@@ -123,7 +123,7 @@ public:
 	bool change_map;
 	int change_map_number;
 	bool join_match;        //orchestrator: connect to a match server at join_host:join_port
-	string join_host;
+	string join_host,join_ticket;
 	int join_port;
 	int join_team;
     bool leave_match;

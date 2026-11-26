@@ -11,6 +11,7 @@
 #include "zplayer.h"
 #include "zsavegame.h"
 #include "zmpclient.h"
+#include "zportal.h"
 #include "zserver_bookmarks.h"
 #include "gmm_multiplayer_create.h"
 #include "zprefs.h"
@@ -1126,6 +1127,20 @@ public:
 
 class ZLANRegression {
 public:
+    static void portal_join(int port,const string &approvalFile,const string &expected){
+        REQUIRE(SDL_Init(SDL_INIT_VIDEO));ZMap::ServerInit();auto player=std::make_unique<ZPlayer>();auto &p=*player;
+        p.LoadMainMenu(GMM_MULTIPLAYER);auto *menu=dynamic_cast<GMMMultiplayer*>(p.gui_menu_list.front());REQUIRE(menu);menu->open_approval=false;
+        MatchInfo server;server.id="test";server.name="Portal test";server.host="127.0.0.1";server.port=port;server.portal=true;menu->QueueJoin(server);
+        auto deadline=SDL_GetTicks()+30000;bool wrote=false;
+        while(!p.zmap.Loaded()&&SDL_GetTicks()<deadline){
+            p.ProcessSocketEvents();p.ehandler.ProcessEvents();p.ProcessGame();
+            if(!wrote&&!p.gui_menu_list.empty())if(auto *browser=dynamic_cast<GMMMultiplayer*>(p.gui_menu_list.front()))if(!browser->auth_url.empty()){std::ofstream out(approvalFile);out<<browser->auth_url;wrote=true;}
+            SDL_Delay(5);
+        }
+        REQUIRE(wrote&&p.zmap.Loaded());bool named=false;for(const auto &entry:p.player_info)if(entry.p_id==p.p_id)named=entry.name==expected;
+        REQUIRE(named);player.reset();SDL_Quit();std::cout<<"native-portal-join-ok";
+    }
+
     static void browser(const string &image = "") {
         REQUIRE(SDL_Init(SDL_INIT_VIDEO));
         GMMMultiplayer menu;
@@ -1329,6 +1344,8 @@ int main(int argc, char **argv) {
         }
         else if(std::string(argv[1]) == "dial") { REQUIRE(argc==4); dial_server(argv[2],atoi(argv[3])); }
         else if(std::string(argv[1]) == "browser") ZLANRegression::browser(argc>2 ? argv[2] : "");
+        else if(std::string(argv[1]) == "portal-join"){REQUIRE(argc==5);ZLANRegression::portal_join(atoi(argv[2]),argv[3],argv[4]);}
+        else if(std::string(argv[1]) == "portal-request") {REQUIRE(argc==3||argc==4);auto response=ZPortal_Request(argv[2],argc==4?argv[3]:"");if(!response.ok){std::cerr<<response.error;return 2;}std::cout<<response.status<<"\n"<<response.body;}
         else if(std::string(argv[1]) == "list-online") {
             vector<MatchInfo> matches; REQUIRE(ZMP_ListMatches(matches));
             std::cout<<"[";bool comma=false;for(const auto &m:matches){if(comma)std::cout<<",";comma=true;std::cout<<"{\"id\":"<<std::quoted(m.id)<<",\"started\":"<<(m.started?"true":"false")<<"}";}std::cout<<"]";

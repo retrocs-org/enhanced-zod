@@ -109,13 +109,14 @@ void ZPlayer::lobby_countdown_event(ZPlayer *p,char *data,int size,int)
 void ZPlayer::cloud_required_event(ZPlayer *p,char *data,int size,int)
 {
     int required=0;if(size!=sizeof(required)||!data)return;memcpy(&required,data,size);if(required!=0 && required!=1)return;
-    p->managed_dedicated=true;p->public_remote_session=required==1;if(required==0)return;
-    const char *ticket=getenv("ZOD_JOIN_TICKET");
+    p->managed_dedicated=true;p->public_remote_session=required==1;if(required==0){p->cloud_join_ticket.clear();return;}
+    std::string approved=std::move(p->cloud_join_ticket);p->cloud_join_ticket.clear();
+    const char *ticket=approved.empty()?getenv("ZOD_JOIN_TICKET"):approved.c_str();
     if(ticket && strlen(ticket)==64) p->client_socket.SendMessage(CLOUD_TICKET,ticket,65);
     else {
-        p->cloud_disconnect_reason="Cloud account required. Get a join ticket from the Zod website.";
+        p->cloud_disconnect_reason="Cloud account required. Join this server through Online games to approve it in your browser.";
         p->AddNewsEntry(p->cloud_disconnect_reason);
-        for(auto *menu:p->gui_menu_list) if(auto *lobby=dynamic_cast<GMMLobby*>(menu)) lobby->SetError("Cloud login required. Get a join ticket from the Zod website.");
+        for(auto *menu:p->gui_menu_list) if(auto *lobby=dynamic_cast<GMMLobby*>(menu)) lobby->SetError("Cloud login required. Join this server through Online games to approve it in your browser.");
     }
 }
 void ZPlayer::cloud_result_event(ZPlayer *p,char *data,int size,int)
@@ -123,7 +124,7 @@ void ZPlayer::cloud_result_event(ZPlayer *p,char *data,int size,int)
     int success=0;if(size!=sizeof(success)||!data)return;memcpy(&success,data,size);
     if(success==1) p->ProcessConnect();
     else {
-        p->cloud_disconnect_reason="Cloud login failed. Get a fresh ticket from the Zod website.";
+        p->cloud_disconnect_reason="Cloud login failed. Select the server in Online games for a fresh browser approval.";
         p->AddNewsEntry(p->cloud_disconnect_reason);
         for(auto *menu:p->gui_menu_list) if(auto *lobby=dynamic_cast<GMMLobby*>(menu)) lobby->SetError(p->cloud_disconnect_reason);
     }

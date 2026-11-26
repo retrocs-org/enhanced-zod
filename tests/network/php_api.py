@@ -244,4 +244,31 @@ class PHPBackend(unittest.TestCase):
         self.assertEqual(status,429);self.assertIn(b'reviewed',body)
 
 
+    def test_08_native_browser_approval_scope_cancellation_and_single_use(self):
+        sql('DELETE FROM rate_limits')
+        api('/api/servers/heartbeat',{'name':'Approval server','host':'127.0.0.1','port':2137,'map':'approval.map','players':0,'capacity':2,'started':False,'version':'0.7.0'},self.key)
+        login=api('/api/login',{'username':'ApiCommander','password':'a different test password'})['session']
+        started=api('/api/connect/start',{'server':'api-one'})
+        self.assertEqual(len(started['device']),64);self.assertEqual(len(started['user_code']),12)
+        self.assertEqual(api('/api/connect/poll',{'device':started['device']})['state'],'pending')
+        self.assertEqual(request('/connect?code='+started['user_code'])[0],200)
+        # Only a signed-in browser with CSRF can approve; tokens never enter URLs.
+        denied=request('/connect/approve',raw=urllib.parse.urlencode({'code':started['user_code']}).encode(),headers={'Content-Type':'application/x-www-form-urlencoded'})
+        self.assertEqual(denied[0],403)
+        _,page,_=request('/connect?code='+started['user_code'],token=login)
+        csrf=re.search(rb'name="csrf" value="([a-f0-9]+)"',page).group(1).decode()
+        status,body,_=request('/connect/approve',token=login,raw=urllib.parse.urlencode({'code':started['user_code'],'csrf':csrf}).encode(),headers={'Content-Type':'application/x-www-form-urlencoded','Cookie':'zod_csrf='+csrf})
+        self.assertEqual(status,200,body);self.assertIn(b'Connection approved',body)
+        sql('UPDATE native_connections SET last_poll=NULL')
+        approved=api('/api/connect/poll',{'device':started['device']});self.assertEqual(approved['state'],'approved');self.assertEqual(approved['server'],'api-one')
+        api('/api/tickets/redeem',{'ticket':approved['ticket']},'c'*64,expected=401)
+        claim=api('/api/tickets/redeem',{'ticket':approved['ticket']},self.key);self.assertEqual(claim['username'],'ApiCommander')
+        api('/api/connect/poll',{'device':started['device']},expected=401)
+        api('/api/tickets/redeem',{'ticket':approved['ticket']},self.key,expected=401)
+        pending=api('/api/connect/start',{'server':'api-one'})
+        api('/api/connect/cancel',{'device':pending['device']});api('/api/connect/poll',{'device':pending['device']},expected=401)
+        expired=api('/api/connect/start',{'server':'api-one'});sql('UPDATE native_connections SET expires_at=UTC_TIMESTAMP()-INTERVAL 1 SECOND')
+        api('/api/connect/poll',{'device':expired['device']},expected=401)
+        self.assertNotIn(started['device'],str(sql('SELECT * FROM native_connections')))
+
 if __name__=='__main__':unittest.main()

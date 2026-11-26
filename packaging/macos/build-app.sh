@@ -21,7 +21,7 @@ if [ "$(uname -m)" = "arm64" ] && [ "$(brew --prefix)" != "/opt/homebrew" ]; the
 	echo "         the app would be built for Intel and run under Rosetta." >&2
 fi
 
-DEPS="cmake pkg-config sdl3 sdl3_image sdl3_mixer sdl3_ttf ffmpeg fluidsynth"
+DEPS="cmake pkg-config curl sdl3 sdl3_image sdl3_mixer sdl3_ttf ffmpeg fluidsynth"
 MISSING=""
 for d in $DEPS; do brew list --formula "$d" >/dev/null 2>&1 || MISSING="$MISSING $d"; done
 if [ -n "$MISSING" ]; then

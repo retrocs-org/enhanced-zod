@@ -3,14 +3,16 @@
 #include "zgui_main_menu_base.h"
 #include "zmpclient.h"
 #include "zmp_async.h"
+#include "zportal.h"
 class GMMMultiplayer : public ZGuiMainMenuBase
 {
 public:
     GMMMultiplayer();
     void Process() override;
     bool KeyPress(int c) override;
-    bool UnClick(int px,int py) override { return joining && WithinDimensions(px,py) ? true : ZGuiMainMenuBase::UnClick(px,py); }
+    bool UnClick(int px,int py) override { return ZGuiMainMenuBase::UnClick(px,py); }
     void SetError(const string &error);
+    ~GMMMultiplayer();
 private:
     friend class ZLANRegression;
     GMMWList match_list;
@@ -26,8 +28,12 @@ private:
     bool lan_mode=true, joining=false, sticky_error=false;
     int join_delay=0;
     MatchInfo requested;
-    struct RefreshResult { bool ok=false; vector<MatchInfo> matches,discovered; string error; };
+    struct RefreshResult { bool ok=false; vector<MatchInfo> matches; string error; };
     ZMPAsync<RefreshResult> refresh_task;
+    ZMPAsync<ZPortalResponse> auth_begin,auth_poll;
+    bool open_approval=true;
+    string auth_device,auth_url;Uint64 auth_poll_at=0,auth_deadline=0;
+    void CancelAuthorization();void PollAuthorization();
     void SetupLayout1();
     void ApplyRefresh(const RefreshResult &result);
     void HandleWidgetEvent(int type,ZGMMWidget *widget) override;

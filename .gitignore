@@ -117,3 +117,6 @@ __pycache__/
 *.zreplay
 *.zreplay.part
 *.prefab
+
+# Generated public TLS trust bundle; copied from the build OS, never committed.
+/assets/portal-ca.crt

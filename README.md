@@ -112,24 +112,24 @@ ctest --test-dir build --output-on-failure
 ## Build & run
 
 Dependencies: a C++ compiler, CMake, pkg-config, and **SDL3** with the image,
-mixer, and ttf extensions. Note that the audio uses SDL3_mixer's new track-based
+mixer, and ttf extensions, plus **libcurl ≥ 7.62** for HTTPS portal access. Note that the audio uses SDL3_mixer's new track-based
 `MIX_` API, which needs **SDL3_mixer ≥ 3.2.4**. CMake checks that minimum;
 use matching SDL3 development packages.
 
 **macOS (Homebrew):**
 ```sh
-brew install cmake pkg-config sdl3 sdl3_image sdl3_mixer sdl3_ttf
+brew install cmake pkg-config curl sdl3 sdl3_image sdl3_mixer sdl3_ttf
 ```
 
 **Windows (MSYS2 / MinGW):**
 ```sh
 pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja \
   mingw-w64-x86_64-pkgconf mingw-w64-x86_64-sdl3 mingw-w64-x86_64-sdl3-image \
-  mingw-w64-x86_64-sdl3-mixer mingw-w64-x86_64-sdl3-ttf
+  mingw-w64-x86_64-sdl3-mixer mingw-w64-x86_64-sdl3-ttf mingw-w64-x86_64-curl
 ```
 
 **Linux:** install the SDL3, SDL3_image, SDL3_mixer and SDL3_ttf development
-packages supplied by your distribution. If its mixer package is older than the
+packages and libcurl development headers supplied by your distribution. If its mixer package is older than the
 required API, build the supported SDL3_mixer version from source. Builds and tests currently run locally; runner automation will be added later.
 
 Then:

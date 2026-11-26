@@ -10,6 +10,11 @@ are retained below; new website changes belong in that separate log.
 
 ## Unreleased
 
+### Native HTTPS public games
+
+- Discover public servers through the HTTPS portal and approve a join in the browser; the game connects automatically with a one-use ticket held in memory.
+- Keep local hosting independent and verify portal certificates and hostnames. Package public CA roots where available.
+
 ### Multiplayer browser and lobby improvements
 
 - Search and filter servers by map/name/mode, region, measured TCP latency,

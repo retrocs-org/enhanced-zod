@@ -17,10 +17,13 @@ try {
         if (!in_array($method,['GET','HEAD'],true)) require_origin();
         $route=$method.' '.$path;
         $result=match($route) {
-            'GET /healthz'=>['ok'=>(int)query('SELECT MAX(version) FROM schema_migrations')->fetchColumn()>=2],
+            'GET /healthz'=>['ok'=>(int)query('SELECT MAX(version) FROM schema_migrations')->fetchColumn()>=3],
             'POST /api/accounts'=>$service->register(json_input()),
             'POST /api/login'=>$service->login(json_input()),
             'POST /api/logout'=>$service->logout(),
+            'POST /api/connect/start'=>$service->startNativeConnect(json_input()),
+            'POST /api/connect/poll'=>$service->pollNativeConnect(json_input()),
+            'POST /api/connect/cancel'=>$service->cancelNativeConnect(json_input()),
             'GET /api/community'=>$service->community(),
             'POST /api/community'=>$service->contact(json_input()),
             'GET /api/account/privacy'=>$service->preferences(),
@@ -45,6 +48,10 @@ try {
         };
         json_response($result,$route==='POST /api/accounts'?201:200);
     }
+    if($method==='POST'&&$path==='/connect/approve'){
+        require_csrf();$data=$_POST;unset($data['csrf']);$service->approveNativeConnect($data);
+        require_once __DIR__.'/_app/src/views.php';page_header('connect',$service->currentAccount());echo '<section class="shell section"><h1>Connection approved</h1><p>Return to your game. It will receive a one-use ticket and connect automatically.</p></section>';page_footer();exit;
+    }
     if($method==='GET'&&preg_match('~^/creations/(image|download)/([a-f0-9]{64})$~',$path,$asset))$service->creationFile($asset[2],$asset[1]==='image');
     if($method==='POST'&&$path==='/creations/submit'){
         require_csrf();$data=$_POST;unset($data['csrf']);$result=$service->submitCreation($data,$_FILES);
@@ -52,7 +59,7 @@ try {
     }
     if ($method==='POST' && str_starts_with($path,'/account/')) {
         require_csrf();
-        $data=$_POST;unset($data['csrf']);
+        $data=$_POST;unset($data['csrf']);$returnCode=$data['return_to']??'';unset($data['return_to']);
         switch($path) {
             case '/account/privacy':$data['allow_requests']=isset($data['allow_requests']);$data['show_online']=isset($data['show_online']);$service->setPreferences($data);$message='Privacy updated.';break;
             case '/account/contact':$service->contact($data);$message='Community settings updated.';break;
@@ -67,6 +74,7 @@ try {
             case '/account/password':$service->changePassword($data);$message='Password updated. Other website sessions are signed out.';break;
             default:fail(404,'Page not found.');
         }
+        if(preg_match('/\A[A-F0-9]{12}\z/D',is_string($returnCode)?$returnCode:'')){header('Location: '.route_url($path==='/account/login'?'/connect':'/account').'?'.($path==='/account/login'?'code=':'connect=').$returnCode,true,303);exit;}
         header('Location: '.route_url($path==='/account/contact'?'/community':'/account').'?message='.rawurlencode($message),true,303);exit;
     }
     if ($method!=='GET' && $method!=='HEAD') fail(405,'Method not allowed.');
@@ -74,7 +82,7 @@ try {
     render_page($path,$service);
 } catch(ApiError $e) {
     if ($api) json_response(['error'=>$e->getMessage()],$e->status);
-    if ($method==='POST' && str_starts_with($path,'/account/')) {header('Location: '.route_url($path==='/account/contact'?'/community':'/account').'?error='.rawurlencode($e->getMessage()),true,303);exit;}
+    if ($method==='POST' && str_starts_with($path,'/account/')) {header('Location: '.route_url($path==='/account/contact'?'/community':'/account').'?error='.rawurlencode($e->getMessage()).(isset($returnCode)&&is_string($returnCode)&&preg_match('/\A[A-F0-9]{12}\z/D',$returnCode)?'&connect='.$returnCode:''),true,303);exit;}
     http_response_code($e->status);require_once __DIR__.'/_app/src/views.php';render_error($e->status,$e->getMessage());
 } catch(Throwable $e) {
     error_log('Zod web request failed: '.$e::class.' ['.$e->getCode().']');

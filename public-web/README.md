@@ -37,6 +37,10 @@ can use `https://zodee.retrocs.org/index.php` as their hub URL without rewrites.
 ## Community features and database upgrade
 
 Run `php _app/bin/migrate.php` from the installed document root after updating.
+Migration 003 adds expiring browser-approved native game connections. Apply all
+migrations before using the updated native browser. Production verification was
+not performed as part of this change.
+
 Migration 002 adds opt-in friends/presence, invitations, blocking, profile privacy,
 one-use recovery codes and versioned community creations. Existing accounts keep
 public profiles, with friend requests and presence sharing disabled by default.

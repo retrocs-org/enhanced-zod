@@ -16,6 +16,22 @@ endif()
 find_package(PkgConfig REQUIRED)
 find_package(Threads REQUIRED)
 find_package(ZLIB REQUIRED)
+find_package(CURL 7.62 REQUIRED)
+# Package public CA roots separately from the build machine's absolute trust path.
+set(ZOD_CA_BUNDLE "" CACHE FILEPATH "Public CA trust bundle for portable HTTPS")
+if(NOT ZOD_CA_BUNDLE)
+  find_file(ZOD_SYSTEM_CA NAMES cert.pem ca-certificates.crt ca-bundle.crt
+    PATHS /etc/ssl /etc/ssl/certs /etc/pki/tls/certs
+      /opt/homebrew/etc/ca-certificates C:/msys64/mingw64/etc/ssl/certs)
+  if(ZOD_SYSTEM_CA)
+    set(ZOD_CA_BUNDLE "${ZOD_SYSTEM_CA}")
+  endif()
+endif()
+if(ZOD_CA_BUNDLE)
+  configure_file("${ZOD_CA_BUNDLE}" "${CMAKE_CURRENT_SOURCE_DIR}/assets/portal-ca.crt" COPYONLY)
+else()
+  message(WARNING "No portable public CA bundle found; HTTPS uses libcurl's native trust store. Set ZOD_CA_BUNDLE for OpenSSL-based portable packages.")
+endif()
 link_libraries(ZLIB::ZLIB)
 link_libraries(Threads::Threads)
 pkg_check_modules(SDL2       REQUIRED IMPORTED_TARGET sdl3)
@@ -69,6 +85,7 @@ message(STATUS "zod version: ${ZOD_VERSION}")
 set(ZOD_ENGINE_SRCS ${ZOD_SRCS})
 list(REMOVE_ITEM ZOD_ENGINE_SRCS "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp")
 add_library(zod_engine OBJECT ${ZOD_ENGINE_SRCS})
+target_link_libraries(zod_engine PUBLIC CURL::libcurl)
 add_executable(zod src/main.cpp)
 set_target_properties(zod PROPERTIES OUTPUT_NAME "zod-enhanced")
 target_link_libraries(zod PRIVATE zod_engine)
@@ -99,6 +116,10 @@ endif()
 # Standalone random skirmish map generator — no engine code, no SDL; writes
 # .map files the game loads like any hand-made map.
 add_executable(zod_mapgen src/map_gen.cpp src/map_gen_main.cpp)
+if(Python3_Interpreter_FOUND)
+  add_test(NAME zod_portal_tls COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/portal_tls_test.py" "$<TARGET_FILE:zod_engine_regressions>")
+  set_tests_properties(zod_portal_tls PROPERTIES TIMEOUT 45)
+endif()
 
 # Map editor: the engine's own editor, sharing all of the game's map / object
 # code (everything except the game's main()). macOS and Linux only for now;

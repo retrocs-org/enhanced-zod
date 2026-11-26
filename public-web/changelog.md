@@ -6,6 +6,11 @@ repository changes, not an announcement that the live website has been updated.
 
 ## Unreleased
 
+### Native connection approval
+
+- Migration 003 adds expiring device requests with explicit signed-in browser approval and single-use ticket delivery to the native game.
+- Password changes/recovery revoke approved pending requests; cleanup removes expired requests.
+
 ### Added
 
 - Opt-in friends, recent portal presence, server invitations and blocking.

@@ -4,9 +4,10 @@ if (!defined('ZODEE_INTERNAL') && PHP_SAPI !== 'cli') { http_response_code(404);
 require_once __DIR__ . '/bootstrap.php';
 require_once __DIR__ . '/community_service.php';
 require_once __DIR__ . '/content_service.php';
+require_once __DIR__ . '/native_connect.php';
 
 final class ZodService {
-    use CommunityService,ContentService;
+    use CommunityService,ContentService,NativeConnectService;
     public function currentAccount(): ?array {
         return query('SELECT a.id,a.username,a.created_at FROM sessions s JOIN accounts a ON a.id=s.account_id WHERE s.token_hash=? AND s.expires_at>UTC_TIMESTAMP(6)', [token_hash(session_token())])->fetch() ?: null;
     }
@@ -67,6 +68,7 @@ final class ZodService {
             $row=query('SELECT * FROM accounts WHERE id=? FOR UPDATE',[$me['id']])->fetch();
             if (!$this->verifies($current,$row)) fail(401,'Your current password is incorrect.');
             query("UPDATE accounts SET password_hash=?,password_scheme='argon2id',legacy_salt=NULL WHERE id=?",[$this->hashPassword($pass),$me['id']]);
+            query('DELETE FROM native_connections WHERE account_id=?',[$me['id']]);
             query('DELETE FROM sessions WHERE account_id=?',[$me['id']]);
             query('INSERT INTO sessions (token_hash,account_id,expires_at) VALUES (?,?,UTC_TIMESTAMP(6)+INTERVAL 1 DAY)',[token_hash($token),$me['id']]);
         });

@@ -318,7 +318,7 @@ void ZPlayer::ReturnToMenu()
 	OpenStartMenu();
 }
 
-void ZPlayer::JoinHostedMatch(const string &host, int port, int team, ZGuiMainMenuBase *menu)
+void ZPlayer::JoinHostedMatch(const string &host, int port, int team, ZGuiMainMenuBase *menu,string ticket)
 {
     if(!menu) return;
     if(join_task.Pending()) {
@@ -330,8 +330,8 @@ void ZPlayer::JoinHostedMatch(const string &host, int port, int team, ZGuiMainMe
     }
     int origin=menu->GetMenuType();
     std::uint64_t id=menu->GetInstanceId(); join_origin_id=id;
-    join_task.Start([host,port,team,origin,id]() {
-        PendingJoin result; result.host=host; result.port=port; result.team=team; result.origin=origin; result.menu_id=id;
+    join_task.Start([host,port,team,origin,id,ticket]() {
+        PendingJoin result; result.host=host; result.port=port; result.team=team; result.origin=origin; result.menu_id=id;result.ticket=ticket;
         try { if(ZNetCheckVersion(host,port,result.error)) result.connection=ZNetConnect(host,port,result.error); }
         catch(...) { result.error="Could not open connection. Please retry."; }
         return result;
@@ -365,6 +365,7 @@ bool ZPlayer::PollHostedJoin()
             lobby->SetError(retry ? "Reconnecting: attempt "+to_string(reconnect_attempt)+"/3 failed. Leave to cancel." : error);
         return false;
     }
+    cloud_join_ticket=std::move(result.ticket);
     bool resumed=reconnecting;reconnecting=false;
     hosted_remote_session=true;
     hosted_setup_available=false;
@@ -373,7 +374,7 @@ bool ZPlayer::PollHostedJoin()
             hosted_setup=setup->GetSetupPreferences(); hosted_setup_available=true;
         }
     // Replace the old session only after the new TCP connection succeeds.
-    lobby_countdown=-1; lobby_pause_confirmed=false; cloud_disconnect_reason.clear(); managed_dedicated=false; public_remote_session=false;
+    lobby_countdown=-1; lobby_pause_confirmed=false; cloud_disconnect_reason.clear(); managed_dedicated=false; public_remote_session=!cloud_join_ticket.empty();
     ReturnToMenu(); client_socket.ClearConnection(); player_info.clear(); p_id=-1; game_map_name.clear();
     if(result.team>=NULL_TEAM && result.team<MAX_TEAM_TYPES) SetDesiredTeam((team_type)result.team);
     if(zod_player_name.size()) SetPlayerName(zod_player_name);
@@ -1256,6 +1257,7 @@ void ZPlayer::ProcessDisconnect()
 	//is already released by ClientSocket::Process() before it fires DISCONNECT_EVENT,
 	//so there's nothing to close here - just reset client state. This is also the
 	//exact path a future "Leave Game / Disconnect" menu button will reuse.
+    cloud_join_ticket.clear();
     bool was_lobby=LobbyOpen(),was_deploying=frontend.Loading();
     bool recover=hosted_remote_session && !public_remote_session && cloud_disconnect_reason.empty() && !was_deploying;
     int port=client_socket.GetPort();int team=our_team;
@@ -1818,7 +1820,7 @@ void ZPlayer::ProcessGame()
                 string host = flags.join_host;
                 int port = flags.join_port, team = flags.join_team;
                 flags.join_match = false;
-                JoinHostedMatch(host, port, team, menu);
+                JoinHostedMatch(host, port, team, menu,std::move(flags.join_ticket));
                 return; //connecting destroys the old menus
             }
         }
@@ -4948,7 +4950,7 @@ bool ZPlayer::MainMenuAbsorbLUnClick()
 			{
                 string host = the_flags.join_host;
                 int port = the_flags.join_port, team = the_flags.join_team;
-                JoinHostedMatch(host, port, team, *i);
+                JoinHostedMatch(host, port, team, *i,std::move(the_flags.join_ticket));
 			}
 
 			return true;

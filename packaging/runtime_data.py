@@ -31,5 +31,7 @@ def copy_runtime(root, destination, website=False):
             for file in source.iterdir():
                 if file.suffix.lower() in {'.ttf','.sf2','.sf3'} and file.is_file():
                     target=destination/folder/file.name;target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(file,target)
+    if (root/'assets/portal-ca.crt').is_file():
+        target=destination/'assets/portal-ca.crt';target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(root/'assets/portal-ca.crt',target)
     if website and (root/'public-web/assets/heading.ttf').is_file():
         target=destination/'public-web/assets/heading.ttf';target.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(root/'public-web/assets/heading.ttf',target)

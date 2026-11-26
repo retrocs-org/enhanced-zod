@@ -36,7 +36,7 @@ FROM ubuntu:26.04 AS cppbuild
 ARG JOBS=4
 ARG ZOD_VERSION=docker
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      build-essential cmake pkg-config curl ca-certificates python3 \
+      build-essential cmake pkg-config curl libcurl4-openssl-dev ca-certificates python3 \
       libsdl3-dev libsdl3-image-dev libsdl3-ttf-dev \
  && rm -rf /var/lib/apt/lists/*
 # 26.04's libsdl3-mixer-dev (the new MIX_ API) hasn't reached the release pocket

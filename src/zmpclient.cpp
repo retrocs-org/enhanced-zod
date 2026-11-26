@@ -1,5 +1,7 @@
 #include "zperf.h"
 #include "zmpclient.h"
+#include "zportal.h"
+#include "zlan.h"
 #include "zhttp.h"
 #include "zlocalserver.h"
 
@@ -37,17 +39,13 @@
 
 using namespace std;
 
-// --- Local fallback -----------------------------------------------------------
-// The default orchestrator is a public server that may be gone. When it can't be
-// reached (and $ZOD_ORCHESTRATOR isn't set), Multiplayer still works on this
-// machine: maps come from the local maps/ folder and "Create Game" starts a
-// dedicated server (this same executable with -d) on a free port 2300-2399.
+// Public discovery uses the HTTPS portal. Hosting uses local maps and starts a
+// dedicated server on a free port unless a legacy orchestrator is explicit.
 // Other computers on the LAN can join it by address.
 static std::mutex g_local_mutex;
 static thread_local string g_last_error;
 string ZMP_LastError() { return g_last_error; }
 
-static bool g_orch_down = false;          //remember a failed lookup for this session
 static vector<MapMeta> g_local_maps;
 static bool g_local_maps_read = false;
 
@@ -386,10 +384,9 @@ static bool json_int(const string &obj, const string &key, int &out)
 
 static void orchestrator_target(string &host, int &port)
 {
-	// Default to the public PoC server so Multiplayer works out of the box.
-	// Override with ZOD_ORCHESTRATOR=host[:port] (e.g. 127.0.0.1:8080 for a local
-	// orchestrator).
-	host = "z.0f.ee";
+	// Only explicitly configured legacy orchestrators use this HTTP path.
+    // Public discovery uses ZPortal_Request; new local games stay local.
+	host = "127.0.0.1";
 	port = 8080;
 
 	const char *e = getenv("ZOD_ORCHESTRATOR");
@@ -405,6 +402,7 @@ static void orchestrator_target(string &host, int &port)
 string ZMP_OrchestratorAddress()
 {
 	if(local_mode_requested()) return "local hosting";
+    if(!orchestrator_overridden())return ZPortal_URL();
 	string h;
 	int p;
 	orchestrator_target(h, p);
@@ -419,24 +417,19 @@ bool ZMP_ListMatches(vector<MatchInfo> &out)
 	g_last_error.clear();
 	out.clear();
 
-	string host;
-	int port;
-	orchestrator_target(host, port);
-
-	if(local_mode_requested() || (g_orch_down && !orchestrator_overridden())) return local_list_matches(out);
-
-	ZHttpResponse r = ZHttp_Get(host, port, "/matches");
-	if(!r.ok || r.status != 200)
-	{
-		if(orchestrator_overridden()) return false;
-		g_orch_down = true;
-		return local_list_matches(out);
-	}
-
+    ZHttpResponse r{};bool portal=!local_mode_requested()&&!orchestrator_overridden();
+    if(portal){auto reply=ZPortal_Request("/api/servers");if(!reply.ok||reply.status!=200){g_last_error=reply.error.empty()?"Portal server listing unavailable (HTTP "+std::to_string(reply.status)+").":reply.error;return false;}r.ok=true;r.status=reply.status;r.body=reply.body;}
+    else {
+        if(local_mode_requested())return local_list_matches(out);
+        string host;int port;orchestrator_target(host,port);r=ZHttp_Get(host,port,"/matches");
+        if(!r.ok||r.status!=200){g_last_error="Configured match service is unavailable";return false;}
+    }
+    auto first=r.body.find_first_not_of(" \r\n\t"),last=r.body.find_last_not_of(" \r\n\t");
+    if(first==string::npos||r.body[first]!='['||r.body[last]!=']'){g_last_error="Portal returned an invalid server directory.";return false;}
 	vector<string> objs = json_split_array(r.body);
 	for(size_t i = 0; i < objs.size(); i++)
 	{
-		MatchInfo m;
+		MatchInfo m;m.portal=portal;
 		json_str(objs[i], "id", m.id);
 		json_str(objs[i], "name", m.name);
         json_str(objs[i], "region", m.region);json_str(objs[i], "game_mode", m.game_mode);
@@ -451,9 +444,11 @@ bool ZMP_ListMatches(vector<MatchInfo> &out)
             size_t value=colon==string::npos ? string::npos : objs[i].find_first_not_of(" \r\n\t",colon+1);
             if(value!=string::npos) m.started=objs[i].compare(value,4,"true")==0 || objs[i][value]=='1';
         }
-		out.push_back(m);
-	}
-	return true;
+        string validatedHost,error;int validatedPort;
+        if(!ZMP_ParseAddress(m.host+":"+to_string(m.port),validatedHost,validatedPort,error)||m.capacity<1||m.capacity>8||m.players<0||m.players>m.capacity){g_last_error="Portal returned an invalid server entry.";out.clear();return false;}
+        out.push_back(m);
+    }
+    return true;
 }
 
 bool ZMP_CreateMatch(const string &map, const vector<string> &bots, MatchInfo &out, const MatchOptions &options)
@@ -478,12 +473,12 @@ bool ZMP_CreateMatch(const string &map, const vector<string> &bots, MatchInfo &o
     body += "],\"human_team\":\"" + team_type_string[options.human_team] + "\",\"difficulty\":" + to_string(options.difficulty)
         + ",\"game_speed\":" + to_string(options.game_speed) + "}";
 
-	if(local_mode_requested() || (g_orch_down && !orchestrator_overridden())) return local_create_match(map, bots, out, options);
+	if(!orchestrator_overridden()) return local_create_match(map, bots, out, options);
 
     ZHttpResponse capabilities = ZHttp_Get(host, port, "/capabilities");
     int version = 0;
     if(!capabilities.ok || capabilities.status != 200 || !json_int(capabilities.body, "match_setup", version) || version < 1) {
-        if(!orchestrator_overridden()) { g_orch_down = true; return local_create_match(map, bots, out, options); }
+        if(!orchestrator_overridden()) { return local_create_match(map, bots, out, options); }
         g_last_error = "Server needs match setup support. Update it or use ZOD_ORCHESTRATOR=local";
         return false;
     }
@@ -496,7 +491,6 @@ bool ZMP_CreateMatch(const string &map, const vector<string> &bots, MatchInfo &o
             if(r.ok && json_str(r.body, "error", detail)) g_last_error = detail;
             return false;
         }
-		g_orch_down = true;
 		return local_create_match(map, bots, out, options);
 	}
 
@@ -511,6 +505,7 @@ bool ZMP_CreateMatch(const string &map, const vector<string> &bots, MatchInfo &o
 
 bool ZMP_Matchmake(MatchInfo &out)
 {
+    if(!orchestrator_overridden()){g_last_error="Select a public server in Multiplayer for browser approval.";return false;}
 	std::lock_guard<std::mutex> lock(g_local_mutex);
 	g_last_error.clear();
 	string host;
@@ -539,13 +534,12 @@ bool ZMP_ListMaps(vector<MapMeta> &out)
 	int port;
 	orchestrator_target(host, port);
 
-	if(local_mode_requested() || (g_orch_down && !orchestrator_overridden())) return local_list_maps(out);
+	if(!orchestrator_overridden()) return local_list_maps(out);
 
 	ZHttpResponse r = ZHttp_Get(host, port, "/maps");
 	if(!r.ok || r.status != 200)
 	{
 		if(orchestrator_overridden()) return false;
-		g_orch_down = true;
 		return local_list_maps(out);
 	}
 

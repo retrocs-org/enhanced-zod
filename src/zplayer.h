@@ -191,6 +191,7 @@ class ZPlayer : public ZClient
 		void BackFromMenu();
         void CloseMainMenus();		//#79
         friend class ZPlayerUIRegression;
+        friend class ZLANRegression;
         void ChooseMatchAction(int action);
         void AttachMainMenu(ZGuiMainMenuBase *menu);
         int MatchActionAt(int x, int y) const;
@@ -242,7 +243,7 @@ class ZPlayer : public ZClient
 		void RecenterLobby();
         int lobby_countdown=-1;
         bool lobby_pause_confirmed=false;
-        std::string cloud_disconnect_reason;
+        std::string cloud_disconnect_reason,cloud_join_ticket;
         bool managed_dedicated=false;
         static void cloud_required_event(ZPlayer *p,char *data,int size,int dummy);
         static void cloud_result_event(ZPlayer *p,char *data,int size,int dummy);
@@ -251,10 +252,10 @@ class ZPlayer : public ZClient
 		void RenderMainMenu();
 		void ProcessSocketEvents();
 		void ProcessGame();
-		void JoinHostedMatch(const string &host, int port, int team, ZGuiMainMenuBase *origin);
+		void JoinHostedMatch(const string &host, int port, int team, ZGuiMainMenuBase *origin,string ticket="");
         struct PendingJoin {
             std::shared_ptr<ZConnectedSocket> connection;
-            string host, error;
+            string host, error, ticket;
             int port = 0, team = -1, origin = GMM_MULTIPLAYER;
             std::uint64_t menu_id = 0;
         };
