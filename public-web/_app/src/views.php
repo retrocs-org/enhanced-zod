@@ -10,17 +10,60 @@ function number(mixed $n): string { return number_format((int)$n); }
 function duration(mixed $n): string { $n=(int)$n;return $n>=3600?sprintf('%dh %02dm',intdiv($n,3600),intdiv($n%3600,60)):sprintf('%dm %02ds',intdiv($n,60),$n%60); }
 function map_title(string $map): string { return str_replace('_',' ',preg_replace('/\.map$/','',basename($map))); }
 function stamp(string $date): string { return gmdate('d M Y · H:i',strtotime($date.' UTC')).' UTC'; }
+const WAR_ROOM_MENU = [
+    'Planetary Conquest' => [
+        'conquest' => ['/war-room/conquest/territory', 'Territory'],
+        'conquest-battles' => ['/war-room/conquest/battles', 'Battle history'],
+    ],
+    'Public Servers' => [
+        'servers' => ['/war-room/public-servers', 'Server Listing'],
+        'leaderboard' => ['/war-room/public-servers/leaderboards', 'Leaderboards'],
+        'match-history' => ['/war-room/public-servers/battles', 'Battle history'],
+        'statistics' => ['/war-room/public-servers/statistics', 'Statistics'],
+    ],
+];
+
+function war_room_page(string $active): bool {
+    return $active === 'network' || $active === 'profile' || isset(array_merge(...array_values(WAR_ROOM_MENU))[$active]);
+}
+
+function war_room_menu(string $active): void { ?>
+    <nav class="shell war-room-menu" aria-label="War Room sections">
+        <?php foreach (WAR_ROOM_MENU as $mode => $pages): ?>
+            <div>
+                <strong><?=e($mode)?></strong>
+                <ul>
+                    <?php foreach ($pages as $key => [$href, $label]): ?>
+                        <li><a href="<?=e($href)?>" <?=$active === $key ? 'aria-current="page"' : ''?>><?=e($label)?></a></li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        <?php endforeach; ?>
+    </nav>
+<?php }
+
 function page_header(string $active,?array $me=null): void {
     // Keep application links functional when the host ignores .htaccess routing.
     ob_start(function(string $html): string {
         return preg_replace_callback('~\b(href|action)="(/[^" ]*)"~', function(array $match): string {
             $path=$match[2];
             if ($path==='/' || str_starts_with($path,'/#') || str_starts_with($path,'/assets/') || str_starts_with($path,'/index.php') || str_starts_with($path,'//')) return $match[0];
-            return $match[1].'="'.route_url($path).'"';
+            $length = strcspn($path, '?#');
+            $page = substr($path, 0, $length);
+            $page = match ($page) {
+                '/network' => '/war-room',
+                '/conquest', '/war-room/conquest' => WAR_ROOM_MENU['Planetary Conquest']['conquest'][0],
+                '/servers' => WAR_ROOM_MENU['Public Servers']['servers'][0],
+                '/leaderboard' => WAR_ROOM_MENU['Public Servers']['leaderboard'][0],
+                '/match-history' => WAR_ROOM_MENU['Public Servers']['match-history'][0],
+                '/statistics' => WAR_ROOM_MENU['Public Servers']['statistics'][0],
+                default => $page,
+            };
+            return $match[1].'="'.route_url($page.substr($path, $length)).'"';
         },$html);
     });
-    $titles=['conquest'=>'Planetary Conquest','connect'=>'Connect your game','community'=>'Community','creations'=>'Creations','features'=>'Features','network'=>'The War Room','api-browser'=>'API browser','home'=>'A new front for a classic RTS','servers'=>'Server directory','leaderboard'=>'Leaderboards','statistics'=>'Community statistics','downloads'=>'Downloads','account'=>'Your account','guide'=>'Field guide','profile'=>'Player profile','credits'=>'Credits & project history'];
-    ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="zod-enhanced. A classic real-time strategy game, rebuilt for modern machines. Find servers, track your battles, and join the community."><meta name="theme-color" content="#1b2227"><title><?=e($titles[$active]??'zod-enhanced')?> — zod-enhanced</title><link rel="icon" type="image/svg+xml" href="/assets/favicon.svg?v=z-reliability-19"><link rel="stylesheet" href="/assets/site.css?v=z-war-room-1"><script src="/assets/site.js?v=z-reliability-19" defer></script></head><body data-api-prefix="<?=env_value('ZOD_CLEAN_URLS')==='1'?'':'/index.php'?>"><a class="skip-link" href="#main">Skip to content</a><header class="site-header"><div class="shell header-inner"><a class="brand" href="/" aria-label="zod-enhanced home"><span class="brand-mark">Z</span><span>zod-enhanced<span class="brand-sub">ZOD ENGINE ENHANCED</span></span></a><button class="nav-toggle" aria-expanded="false" aria-controls="main-nav">Menu <span>☰</span></button><nav id="main-nav" aria-label="Main navigation"><?php foreach(['home'=>'Overview','features'=>'Features','war-room'=>'The War Room','servers'=>'Servers','community'=>'Community','creations'=>'Creations','leaderboard'=>'Leaderboard','downloads'=>'Downloads'] as $key=>$label):?><a href="<?=$key==='home'?'/':'/'.$key?>" <?=$active===$key || ($active==='network' && $key==='war-room') ? 'aria-current="page"' : ($active==='conquest' && $key==='war-room' ? 'aria-current="location"' : '')?>><?=$label?></a><?php endforeach?></nav><?php if($me):?><a href="/my-servers" class="text-link">My servers</a><a href="/reports" class="text-link">Report</a><?php if((new ZodService())->isOperator()):?><a href="/admin" class="text-link">Moderate</a><?php endif;endif?><a class="account-link" href="/account"><span class="account-dot"></span><?=e($me['username']??'Sign in')?> <span aria-hidden="true">↗</span></a></div></header><main id="main" tabindex="-1">
+    $titles=['conquest'=>'Planetary Conquest Territory','conquest-battles'=>'Planetary Conquest Battle History','connect'=>'Connect your game','community'=>'Community','creations'=>'Creations','features'=>'Features','network'=>'The War Room','api-browser'=>'API browser','home'=>'A new front for a classic RTS','servers'=>'Server directory','leaderboard'=>'Leaderboards','statistics'=>'Community statistics','downloads'=>'Downloads','account'=>'Your account','guide'=>'Field guide','profile'=>'Player profile','credits'=>'Credits & project history'];
+    ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="description" content="zod-enhanced. A classic real-time strategy game, rebuilt for modern machines. Find servers, track your battles, and join the community."><meta name="theme-color" content="#1b2227"><title><?=e($titles[$active]??'zod-enhanced')?> — zod-enhanced</title><link rel="icon" type="image/svg+xml" href="/assets/favicon.svg?v=z-reliability-19"><link rel="stylesheet" href="/assets/site.css?v=z-war-room-2"><script src="/assets/site.js?v=z-reliability-19" defer></script></head><body data-api-prefix="<?=env_value('ZOD_CLEAN_URLS')==='1'?'':'/index.php'?>"><a class="skip-link" href="#main">Skip to content</a><header class="site-header"><div class="shell header-inner"><a class="brand" href="/" aria-label="zod-enhanced home"><span class="brand-mark">Z</span><span>zod-enhanced<span class="brand-sub">ZOD ENGINE ENHANCED</span></span></a><button class="nav-toggle" aria-expanded="false" aria-controls="main-nav">Menu <span>☰</span></button><nav id="main-nav" aria-label="Main navigation"><?php foreach(['home'=>'Overview','features'=>'Features','war-room'=>'The War Room','community'=>'Community','creations'=>'Creations','downloads'=>'Downloads'] as $key=>$label):?><a href="<?=$key==='home'?'/':'/'.$key?>" <?=$active===$key || ($active==='network' && $key==='war-room') ? 'aria-current="page"' : (war_room_page($active) && $key==='war-room' ? 'aria-current="location"' : '')?>><?=$label?></a><?php endforeach?></nav><?php if($me):?><a href="/my-servers" class="text-link">My servers</a><a href="/reports" class="text-link">Report</a><?php if((new ZodService())->isOperator()):?><a href="/admin" class="text-link">Moderate</a><?php endif;endif?><a class="account-link" href="/account"><span class="account-dot"></span><?=e($me['username']??'Sign in')?> <span aria-hidden="true">↗</span></a></div></header><main id="main" tabindex="-1">
     <?php
 }
 function page_footer(): void { ?>
@@ -52,10 +95,12 @@ function join_dialog(): void { ?><dialog id="join-dialog" aria-labelledby="join-
 function render_page(string $path,ZodService $service): void {
     $profile=null;
     if (preg_match('~\A/players/([A-Za-z][A-Za-z0-9_]{2,23})\z~',$path,$match)) {$profile=$service->profile($match[1]);if(!$profile)fail(404,'This commander was not found.');$active='profile';}
-    else {$active=match($path){'/'=>'home','/conquest','/war-room/conquest'=>'conquest','/features'=>'features','/network','/war-room'=>'network','/api'=>'api-browser','/api-browser'=>'api-browser','/servers'=>'servers','/leaderboard'=>'leaderboard','/statistics'=>'statistics','/downloads'=>'downloads','/account'=>'account','/community'=>'community','/creations'=>'creations','/server-presets'=>'server-presets','/match-history'=>'match-history','/server-console'=>'server-console','/server-rotation'=>'server-rotation','/my-servers'=>'my-servers','/server-auth'=>'server-auth','/admin'=>'admin','/reports'=>'reports','/connect'=>'connect','/guide'=>'guide','/credits'=>'credits',default=>fail(404,'This page was not found.')};}
-    $me = in_array($active, ['network','conquest'], true) && session_token() === '' ? null : $service->currentAccount();
+    else {$active=match($path){'/'=>'home','/conquest','/war-room/conquest',WAR_ROOM_MENU['Planetary Conquest']['conquest'][0]=>'conquest',WAR_ROOM_MENU['Planetary Conquest']['conquest-battles'][0]=>'conquest-battles','/features'=>'features','/network','/war-room'=>'network','/api'=>'api-browser','/api-browser'=>'api-browser','/servers',WAR_ROOM_MENU['Public Servers']['servers'][0]=>'servers','/leaderboard',WAR_ROOM_MENU['Public Servers']['leaderboard'][0]=>'leaderboard','/statistics',WAR_ROOM_MENU['Public Servers']['statistics'][0]=>'statistics','/downloads'=>'downloads','/account'=>'account','/community'=>'community','/creations'=>'creations','/server-presets'=>'server-presets','/match-history',WAR_ROOM_MENU['Public Servers']['match-history'][0]=>'match-history','/server-console'=>'server-console','/server-rotation'=>'server-rotation','/my-servers'=>'my-servers','/server-auth'=>'server-auth','/admin'=>'admin','/reports'=>'reports','/connect'=>'connect','/guide'=>'guide','/credits'=>'credits',default=>fail(404,'This page was not found.')};}
+    $me = in_array($active, ['network','conquest','conquest-battles','home'], true) && session_token() === '' ? null : $service->currentAccount();
     $token=csrf();page_header($active,$me);
+    if(war_room_page($active)) war_room_menu($active);
     if($active==='conquest')render_conquest();
+    elseif($active==='conquest-battles')render_conquest_battles();
     elseif($active==='server-presets')server_presets_page($service,$token);
     elseif($active==='match-history')match_history_page($service);
     elseif($active==='server-console')server_console_page($service,$token);
@@ -65,8 +110,7 @@ function render_page(string $path,ZodService $service): void {
     elseif($active==='admin')moderation_page($service,$token);
     elseif($active==='reports')report_page($service,$token);
     elseif ($active==='home') {
-        $servers=$service->servers();$totals=$service->totals();$players=array_sum(array_column($servers,'players'));
-        ?><section class="hero"><div class="shell hero-layout"><div class="hero-content"><div class="eyebrow"><span class="status-square"></span>CLASSIC RTS. MODERN MACHINES.</div><h1>Capture territory.<br><span>Command the battlefield.</span></h1><p>The real-time strategy you remember, rebuilt for today. Rally your robots, take the factories, and make every order count.</p><p class="small">A community fork of Zod Engine, the open-source remake of Z by The Bitmap Brothers. <a href="/credits">Meet the original creators</a></p><div class="button-row"><a class="button button-primary" href="/downloads">Get the game </a><a class="button button-ghost" href="/servers">Find a server </a></div><div class="platform-note"><span>WINDOWS</span><i></i><span>macOS</span><i></i><span>LINUX</span><span class="source-note">OPEN SOURCE / GPLv3</span></div></div></div></section><div class="shell live-strip"><div><span class="live-label"><i></i> NETWORK STATUS</span><strong><?=number(count($servers))?> <small>public servers</small></strong></div><div><span class="micro">ON THE FIELD</span><strong><?=number($players)?> <small>players online</small></strong></div><div><span class="micro">BATTLES RECORDED</span><strong><?=number($totals['matches'])?> <small>completed matches</small></strong></div><a href="/statistics" class="text-link">View network statistics</a></div><section class="shell section"><div class="section-heading"><div><span class="eyebrow">MULTIPLAYER / LIVE DIRECTORY</span><h2>Find your next battle.</h2></div><a class="text-link" href="/servers">All servers</a></div><div class="panel"><?php server_table(array_slice($servers,0,4));?></div><div class="section-note"><span class="tiny-square"></span>Public servers require a free Zod account. Private servers welcome guests.</div></section><section class="shell feature-preview"><div><span class="eyebrow">MORE WAYS TO PLAY &amp; CREATE</span><h2>A familiar game. Room to grow.</h2><p>Online multiplayer, a community server portal and expanded map and campaign editors for macOS, Windows and Linux.</p></div><a href="/features" class="button">Explore features</a></section><section class="shell section"><div class="section-heading"><div><span class="eyebrow">COMMANDER RECORDS</span><h2>Names on the board.</h2></div><a class="text-link" href="/leaderboard">Full leaderboard</a></div><div class="panel"><?php leaderboard_table($service->leaderboard(5));?></div></section><section class="shell callout"><div><span class="eyebrow">THE NEXT ORDER IS YOURS</span><h2>A classic worth commanding again.</h2><p>Start with a local battle. Bring your friends when you're ready.</p></div><a class="button button-primary" href="/downloads">Get started</a></section><?php
+        ?><section class="hero"><div class="shell hero-layout"><div class="hero-content"><div class="eyebrow"><span class="status-square"></span>CLASSIC RTS. MODERN MACHINES.</div><h1>Capture territory.<br><span>Command the battlefield.</span></h1><p>The real-time strategy you remember, rebuilt for today. Rally your robots, take the factories, and make every order count.</p><p class="small">A community fork of Zod Engine, the open-source remake of Z by The Bitmap Brothers. <a href="/credits">Meet the original creators</a></p><div class="button-row"><a class="button button-primary" href="/downloads">Get the game </a><a class="button button-ghost" href="/war-room">Enter The War Room</a></div><div class="platform-note"><span>WINDOWS</span><i></i><span>macOS</span><i></i><span>LINUX</span><span class="source-note">OPEN SOURCE / GPLv3</span></div></div></div></section><section class="shell feature-preview"><div><span class="eyebrow">MORE WAYS TO PLAY &amp; CREATE</span><h2>A familiar game. Room to grow.</h2><p>Online multiplayer, a community server portal and expanded map and campaign editors for macOS, Windows and Linux.</p></div><a href="/features" class="button">Explore features</a></section><section class="shell callout"><div><span class="eyebrow">THE NEXT ORDER IS YOURS</span><h2>A classic worth commanding again.</h2><p>Start with a local battle. Bring your friends when you're ready.</p></div><a class="button button-primary" href="/downloads">Get started</a></section><?php
     } elseif ($active==='features') {
         feature_section();
     } elseif ($active==='network') {

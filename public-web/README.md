@@ -120,8 +120,10 @@ Before serving this version, run `php _app/bin/migrate.php` from the installed d
 ## Planetary Conquest season map
 
 The War Room multiplayer hub is at `/index.php/war-room`. Its Planetary
-Conquest page is at `/index.php/war-room/conquest`. With clean URLs enabled,
-omit `/index.php`.
+Conquest Territory page is at `/index.php/war-room/conquest/territory` and
+Battle History is at `/index.php/war-room/conquest/battles`. Public Servers
+contains the server listing, leaderboards, public battle history, and
+statistics. With clean URLs enabled, omit `/index.php`.
 Set `ZOD_CONQUEST_SNAPSHOT` in the installed config to an absolute path to a
 JSON file outside the document root, readable by PHP. Publish updates by
 atomically replacing the file. The page shows the supplied timestamp and
@@ -151,3 +153,8 @@ format when season data becomes available:
 Each planet has one rectangular grid. Use `null` for gaps. Owners are `red`,
 `blue`, or `neutral`. A snapshot can contain up to eight planets, with up to
 12 rows and 12 columns per planet. Gaps do not count toward control percentages.
+
+For Battle History, add an optional top-level `battles` array with up to 200
+current-season records. Each record has `finished_at` (UTC ISO 8601), `planet`,
+`sector`, and `result` (`red`, `blue`, or `draw`). Publish the latest records
+in the snapshot. History is displayed newest first.

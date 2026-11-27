@@ -8,6 +8,12 @@ function conquest_name(mixed $name): bool {
     return is_string($name) && trim($name) !== '' && strlen($name) <= 100;
 }
 
+function conquest_timestamp(mixed $timestamp): bool {
+    if (!is_string($timestamp) || !preg_match('/\A\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\z/', $timestamp)) return false;
+    $date = DateTimeImmutable::createFromFormat('!Y-m-d\TH:i:s\Z', $timestamp, new DateTimeZone('UTC'));
+    return $date !== false && $date->format('Y-m-d\TH:i:s\Z') === $timestamp;
+}
+
 function conquest_snapshot(string $file): ?array {
     if ($file === '' || !is_file($file)) return null;
     $json = @file_get_contents($file, false, null, 0, 131073);
@@ -16,10 +22,8 @@ function conquest_snapshot(string $file): ?array {
     if (!is_array($season) || !conquest_name($season['season'] ?? null)) return null;
     $planetData = $season['planets'] ?? null;
     $updated = $season['updated_at'] ?? null;
-    if (!is_array($planetData) || !array_is_list($planetData) || count($planetData) < 1 || count($planetData) > 8 ||
-        !is_string($updated) || !preg_match('/\A\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ\z/D', $updated)) return null;
-    $date = DateTimeImmutable::createFromFormat('!Y-m-d\TH:i:s\Z', $updated, new DateTimeZone('UTC'));
-    if ($date === false || $date->format('Y-m-d\TH:i:s\Z') !== $updated) return null;
+    if (!is_array($planetData) || !array_is_list($planetData) || count($planetData) < 1 ||
+        count($planetData) > 8 || !conquest_timestamp($updated)) return null;
 
     $planets = [];
     foreach ($planetData as $planet) {
@@ -43,7 +47,8 @@ function conquest_snapshot(string $file): ?array {
         if (array_sum($counts) === 0) return null;
         $planets[] = ['name' => $planet['name'], 'rows' => $rows, 'counts' => $counts];
     }
-    return ['season' => $season['season'], 'updated_at' => $updated, 'planets' => $planets];
+    return ['season' => $season['season'], 'updated_at' => $updated, 'planets' => $planets,
+        'battles' => $season['battles'] ?? []];
 }
 
 function render_conquest(): void {
@@ -55,8 +60,7 @@ function render_conquest(): void {
     $seasonTotal = array_sum($seasonCounts);
     ?>
     <section class="shell section page-section conquest">
-        <p><a class="text-link" href="/war-room">← The War Room</a></p>
-        <h1>Planetary Conquest</h1>
+        <h1>Planetary Conquest Territory</h1>
         <?php if ($season === null): ?>
             <p>No season map is available. Season standings will appear when a snapshot is published.</p>
         <?php else: ?>
@@ -130,6 +134,47 @@ function render_conquest(): void {
             <p>Capturing the opposing capital ends the season. Otherwise, the faction
                 holding the most sectors at the deadline wins.</p>
         </section>
+    </section>
+    <?php
+}
+
+
+function render_conquest_battles(): void {
+    $season = conquest_snapshot(env_value('ZOD_CONQUEST_SNAPSHOT'));
+    $battles = $season['battles'] ?? [];
+    $results = ['red' => 'Red victory', 'blue' => 'Blue victory', 'draw' => 'Draw'];
+    $history = [];
+    if (is_array($battles) && array_is_list($battles)) {
+        foreach (array_slice($battles, 0, 200) as $battle) {
+            if (!is_array($battle) || !conquest_timestamp($battle['finished_at'] ?? null) ||
+                !conquest_name($battle['planet'] ?? null) || !conquest_name($battle['sector'] ?? null) ||
+                !is_string($battle['result'] ?? null) || !isset($results[$battle['result']])) continue;
+            $history[] = $battle;
+        }
+    }
+    usort($history, static fn(array $a, array $b): int => strcmp($b['finished_at'], $a['finished_at']));
+    ?>
+    <section class="shell section page-section">
+        <h1>Planetary Conquest Battle History</h1>
+        <?php if ($season !== null): ?><p><?=e($season['season'])?></p><?php endif; ?>
+        <?php if ($history === []): ?>
+            <p>No conquest battles have been published for the current season.</p>
+        <?php else: ?>
+            <div class="panel table-scroll">
+                <table>
+                    <thead><tr><th scope="col">Finished</th><th scope="col">Planet</th><th scope="col">Sector</th><th scope="col">Result</th></tr></thead>
+                    <tbody>
+                        <?php foreach ($history as $battle): ?>
+                            <tr>
+                                <td><time datetime="<?=e($battle['finished_at'])?>"><?=e(stamp($battle['finished_at']))?></time></td>
+                                <td><?=e($battle['planet'])?></td><td><?=e($battle['sector'])?></td>
+                                <td><?=e($results[$battle['result']])?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+        <?php endif; ?>
     </section>
     <?php
 }

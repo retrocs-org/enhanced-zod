@@ -101,3 +101,9 @@ code,dd{overflow-wrap:anywhere}nav[aria-label="Server dashboard sections"]{flex-
 .conquest-map .conquest-void{border:0;background:transparent}
 .war-room-mode{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1.5rem}
 .war-room-mode h2,.war-room-mode p{margin:0}
+
+.war-room-menu{display:flex;flex-wrap:wrap;gap:.75rem 2rem;margin-top:1rem;padding-block:.75rem;border-bottom:1px solid var(--line)}
+.war-room-menu strong{display:block}
+.war-room-menu ul{display:flex;flex-wrap:wrap;gap:.25rem 1rem;margin:.2rem 0 0;padding:0;list-style:none}
+.war-room-menu a{display:inline-block;padding:.2rem 0}
+.war-room-menu a:hover,.war-room-menu a[aria-current=page]{color:var(--accent);text-decoration:underline;text-underline-offset:.2em}
