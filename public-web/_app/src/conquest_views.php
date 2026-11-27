@@ -113,7 +113,7 @@ function conquest_control_bar(array $counts, bool $showPercentages = true): void
     $description = implode(', ', $labels);
     ?>
     <span class="conquest-control-bar" role="img" aria-label="<?=e($description)?>" title="<?=e($description)?>">
-        <svg viewBox="0 0 <?=$total?> 1" preserveAspectRatio="none" aria-hidden="true">
+        <svg class="conquest-control-proportions" viewBox="0 0 <?=$total?> 1" preserveAspectRatio="none" aria-hidden="true">
             <?php $offset = 0; foreach ($owners as $owner): ?>
                 <rect class="conquest-<?=$owner?>" x="<?=$offset?>" width="<?=$counts[$owner]?>" height="1">
                     <title><?=e(CONQUEST_OWNERS[$owner].' '.$percentages[$owner])?></title>
@@ -121,11 +121,18 @@ function conquest_control_bar(array $counts, bool $showPercentages = true): void
             <?php $offset += $counts[$owner]; endforeach; ?>
         </svg>
         <?php if ($showPercentages): ?>
-            <span class="conquest-control-percentages" aria-hidden="true">
-                <?php foreach ($owners as $owner): ?>
-                    <span class="conquest-<?=$owner?>"><?=$percentages[$owner]?></span>
-                <?php endforeach; ?>
-            </span>
+            <svg class="conquest-control-percentages" aria-hidden="true">
+                <?php
+                $minimum = 16;
+                $free = 100 - count($owners) * $minimum;
+                $offset = 0;
+                foreach ($owners as $owner):
+                    $width = $minimum + $free * $counts[$owner] / $total;
+                ?>
+                    <rect class="conquest-<?=$owner?>" x="<?=$offset?>%" width="<?=$width?>%" height="100%"/>
+                    <text x="<?=$offset + $width / 2?>%" y="50%"><?=$percentages[$owner]?></text>
+                <?php $offset += $width; endforeach; ?>
+            </svg>
         <?php endif; ?>
     </span>
     <?php
