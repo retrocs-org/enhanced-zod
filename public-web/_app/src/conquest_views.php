@@ -3,7 +3,7 @@ declare(strict_types=1);
 if (!defined('ZODEE_INTERNAL') && PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 
 const CONQUEST_BIOMES = ['desert' => 'Desert', 'volcanic' => 'Volcanic', 'arctic' => 'Arctic', 'jungle' => 'Jungle', 'city' => 'City'];
-const CONQUEST_OWNERS = ['red' => 'Red', 'blue' => 'Blue', 'neutral' => 'Unclaimed'];
+const CONQUEST_OWNERS = ['red' => 'Red', 'blue' => 'Blue', 'neutral' => 'Neutral'];
 
 function conquest_name(mixed $name): bool {
     return is_string($name) && trim($name) !== '' && strlen($name) <= 100;
@@ -116,7 +116,7 @@ function conquest_map_point(string $type, int $x, int $y): string {
         (30 + 114 * $y + ($type === 'vertical' ? 57 : 0) + $dy);
 }
 
-function render_conquest_map(array $planet, int $index): void {
+function render_conquest_map(array $planet): void {
     $width = count($planet['rows'][0]);
     $height = count($planet['rows']);
     ?>
@@ -145,15 +145,14 @@ function render_conquest_map(array $planet, int $index): void {
                     $cx = 112 + 160 * $x;
                     $cy = 87 + 114 * $y;
                     ?>
-                    <a class="conquest-<?=$sector['owner']?>" id="sector-<?=$index?>-<?=$y?>-<?=$x?>" href="#sector-<?=$index?>-<?=$y?>-<?=$x?>"
-                        aria-label="<?=e($description)?>">
+                    <g class="conquest-<?=$sector['owner']?>" role="img" aria-label="<?=e($description)?>">
                         <title><?=e($description)?></title>
                         <polygon class="conquest-region-shape" points="<?=$points?>"/>
                         <polygon class="conquest-region-contours" points="<?=$points?>"/>
                         <rect class="conquest-region-label" x="<?=$cx - 64?>" y="<?=$cy - 20?>" width="128" height="42" rx="5"/>
                         <text class="conquest-region-name" x="<?=$cx?>" y="<?=$cy - 2?>"><?=e($label)?></text>
                         <text class="conquest-region-owner" x="<?=$cx?>" y="<?=$cy + 14?>"><?=e($owner)?></text>
-                    </a>
+                    </g>
                 <?php endforeach; ?>
             <?php endforeach; ?>
         </svg>
@@ -219,7 +218,7 @@ function render_conquest(): void {
                             <li class="conquest-<?=$owner?>"><?=CONQUEST_OWNERS[$owner]?> <strong><?=number($selectedPlanet['counts'][$owner])?></strong></li>
                         <?php endforeach; ?>
                     </ul>
-                    <?php render_conquest_map($selectedPlanet, $selectedIndex); ?>
+                    <?php render_conquest_map($selectedPlanet); ?>
                 </section>
             <?php else: ?>
                 <p>Select a planet to see its territory map and sector owners.</p>

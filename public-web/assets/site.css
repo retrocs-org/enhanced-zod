@@ -115,14 +115,14 @@ code,dd{overflow-wrap:anywhere}nav[aria-label="Server dashboard sections"]{flex-
 .biome-arctic{--p-light:#d7f4ff;--p-mid:#74a4c0;--p-dark:#345377}
 .biome-jungle{--p-light:#9dcc72;--p-mid:#407c57;--p-dark:#1c4544}
 .biome-city{--p-light:#daccc2;--p-mid:#71788a;--p-dark:#3c405a}
-.conquest-selected-map{width:100%;max-width:54rem;margin:1.75rem auto 0}
-.conquest-map-score{display:flex;flex-wrap:wrap;justify-content:center;gap:.5rem;list-style:none;margin:0 0 .75rem;padding:0}
+.conquest{--conquest-map-width:54rem}
+.conquest-selected-map{width:100%;max-width:var(--conquest-map-width);margin:1.75rem 0 0}
+.conquest-map-score{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:.5rem;list-style:none;margin:0 0 .75rem;padding:0}
 .conquest-map-score li{border:1px solid var(--line);border-radius:.35rem;padding:.25rem .65rem;background:#17212a;color:var(--owner-color)}
 .conquest-map-score strong{margin-inline-start:.3rem}
 .conquest-region-map{margin:0;border:1px solid var(--line);border-radius:.45rem;background:linear-gradient(#b1ced217 1px,transparent 1px),linear-gradient(90deg,#b1ced217 1px,transparent 1px),radial-gradient(ellipse at 42% 42%,var(--p-dark,#202d42),#111b22 80%);background-size:2rem 2rem,2rem 2rem,100% 100%}
 .conquest-regions{display:block;width:100%;min-width:24rem;max-width:100%;margin:auto}
 .conquest-regions-dense{min-width:57rem}
-.conquest-regions a{cursor:pointer}
 .conquest-region-shape{fill:var(--sector-bg);stroke:#121d25;stroke-width:3;stroke-linejoin:round}
 .conquest-region-contours{fill:url(#conquest-contours);pointer-events:none}
 #conquest-contours path{fill:none;stroke:#fff;stroke-opacity:.16;stroke-width:1.3}
@@ -130,12 +130,12 @@ code,dd{overflow-wrap:anywhere}nav[aria-label="Server dashboard sections"]{flex-
 .conquest-regions text{text-anchor:middle;pointer-events:none}
 .conquest-region-name{fill:#fff;font-size:11px;font-weight:700}
 .conquest-region-owner{fill:var(--owner-color);font-size:10px}
-.conquest-regions a:hover .conquest-region-shape,.conquest-regions a:focus-visible .conquest-region-shape,.conquest-regions a:target .conquest-region-shape{stroke:var(--owner-color);stroke-width:4}
+.conquest-regions g:hover .conquest-region-shape{stroke:var(--owner-color);stroke-width:4}
 .conquest [id],#battle-history{scroll-margin-top:8rem}
 
-.conquest-atlas-season{justify-content:center;gap:.85rem 1.25rem;margin:1.5rem auto}
-.conquest-atlas-season li{width:clamp(7.75rem,20vw,10rem)}
-.conquest-atlas-season a{width:100%;height:100%;align-content:start;padding:.5rem;border-radius:.4rem}
+.conquest-atlas-season{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(7.75rem,100%),1fr));max-width:var(--conquest-map-width);gap:.85rem 1.25rem;margin:1.5rem 0}
+.conquest-atlas-season li{width:auto;min-width:0}
+.conquest-atlas-season a{width:100%;height:100%;align-content:start;padding-block:.5rem;border-radius:.4rem}
 .conquest-atlas-season .conquest-globe{width:clamp(6rem,16vw,8.25rem);transition:box-shadow .18s ease}
 .conquest-atlas-season a:is(:hover,:focus-visible) .conquest-globe{box-shadow:inset -.55rem -.65rem 1.2rem #080c16cc,0 0 1.35rem var(--p-light)}
 .conquest-atlas-season a[aria-current=true] .conquest-globe{box-shadow:inset -.55rem -.65rem 1.2rem #080c16cc,0 0 .95rem var(--accent),0 0 0 2px var(--accent)}
