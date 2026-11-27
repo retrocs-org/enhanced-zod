@@ -214,6 +214,11 @@ function render_conquest(): void {
             </nav>
             <?php if ($selectedPlanet !== null): ?>
                 <section class="conquest-planet conquest-selected-map" id="planet-map" aria-label="<?=e($selectedPlanet['name'])?> map">
+                    <ul class="conquest-map-score" aria-label="Territories by owner">
+                        <?php foreach (['red', 'blue', 'neutral'] as $owner): ?>
+                            <li class="conquest-<?=$owner?>"><?=CONQUEST_OWNERS[$owner]?> <strong><?=number($selectedPlanet['counts'][$owner])?></strong></li>
+                        <?php endforeach; ?>
+                    </ul>
                     <?php render_conquest_map($selectedPlanet, $selectedIndex); ?>
                 </section>
             <?php else: ?>
