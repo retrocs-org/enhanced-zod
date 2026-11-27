@@ -127,3 +127,9 @@ code,dd{overflow-wrap:anywhere}nav[aria-label="Server dashboard sections"]{flex-
 .conquest-globe-map a:hover,.conquest-globe-map a:focus-visible{z-index:1;background:var(--owner-color)}
 .conquest [id],#battle-history{scroll-margin-top:8rem}
 .conquest-map td:target{outline:2px solid var(--owner-color);outline-offset:-3px}
+
+.conquest-atlas-season li{width:10rem}
+.conquest-atlas-season a{width:100%;height:100%;align-content:start;padding:.75rem;border:1px solid var(--line);border-radius:.35rem;background:#202c34}
+.conquest-atlas-season a:hover,.conquest-atlas-season a[aria-current=true]{border-color:var(--accent)}
+.conquest-atlas-control{display:flex;flex-wrap:wrap;justify-content:center;gap:.15rem .65rem;font-size:.8rem}
+.conquest-atlas-control span{color:var(--owner-color)}

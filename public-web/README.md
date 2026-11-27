@@ -127,7 +127,8 @@ public battle history and statistics. With clean URLs enabled, omit
 Set `ZOD_CONQUEST_SNAPSHOT` in the installed config to an absolute path to a
 JSON file outside the document root, readable by PHP. Publish updates by
 atomically replacing the file. The page shows the supplied timestamp and
-computes control percentages from the sector ownership in each planet.
+computes control percentages from sector ownership. Each atlas card shows the
+faction shares for that planet and opens a map with every sector and its owner.
 With no valid snapshot, it shows that no map is available.
 
 The website reads snapshots only. Planetary Conquest gameplay and authoritative
