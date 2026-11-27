@@ -102,30 +102,28 @@ function conquest_preview_planets(): array {
 
 function conquest_control_bar(array $counts): void {
     $total = array_sum($counts);
-    $segments = [];
+    $owners = ['red', 'neutral', 'blue'];
     $labels = [];
-    $offset = 0;
-    foreach (['red', 'neutral', 'blue'] as $owner) {
-        $count = $counts[$owner];
-        $percent = round(100 * $count / $total, 1);
-        $labels[] = CONQUEST_OWNERS[$owner].' '.$percent.'%';
-        if ($count === 0) continue;
-        $segments[] = [
-            'owner' => $owner, 'percent' => $percent,
-            'start' => 100 * $offset / $total, 'width' => 100 * $count / $total,
-        ];
-        $offset += $count;
+    $percentages = [];
+    foreach ($owners as $owner) {
+        $percentage = round(100 * $counts[$owner] / $total, 1).'%';
+        $percentages[$owner] = $percentage;
+        $labels[] = CONQUEST_OWNERS[$owner].' '.$percentage;
     }
+    $description = implode(', ', $labels);
     ?>
-    <svg class="conquest-control-bar" role="img" aria-label="<?=e(implode(', ', $labels))?>">
-        <title><?=e(implode(', ', $labels))?></title>
-        <?php foreach ($segments as $segment): ?>
-            <rect class="conquest-<?=$segment['owner']?>" x="<?=$segment['start']?>%" width="<?=$segment['width']?>%" height="100%"/>
-            <svg x="<?=$segment['start']?>%" width="<?=$segment['width']?>%" height="100%" viewBox="0 0 40 20">
-                <text x="20" y="14"><?=$segment['percent']?>%</text>
-            </svg>
-        <?php endforeach; ?>
-    </svg>
+    <span class="conquest-control-bar" role="img" aria-label="<?=e($description)?>" title="<?=e($description)?>">
+        <svg viewBox="0 0 <?=$total?> 1" preserveAspectRatio="none" aria-hidden="true">
+            <rect class="conquest-red" width="<?=$counts['red']?>" height="1"/>
+            <rect class="conquest-neutral" x="<?=$counts['red']?>" width="<?=$counts['neutral']?>" height="1"/>
+            <rect class="conquest-blue" x="<?=$total - $counts['blue']?>" width="<?=$counts['blue']?>" height="1"/>
+        </svg>
+        <span class="conquest-control-percentages" aria-hidden="true">
+            <?php foreach ($owners as $owner): ?>
+                <span class="conquest-<?=$owner?>"><?=$percentages[$owner]?></span>
+            <?php endforeach; ?>
+        </span>
+    </span>
     <?php
 }
 
