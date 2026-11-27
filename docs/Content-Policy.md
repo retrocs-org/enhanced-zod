@@ -11,11 +11,11 @@ UI fonts are fetched from the hash-locked `packaging/font-sources.json` manifest
 by `tools/bootstrap_fonts.py`. No original game media is downloaded by that tool.
 
 The published repositories now have clean source-only history. Use a normal
-`zodee` clone for development and future pushes:
+`enhanced-zod` clone for development and future pushes:
 
 ```sh
-git clone https://github.com/retrocs-org/zodee.git zodee
-cd zodee
+git clone https://github.com/retrocs-org/enhanced-zod.git
+cd enhanced-zod
 git config core.hooksPath .githooks
 python3 tools/audit_source.py --history
 python3 scripts/release.py source --to github --dry-run

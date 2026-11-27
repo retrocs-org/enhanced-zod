@@ -12,7 +12,7 @@ function feature_section(): void {
     $features=[
         ['MULTIPLAYER','Find a battle. Bring your friends.','Play over LAN, connect directly or join a public server. Host private games with guests, or run a headless Linux dedicated server.','/servers','Browse servers'],
         ['NETWORKING & COMMUNITY','A home for players and servers.','Use the networking portal to discover public servers, manage opt-in friends and server invitations, and explore profiles, leaderboards and unranked match statistics. Public servers use accounts and join tickets; private and LAN play work without a cloud account.','/network','Explore the online portal'],
-        ['MAP & CAMPAIGN EDITORS','Build more than a battlefield.','Create and playtest in the integrated full-screen editor, with terrain tools, object groups and undo/redo. Campaign Studio adds mission sequences, objectives and briefings. Open original maps as starting points and save your own copies.','https://github.com/retrocs-org/zodee/blob/main/docs/Campaigns.md','Explore the creator tools'],
+        ['MAP & CAMPAIGN EDITORS','Build more than a battlefield.','Create and playtest in the integrated full-screen editor, with terrain tools, object groups and undo/redo. Campaign Studio adds mission sequences, objectives and briefings. Open original maps as starting points and save your own copies.','https://github.com/retrocs-org/enhanced-zod/blob/main/docs/Campaigns.md','Explore the creator tools'],
         ['macOS · WINDOWS · LINUX','Classic strategy on modern systems.','Built on the upstream SDL3 port, with modern desktop builds, scalable menus and configurable controls. Import your own original game data, then play the Original Campaign or add community campaigns.','/downloads','Get the game'],
     ];
     ?><section class="shell section page-section features-page history-page">
@@ -26,7 +26,7 @@ function feature_section(): void {
     <section class="enhanced-chapter" id="enhanced" aria-labelledby="enhanced-title">
         <div class="enhanced-heading"><span class="eyebrow">2026 / ZOD ENGINE ENHANCED</span><h2 id="enhanced-title">Play together. Make it your own.</h2><p>Our fork builds on that history with connected multiplayer, a community portal and more capable editors — on macOS, Windows and Linux.</p></div>
         <div class="enhancement-grid"><?php foreach($features as [$label,$title,$description,$href,$linkLabel]): ?><article class="feature-card"><span class="eyebrow"><?=e($label)?></span><h3><?=e($title)?></h3><p><?=e($description)?></p><a class="text-link" href="<?=e($href)?>"><?=e($linkLabel)?></a></article><?php endforeach ?></div>
-        <p class="features-note">An evolving community fork. See the <a href="https://github.com/retrocs-org/zodee/blob/main/docs/RELEASE-NOTES.md">release notes</a> for details and current limitations, or visit <a href="/credits">Credits</a> for the full acknowledgements.</p>
+        <p class="features-note">An evolving community fork. See the <a href="https://github.com/retrocs-org/enhanced-zod/blob/main/docs/RELEASE-NOTES.md">release notes</a> for details and current limitations, or visit <a href="/credits">Credits</a> for the full acknowledgements.</p>
     </section>
 
     <details class="history-sources"><summary>Sources and date notes</summary><ul>

@@ -94,10 +94,10 @@ class ReleaseTests(unittest.TestCase):
         combined=self.root/'outputs/combined'
         with self.assertRaises(r.ReleaseError):r.collect(self.root,combined,[self.out,second])
         self.assertFalse(combined.exists())
-    def config(self):return {'github':'https://github.com/retrocs-org/zodee','gitlab':'https://gitlab.kladhest.se/retrocs-org/zodee','source_branch':'main'}
+    def config(self):return {'github':'https://github.com/retrocs-org/enhanced-zod','gitlab':'https://gitlab.kladhest.se/retrocs-org/enhanced-zod','source_branch':'main'}
     def test_self_hosted_gitlab_and_ssh_destination(self):
-        cfg=self.config();cfg['gitlab_git']='git@gitlab.kladhest.se:retrocs-org/zodee.git'
-        remote=r.destination(cfg,'gitlab');self.assertEqual(remote['cli_repo'],'gitlab.kladhest.se/retrocs-org/zodee');self.assertEqual(remote['push_url'],cfg['gitlab_git'])
+        cfg=self.config();cfg['gitlab_git']='git@gitlab.kladhest.se:retrocs-org/enhanced-zod.git'
+        remote=r.destination(cfg,'gitlab');self.assertEqual(remote['cli_repo'],'gitlab.kladhest.se/retrocs-org/enhanced-zod');self.assertEqual(remote['push_url'],cfg['gitlab_git'])
         cfg['gitlab_git']='git@other.invalid:retrocs-org/zodee.git'
         with self.assertRaises(r.ReleaseError):r.destination(cfg,'gitlab')
     def test_source_requires_confirmation_and_clean_tree(self):
@@ -111,7 +111,7 @@ class ReleaseTests(unittest.TestCase):
             return original(command,**kwargs)
         with patch.object(r.subprocess,'run',side_effect=run):result=r.push_source(self.root,self.config(),['gitlab','github'],dry_run=True)
         self.assertFalse(result['uploaded']);self.assertEqual(len(calls),2);self.assertTrue(all('--dry-run' in c and '--no-follow-tags' in c for c in calls));self.assertFalse((self.root/'outputs/source').exists())
-        self.assertIn('https://gitlab.kladhest.se/retrocs-org/zodee.git',calls[0])
+        self.assertIn('https://gitlab.kladhest.se/retrocs-org/enhanced-zod.git',calls[0])
     def test_preflight_failure_prevents_both_uploads(self):
         calls=[];original=subprocess.run
         def run(command,**kwargs):

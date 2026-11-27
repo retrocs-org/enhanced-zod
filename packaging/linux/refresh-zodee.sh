@@ -4,7 +4,7 @@ set -eu
 APP=zodee
 PARENT=${ZODEE_DEPLOY_PARENT:-/srv/www/vhosts}
 SITE="$PARENT/$APP.retrocs.org"
-REPOSITORY=${ZODEE_REPOSITORY:-https://github.com/retrocs-org/zodee.git}
+REPOSITORY=${ZODEE_REPOSITORY:-https://github.com/retrocs-org/enhanced-zod.git}
 [ "$(id -u)" -eq 0 ] || { echo "Run as root." >&2; exit 1; }
 for program in git php getent; do
     command -v "$program" >/dev/null 2>&1 || { echo "Missing command: $program" >&2; exit 1; }

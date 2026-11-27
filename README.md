@@ -1,12 +1,10 @@
-# zod-enhanced
+# Enhanced ZOD
 
-**Zod Engine Enhanced**
-
-Project name: **zod-enhanced**. Existing profiles, imported media and saved games
+Existing profiles, imported media and saved games
 retain their current locations and formats. The website and repository URLs
 remain at their existing addresses.
 
-Website: https://zodee.retrocs.org · [GitHub](https://github.com/retrocs-org/zodee)
+Website: https://zodee.retrocs.org · [GitHub](https://github.com/retrocs-org/enhanced-zod)
 
 A community fork of **Zod Engine**, the open-source remake of The Bitmap
 Brothers’ 1996 real-time strategy game *Z*. This repository builds on
@@ -607,7 +605,7 @@ The repositories contain code, conversion recipes and authored resources, not
 original game media or converted levels. See [Content policy](docs/Content-Policy.md).
 Import owned disc media and use **Import levels** for converted levels from an
 existing Zod installation. UI fonts are downloaded build dependencies.
-Develop in this clean repository (normal checkout directory: `zodee`).
+Develop in this clean repository (local checkout directory: `enhanced-zod`).
 The old `zod-engine-enhanced` checkout is retained only for local reference;
 its inherited media history must never be pushed. Do not recreate the published
 history with a new export.

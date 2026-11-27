@@ -1,9 +1,9 @@
 {
-  "github": "https://github.com/retrocs-org/zodee",
-  "gitlab": "https://gitlab.kladhest.se/retrocs-org/zodee",
+  "github": "https://github.com/retrocs-org/enhanced-zod",
+  "gitlab": "https://gitlab.kladhest.se/retrocs-org/enhanced-zod",
   "source_branch": "main",
   "notes": "docs/RELEASE-NOTES.md",
   "website": "https://zodee.retrocs.org",
-  "gitlab_git": "git@gitlab.kladhest.se:retrocs-org/zodee.git",
-  "github_git": "git@github.com:retrocs-org/zodee.git"
+  "gitlab_git": "git@gitlab.kladhest.se:retrocs-org/enhanced-zod.git",
+  "github_git": "git@github.com:retrocs-org/enhanced-zod.git"
 }

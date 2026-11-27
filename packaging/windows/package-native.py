@@ -34,7 +34,7 @@ def package(build,helpers,destination,search):
             elif not (system/name).exists() and not name.lower().startswith(('api-ms-','ext-ms-')):raise RuntimeError('Unresolved DLL: '+name)
     copy_runtime(ROOT,destination)
     inventory(destination,destination/"ThirdParty",sources)
-    (destination/'READ_ME_FIRST.txt').write_text('zod-enhanced — Zod Engine Enhanced\n\nRun zod-enhanced.exe. Import your original disc on first launch.\nCampaign packs go in Documents/Zod Campaigns.\n',encoding='utf-8')
+    (destination/'READ_ME_FIRST.txt').write_text('Enhanced ZOD\n\nRun zod-enhanced.exe. Import your original disc on first launch.\nCampaign packs go in Documents/Zod Campaigns.\n',encoding='utf-8')
 
 if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--build',type=Path,required=True);p.add_argument('--helpers',type=Path,required=True);p.add_argument('--destination',type=Path,required=True);p.add_argument('--search-dir',type=Path,action='append',default=[]);a=p.parse_args()

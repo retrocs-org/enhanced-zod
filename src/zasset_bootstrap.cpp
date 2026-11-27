@@ -9,7 +9,7 @@ int ZAsset_RunSetup()
 {
     if(!SDL_Init(SDL_INIT_VIDEO)) return 1;
     if(!ZVideo_SetMode(1280,800,false)) {SDL_Quit();return 1;}
-    ZVideo_SetCaption("zod-enhanced - import original game media");
+    ZVideo_SetCaption("Enhanced ZOD - import original game media");
     {
         ZFrontEnd menu;
         menu.ShowImport(true);

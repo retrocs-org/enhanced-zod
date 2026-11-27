@@ -43,7 +43,7 @@ def main():
             if notice.is_file():
                 shutil.copy2(notice, runtime_licenses / notice.name)
     (destination / 'READ_ME_FIRST.txt').write_text(
-        'zod-enhanced — Zod Engine Enhanced for Windows x64\n\nExtract the entire ZIP, then run zod-enhanced.exe.\n'
+        'Enhanced ZOD for Windows x64\n\nExtract the entire ZIP, then run zod-enhanced.exe.\n'
         'Keep the DLLs, assets and maps beside zod-enhanced.exe.\n'
         'Use Alt+Enter to switch between fullscreen and windowed mode.\n'
         'Original cutscene video playback is currently available on macOS only.\n')

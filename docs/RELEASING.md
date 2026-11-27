@@ -139,7 +139,7 @@ are adapted from NovaDock. Build/package verification and explicit publication
 remain separate operations. The tracked, non-secret `examples/release-config.json`
 is the default profile and points to:
 
-- GitHub: https://github.com/retrocs-org/zodee
+- GitHub: https://github.com/retrocs-org/enhanced-zod
 - Website: https://zodee.retrocs.org
 
 ```sh
@@ -188,7 +188,7 @@ delivered apps, primary executables, release archives and website branding use
 
 Read [Content policy](Content-Policy.md) before source publication. The inherited
 checkout cannot be pushed directly because its old history contains game media.
-Use the normal `zodee` checkout cloned from either published repository.
+Use the normal `enhanced-zod` checkout cloned from either published repository.
 The one-time clean-history migration is complete; do not recreate an export
 for subsequent source pushes. Original levels/artwork and local font binaries are
 excluded from both its Git history and source archives. Build dependencies are

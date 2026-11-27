@@ -151,7 +151,7 @@ SDL_Surface *ZVideo_SetMode(int w, int h, bool fullscreen)
         Uint32 wflags = SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_RESIZABLE;
         if (fullscreen) wflags |= SDL_WINDOW_FULLSCREEN;
 
-        g_window = SDL_CreateWindow("zod-enhanced", win_w, win_h, wflags);
+        g_window = SDL_CreateWindow("Enhanced ZOD", win_w, win_h, wflags);
         if (!g_window) return NULL;
         SDL_SetWindowPosition(g_window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
 
