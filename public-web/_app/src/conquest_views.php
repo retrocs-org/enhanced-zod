@@ -2,6 +2,7 @@
 declare(strict_types=1);
 if (!defined('ZODEE_INTERNAL') && PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 
+const CONQUEST_BIOMES = ['desert' => 'Desert', 'volcanic' => 'Volcanic', 'arctic' => 'Arctic', 'jungle' => 'Jungle', 'city' => 'City'];
 const CONQUEST_OWNERS = ['red' => 'Red', 'blue' => 'Blue', 'neutral' => 'Unclaimed'];
 
 function conquest_name(mixed $name): bool {
@@ -28,6 +29,8 @@ function conquest_snapshot(string $file): ?array {
     $planets = [];
     foreach ($planetData as $planet) {
         if (!is_array($planet) || !conquest_name($planet['name'] ?? null)) return null;
+        $biome = $planet['biome'] ?? '';
+        if (!is_string($biome) || ($biome !== '' && !isset(CONQUEST_BIOMES[$biome]))) return null;
         $rows = $planet['rows'] ?? null;
         if (!is_array($rows) || !array_is_list($rows) || count($rows) < 1 || count($rows) > 12) return null;
         $counts = array_fill_keys(array_keys(CONQUEST_OWNERS), 0);
@@ -41,11 +44,12 @@ function conquest_snapshot(string $file): ?array {
                 if (!is_array($sector) || !conquest_name($sector['name'] ?? null)) return null;
                 $owner = $sector['owner'] ?? null;
                 if (!is_string($owner) || !isset($counts[$owner])) return null;
+                if (isset($sector['map']) && !conquest_name($sector['map'])) return null;
                 $counts[$owner]++;
             }
         }
         if (array_sum($counts) === 0) return null;
-        $planets[] = ['name' => $planet['name'], 'rows' => $rows, 'counts' => $counts];
+        $planets[] = ['name' => $planet['name'], 'rows' => $rows, 'counts' => $counts, 'biome' => $biome];
     }
     return ['season' => $season['season'], 'updated_at' => $updated, 'planets' => $planets,
         'battles' => $season['battles'] ?? []];
@@ -60,9 +64,18 @@ function render_conquest(): void {
     $seasonTotal = array_sum($seasonCounts);
     ?>
     <section class="shell section page-section conquest">
-        <h1>Planetary Conquest Territory</h1>
+        <h1>Planetary Conquest</h1>
+        <h2 id="territory">Territory</h2>
         <?php if ($season === null): ?>
             <p>No season map is available. Season standings will appear when a snapshot is published.</p>
+            <section aria-labelledby="conquest-terrain">
+                <h3 id="conquest-terrain">Terrain types</h3>
+                <ul class="conquest-atlas">
+                    <?php foreach (CONQUEST_BIOMES as $biome => $label): ?>
+                        <li><span class="conquest-globe biome-<?=$biome?>" aria-hidden="true"></span><span><?=$label?></span></li>
+                    <?php endforeach; ?>
+                </ul>
+            </section>
         <?php else: ?>
             <p class="page-description">
                 <?=e($season['season'])?> · Updated
@@ -81,7 +94,12 @@ function render_conquest(): void {
                     <?php endforeach; ?>
                 </ul>
             </section>
-            <?php foreach ($season['planets'] as $planet):
+            <nav aria-label="Season planets"><ul class="conquest-atlas">
+                <?php foreach ($season['planets'] as $index => $planet): ?>
+                    <li><a href="#planet-<?=$index?>"><span class="conquest-globe biome-<?=$planet['biome']?>" aria-hidden="true"></span><?=e($planet['name'])?></a></li>
+                <?php endforeach; ?>
+            </ul></nav>
+            <?php foreach ($season['planets'] as $index => $planet):
                 $total = array_sum($planet['counts']);
                 $fullControl = array_search($total, $planet['counts'], true);
                 $control = match ($fullControl) {
@@ -90,8 +108,9 @@ function render_conquest(): void {
                     default => 'Split control',
                 };
             ?>
-                <section class="conquest-planet">
-                    <h2><?=e($planet['name'])?></h2>
+                <section class="conquest-planet" id="planet-<?=$index?>">
+                    <h3><?=e($planet['name'])?></h3>
+                    <?php if ($planet['biome'] !== ''): ?><p><?=CONQUEST_BIOMES[$planet['biome']]?> terrain</p><?php endif; ?>
                     <p><?=e($control)?> · <?=number($total - $planet['counts']['neutral'])?> of <?=number($total)?> sectors held (<?=round(100 * ($total - $planet['counts']['neutral']) / $total, 1)?>%)</p>
                     <ul class="conquest-control" aria-label="Planet control">
                         <?php foreach (CONQUEST_OWNERS as $owner => $label): $count = $planet['counts'][$owner]; ?>
@@ -102,18 +121,36 @@ function render_conquest(): void {
                             </li>
                         <?php endforeach; ?>
                     </ul>
+                    <div class="conquest-globe conquest-globe-map biome-<?=$planet['biome']?>">
+                        <table aria-label="<?=e($planet['name'])?> planetary map">
+                            <tbody>
+                                <?php foreach ($planet['rows'] as $y => $row): ?>
+                                    <tr>
+                                        <?php foreach ($row as $x => $sector): ?>
+                                            <td><?php if ($sector !== null): ?>
+                                                <a class="conquest-<?=$sector['owner']?>" href="#sector-<?=$index?>-<?=$y?>-<?=$x?>"
+                                                    aria-label="<?=e($sector['name'].' · '.CONQUEST_OWNERS[$sector['owner']])?>"
+                                                    title="<?=e($sector['name'].' · '.CONQUEST_OWNERS[$sector['owner']])?>"></a>
+                                            <?php endif; ?></td>
+                                        <?php endforeach; ?>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
                     <div class="table-scroll" tabindex="0" role="region" aria-label="<?=e($planet['name'])?> territory map">
                         <table class="conquest-map" aria-label="<?=e($planet['name'])?> territory ownership">
                             <tbody>
-                                <?php foreach ($planet['rows'] as $row): ?>
+                                <?php foreach ($planet['rows'] as $y => $row): ?>
                                     <tr>
-                                        <?php foreach ($row as $sector): ?>
+                                        <?php foreach ($row as $x => $sector): ?>
                                             <?php if ($sector === null): ?>
                                                 <td class="conquest-void"></td>
                                             <?php else: ?>
-                                                <td class="conquest-<?=$sector['owner']?>">
+                                                <td class="conquest-<?=$sector['owner']?>" id="sector-<?=$index?>-<?=$y?>-<?=$x?>">
                                                     <strong><?=e($sector['name'])?></strong>
                                                     <span><?=CONQUEST_OWNERS[$sector['owner']]?></span>
+                                                    <?php if (isset($sector['map'])): ?><small>Battle map: <?=e($sector['map'])?></small><?php endif; ?>
                                                 </td>
                                             <?php endif; ?>
                                         <?php endforeach; ?>
@@ -125,6 +162,7 @@ function render_conquest(): void {
                 </section>
             <?php endforeach; ?>
         <?php endif; ?>
+        <?php render_conquest_battles($season); ?>
         <section class="conquest-planet panel panel-pad" aria-labelledby="conquest-rules">
             <h2 id="conquest-rules">Proposed mode rules</h2>
             <p>Red and Blue fight for neighboring sectors. In the proposed test season,
@@ -139,8 +177,7 @@ function render_conquest(): void {
 }
 
 
-function render_conquest_battles(): void {
-    $season = conquest_snapshot(env_value('ZOD_CONQUEST_SNAPSHOT'));
+function render_conquest_battles(?array $season): void {
     $battles = $season['battles'] ?? [];
     $results = ['red' => 'Red victory', 'blue' => 'Blue victory', 'draw' => 'Draw'];
     $history = [];
@@ -154,8 +191,8 @@ function render_conquest_battles(): void {
     }
     usort($history, static fn(array $a, array $b): int => strcmp($b['finished_at'], $a['finished_at']));
     ?>
-    <section class="shell section page-section">
-        <h1>Planetary Conquest Battle History</h1>
+    <section class="conquest-planet" aria-labelledby="battle-history">
+        <h2 id="battle-history">Battle history</h2>
         <?php if ($season !== null): ?><p><?=e($season['season'])?></p><?php endif; ?>
         <?php if ($history === []): ?>
             <p>No conquest battles have been published for the current season.</p>

@@ -107,3 +107,23 @@ code,dd{overflow-wrap:anywhere}nav[aria-label="Server dashboard sections"]{flex-
 .war-room-menu ul{display:flex;flex-wrap:wrap;gap:.25rem 1rem;margin:.2rem 0 0;padding:0;list-style:none}
 .war-room-menu a{display:inline-block;padding:.2rem 0}
 .war-room-menu a:hover,.war-room-menu a[aria-current=page]{color:var(--accent);text-decoration:underline;text-underline-offset:.2em}
+
+.war-room-menu,.war-room-sections{display:flex;flex-wrap:wrap;gap:.5rem 1.5rem;padding-block:.65rem}
+.war-room-menu a[aria-current=true],.war-room-sections a[aria-current=page],.war-room-sections a:hover{color:var(--accent);text-decoration:underline;text-underline-offset:.2em}
+.war-room-sections{border-bottom:1px solid var(--line)}
+.conquest-atlas{display:flex;flex-wrap:wrap;gap:1rem;padding:0;list-style:none}
+.conquest-atlas li,.conquest-atlas a{display:grid;justify-items:center;gap:.45rem}
+.conquest-atlas li{width:8rem;text-align:center;overflow-wrap:anywhere}
+.conquest-globe{--p-light:#90b2be;--p-mid:#476879;--p-dark:#202d42;position:relative;display:grid;place-items:center;width:5.5rem;aspect-ratio:1;border-radius:50%;background:radial-gradient(ellipse at 32% 23%,#fff5,transparent 40%),radial-gradient(ellipse at 36% 35%,var(--p-light),transparent 61%),repeating-linear-gradient(164deg,var(--p-mid) 0 12%,var(--p-dark) 18%,var(--p-mid) 29%);box-shadow:inset -.55rem -.65rem 1.2rem #080c16cc,0 0 .8rem #8eb1d22b}
+.biome-desert{--p-light:#e2bc79;--p-mid:#a36a39;--p-dark:#6b392b}
+.biome-volcanic{--p-light:#ff823f;--p-mid:#85382e;--p-dark:#3d292d}
+.biome-arctic{--p-light:#d7f4ff;--p-mid:#74a4c0;--p-dark:#345377}
+.biome-jungle{--p-light:#9dcc72;--p-mid:#407c57;--p-dark:#1c4544}
+.biome-city{--p-light:#daccc2;--p-mid:#71788a;--p-dark:#3c405a}
+.conquest-globe-map{width:min(100%,30rem);margin:1.5rem auto}
+.conquest-globe-map table{width:70%;height:70%;table-layout:fixed;border-collapse:separate;border-spacing:2px;background:transparent}
+.conquest-globe-map td{position:relative;padding:0;border:0;background:transparent}
+.conquest-globe-map a{position:absolute;inset:0;display:block;border:1px solid var(--owner-color);background:var(--sector-bg);border-radius:.15rem}
+.conquest-globe-map a:hover,.conquest-globe-map a:focus-visible{z-index:1;background:var(--owner-color)}
+.conquest [id],#battle-history{scroll-margin-top:8rem}
+.conquest-map td:target{outline:2px solid var(--owner-color);outline-offset:-3px}
