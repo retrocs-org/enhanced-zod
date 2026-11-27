@@ -2,11 +2,27 @@
 
 Implementation remains paused. These rules are a proposal for review, not a released mode.
 
-Start with an operator-enabled, invite-only seven-day test season: one planet, twelve orthogonally adjacent sectors, Red and Blue factions. Both start with six sectors. Each sector has three control points; attacker victory removes one, defender victory restores one (maximum three), zero transfers ownership and resets control. Draws do not change ownership. Attacks require adjacency at reservation and resolution. Rear capitals require both approach sectors; capturing a capital ends the season. Otherwise most sectors at the deadline wins, with ties a draw. Store UTC, display local times, and archive each season before an explicit reset.
+Start with an operator-enabled, invite-only seven-day test season on one planet
+with twelve sectors. Red and Blue each start in an opposite corner, with the rest
+of the sectors initially Neutral. Arrange sectors so each starting corner has
+multiple routes across the planet. A faction can launch an attack only from a
+sector it owns and can target only an enemy or Neutral sector that shares a
+border. Check ownership and adjacency at reservation and resolution.
 
-Cloud accounts choose a faction fixed after participation. Permit one active battle per account and sector, and two attacks per faction. Start with one human per side and no bots or self-matches. Never infer account identity from shared IP addresses. Publish attack windows and cancellation rules before joining.
+Each sector has three control points. An attacker victory removes one, a defender
+victory restores one up to three, and a draw leaves control unchanged. At zero
+points, ownership transfers and control resets. Capturing the opposing capital
+ends the season. At the deadline, the faction with the most sectors wins, with
+ties a draw. Store UTC, display local times, and archive each season before an
+explicit reset.
 
-Only healthy, approved, opted-in dedicated hosts receive reservations. Pin build, protocol, map digest and rules; do not mix normal matches with an active conquest reservation. Five minutes without both players ready expires the reservation. Recheck authorization at start. Bind its opaque grant to server, roster, season, sector revision and content.
+Cloud accounts choose a faction fixed after participation. Permit one active
+battle per account and sector and two attacks per faction. A Neutral sector uses
+a server-controlled AI defender. A faction-owned sector requires one human on
+each side, with no bots or self-matches. Never infer account identity from shared
+IP addresses. Publish attack windows and cancellation rules before joining.
+
+Only healthy, approved, opted-in dedicated hosts receive reservations. Pin build, protocol, map digest and rules; do not mix normal matches with an active conquest reservation. A reservation expires if its required human players are not ready within five minutes. Recheck authorization at start. Bind its opaque grant to server, roster, season, sector revision and content.
 
 The PHP API and MariaDB are authoritative. Accept results only from the assigned host with the correct grant and roster. Resolve once in a transaction using fixed lock ordering and a unique idempotency key. Identical retries return the same receipt; conflicting duplicates fail. Stale adjacency or revision archives the battle without ownership changes. Servers keep a durable result outbox until acknowledgment. Clients cannot declare victory.
 
@@ -16,4 +32,4 @@ Proposed tables: seasons, sectors, memberships, host capabilities, reservations,
 
 The native client and website show authoritative revision, freshness, ownership text alongside colors, eligibility reasons and pinned battle rules. Expired assignments cannot join. Operators can pause a season, quarantine hosts and make reasoned audit-recorded corrections. A server owner is not a global conquest administrator.
 
-Before public launch, test two real clients changing territory exactly once; forged, wrong-host and expired submissions; duplicate conflicts; competing reservations and lock ordering; reconnect/forfeit/crash/outage deadlines; backup restoration and season archiving. Normal public, private and LAN play must remain independent and work with conquest disabled.
+Before public launch, test Neutral attacks with an AI defender, opposing factions changing territory exactly once, forged, wrong-host and expired submissions; duplicate conflicts; competing reservations and lock ordering; reconnect/forfeit/crash/outage deadlines; backup restoration and season archiving. Normal public, private and LAN play must remain independent and work with conquest disabled.

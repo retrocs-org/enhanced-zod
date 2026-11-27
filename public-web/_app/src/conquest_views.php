@@ -45,6 +45,7 @@ function conquest_snapshot(string $file): ?array {
                 $owner = $sector['owner'] ?? null;
                 if (!is_string($owner) || !isset($counts[$owner])) return null;
                 if (isset($sector['map']) && !conquest_name($sector['map'])) return null;
+                if (isset($sector['start']) && !in_array($sector['start'], ['red', 'blue'], true)) return null;
                 $counts[$owner]++;
             }
         }
@@ -65,16 +66,18 @@ function conquest_preview_planets(): array {
     ];
     $layouts = [
         'desert' => ['.xxx..', 'xxxxxx', '..xxx.'],
-        'volcanic' => ['xxxx', 'x..x', 'x..x', 'xxxx'],
+        'volcanic' => ['.xx.', 'xxxx', 'xxxx', '.xx.'],
         'arctic' => ['xx.', 'xx.', 'xxx', 'xxx', '.xx'],
         'jungle' => ['...xx', '..xxx', '.xxxx', 'xxx..'],
         'city' => ['xxxx', 'xxxx', 'xxxx'],
     ];
     $planets = [];
     foreach ($regions as $biome => $names) {
-        $owners = ['red', 'red', 'neutral', 'blue', 'red', 'neutral', 'neutral', 'blue', 'blue', 'red', 'blue', 'neutral'];
+        $owners = ['red', 'neutral', 'red', 'red', 'neutral', 'blue', 'neutral', 'red', 'blue', 'blue', 'neutral', 'blue'];
         $sectors = array_map(static fn(string $name, string $owner): array =>
             ['name' => $name, 'owner' => $owner], $names, $owners);
+        $sectors[0]['start'] = 'red';
+        $sectors[count($sectors) - 1]['start'] = 'blue';
         $rows = [];
         $sectorIndex = 0;
         foreach ($layouts[$biome] as $layoutRow) {
@@ -155,7 +158,10 @@ function render_conquest_map(array $planet): void {
                         conquest_map_point($planet['name'], 'corner', $x, $y + 1), conquest_map_point($planet['name'], 'vertical', $x, $y),
                     ]);
                     $owner = CONQUEST_OWNERS[$sector['owner']];
-                    $description = $sector['name'].' · '.$owner;
+                    $start = isset($sector['start']) ? CONQUEST_OWNERS[$sector['start']].' start' : '';
+                    $status = $start !== '' ? ($sector['start'] === $sector['owner'] ? $start : $owner.' · '.$start) :
+                        ($sector['owner'] === 'neutral' ? 'Neutral · AI' : $owner);
+                    $description = $sector['name'].' · '.$status;
                     if (isset($sector['map'])) $description .= ' · Battle map: '.$sector['map'];
                     $label = mb_strimwidth($sector['name'], 0, 17, '…', 'UTF-8');
                     $cx = 112 + 160 * $x;
@@ -167,7 +173,7 @@ function render_conquest_map(array $planet): void {
                         <polygon class="conquest-region-contours" points="<?=$points?>"/>
                         <rect class="conquest-region-label" x="<?=$cx - 64?>" y="<?=$cy - 20?>" width="128" height="42" rx="5"/>
                         <text class="conquest-region-name" x="<?=$cx?>" y="<?=$cy - 2?>"><?=e($label)?></text>
-                        <text class="conquest-region-owner" x="<?=$cx?>" y="<?=$cy + 14?>"><?=e($owner)?></text>
+                        <text class="conquest-region-owner" x="<?=$cx?>" y="<?=$cy + 14?>"><?=e($status)?></text>
                     </g>
                 <?php endforeach; ?>
             <?php endforeach; ?>
@@ -242,8 +248,10 @@ function render_conquest(): void {
         <?php render_conquest_battles($season); ?>
         <section class="conquest-planet panel panel-pad" aria-labelledby="conquest-rules">
             <h2 id="conquest-rules">Proposed mode rules</h2>
-            <p>Red and Blue fight for neighboring sectors. In the proposed test season,
-                an attacker win removes one of a sector’s three control points, a defender
+            <p>Red and Blue start in opposite corners. Launch an attack from a sector
+                your faction owns, and choose a neighboring enemy or Neutral sector.
+                Neighboring sectors share a border. Neutral sectors are defended by AI.</p>
+            <p>An attacker win removes one of a sector’s three control points, a defender
                 win restores one, and a draw leaves control unchanged. Ownership transfers
                 at zero control points.</p>
             <p>Capturing the opposing capital ends the season. Otherwise, the faction

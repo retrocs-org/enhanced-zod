@@ -156,7 +156,8 @@ Each planet has one rectangular grid. Use `null` for gaps. Owners are `red`,
 `blue`, or `neutral`. A snapshot can contain up to eight planets, with up to
 12 rows and 12 columns per planet. Gaps do not count toward control percentages.
 Optionally set a planet's `biome` to `desert`, `volcanic`, `arctic`, `jungle`, or
-`city`, and a sector's `map` to its battle map name. A faction controls the
+`city`, a sector's `map` to its battle map name, and a sector's `start` to
+`red` or `blue` to mark a faction starting sector. A faction controls the
 whole planet when it holds every sector.
 
 For Battle History, add an optional top-level `battles` array with up to 200
