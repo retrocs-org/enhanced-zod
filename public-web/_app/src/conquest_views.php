@@ -78,6 +78,79 @@ function conquest_preview_planets(): array {
     return $planets;
 }
 
+function conquest_control_bar(array $counts): void {
+    $total = array_sum($counts);
+    $red = round(100 * $counts['red'] / $total, 1);
+    $blue = round(100 * $counts['blue'] / $total, 1);
+    $neutral = round(100 * $counts['neutral'] / $total, 1);
+    ?>
+    <span class="conquest-atlas-control">
+        <span class="conquest-control-labels">
+            <span class="conquest-red">Red <?=$red?>%</span>
+            <span class="conquest-blue">Blue <?=$blue?>%</span>
+        </span>
+        <svg class="conquest-control-bar" viewBox="0 0 <?=$total?> 1" preserveAspectRatio="none" aria-hidden="true">
+            <rect class="conquest-red" width="<?=$counts['red']?>" height="1"/>
+            <rect class="conquest-neutral" x="<?=$counts['red']?>" width="<?=$counts['neutral']?>" height="1"/>
+            <rect class="conquest-blue" x="<?=$total - $counts['blue']?>" width="<?=$counts['blue']?>" height="1"/>
+        </svg>
+        <?php if ($counts['neutral'] > 0): ?><span class="conquest-neutral">Unclaimed <?=$neutral?>%</span><?php endif; ?>
+    </span>
+    <?php
+}
+
+function conquest_map_point(string $type, int $x, int $y): string {
+    // Neighbors use the same corners and edge midpoints.
+    $hash = crc32("$type:$x:$y");
+    $dx = ($hash % 41) - 20;
+    $dy = (intdiv($hash, 41) % 37) - 18;
+    return (32 + 160 * $x + ($type === 'horizontal' ? 80 : 0) + $dx).','.
+        (30 + 114 * $y + ($type === 'vertical' ? 57 : 0) + $dy);
+}
+
+function render_conquest_map(array $planet, int $index): void {
+    $width = count($planet['rows'][0]);
+    $height = count($planet['rows']);
+    ?>
+    <div class="conquest-region-map table-scroll biome-<?=$planet['biome']?>" role="region" tabindex="0"
+        aria-label="<?=e($planet['name'])?> territory map">
+        <svg class="conquest-regions<?=$width > 6 ? ' conquest-regions-dense' : ''?>"
+            viewBox="0 0 <?=$width * 160 + 64?> <?=$height * 114 + 60?>" aria-label="<?=e($planet['name'])?> planetary map">
+            <defs>
+                <pattern id="conquest-contours" width="160" height="114" patternUnits="userSpaceOnUse">
+                    <path d="M-20 24 Q32 -3 76 22 T180 23 M-20 47 Q32 20 76 45 T180 46 M-20 70 Q32 43 76 68 T180 69 M-20 93 Q32 66 76 91 T180 92 M-20 116 Q32 89 76 114 T180 115"/>
+                </pattern>
+            </defs>
+            <?php foreach ($planet['rows'] as $y => $row): ?>
+                <?php foreach ($row as $x => $sector):
+                    if ($sector === null) continue;
+                    $points = implode(' ', [
+                        conquest_map_point('corner', $x, $y), conquest_map_point('horizontal', $x, $y),
+                        conquest_map_point('corner', $x + 1, $y), conquest_map_point('vertical', $x + 1, $y),
+                        conquest_map_point('corner', $x + 1, $y + 1), conquest_map_point('horizontal', $x, $y + 1),
+                        conquest_map_point('corner', $x, $y + 1), conquest_map_point('vertical', $x, $y),
+                    ]);
+                    $owner = CONQUEST_OWNERS[$sector['owner']];
+                    $label = mb_strimwidth($sector['name'], 0, 17, '…', 'UTF-8');
+                    $cx = 112 + 160 * $x;
+                    $cy = 87 + 114 * $y;
+                    ?>
+                    <a class="conquest-<?=$sector['owner']?>" href="#sector-<?=$index?>-<?=$y?>-<?=$x?>"
+                        aria-label="<?=e($sector['name'].' · '.$owner)?>">
+                        <title><?=e($sector['name'].' · '.$owner)?></title>
+                        <polygon class="conquest-region-shape" points="<?=$points?>"/>
+                        <polygon class="conquest-region-contours" points="<?=$points?>"/>
+                        <rect class="conquest-region-label" x="<?=$cx - 64?>" y="<?=$cy - 20?>" width="128" height="42" rx="5"/>
+                        <text class="conquest-region-name" x="<?=$cx?>" y="<?=$cy - 2?>"><?=e($label)?></text>
+                        <text class="conquest-region-owner" x="<?=$cx?>" y="<?=$cy + 14?>"><?=e($owner)?></text>
+                    </a>
+                <?php endforeach; ?>
+            <?php endforeach; ?>
+        </svg>
+    </div>
+    <?php
+}
+
 function render_conquest(): void {
     $season = conquest_snapshot(env_value('ZOD_CONQUEST_SNAPSHOT'));
     $planets = $season['planets'] ?? conquest_preview_planets();
@@ -118,16 +191,12 @@ function render_conquest(): void {
         <?php endif; ?>
         <nav aria-label="<?=$season === null ? 'Preview planets' : 'Season planets'?>">
                 <ul class="conquest-atlas conquest-atlas-season">
-                    <?php foreach ($planets as $index => $planet): $total = array_sum($planet['counts']); ?>
+                    <?php foreach ($planets as $index => $planet): ?>
                         <li>
                             <a href="?planet=<?=$index + 1?>#planet-map" <?=$selectedIndex === $index ? 'aria-current="true"' : ''?>>
                                 <span class="conquest-globe biome-<?=$planet['biome']?>" aria-hidden="true"></span>
                                 <strong><?=e($planet['name'])?></strong>
-                                <span class="conquest-atlas-control">
-                                    <?php foreach (CONQUEST_OWNERS as $owner => $label): ?>
-                                        <span class="conquest-<?=$owner?>"><?=$label?> <?=round(100 * $planet['counts'][$owner] / $total, 1)?>%</span>
-                                    <?php endforeach; ?>
-                                </span>
+                                <?php conquest_control_bar($planet['counts']); ?>
                             </a>
                         </li>
                     <?php endforeach; ?>
@@ -158,26 +227,7 @@ function render_conquest(): void {
                             </li>
                         <?php endforeach; ?>
                     </ul>
-                    <div class="conquest-region-map table-scroll biome-<?=$planet['biome']?>">
-                        <table aria-label="<?=e($planet['name'])?> planetary map">
-                            <tbody>
-                                <?php foreach ($planet['rows'] as $y => $row): ?>
-                                    <tr>
-                                        <?php foreach ($row as $x => $sector): ?>
-                                            <td><?php if ($sector !== null): ?>
-                                                <a class="conquest-<?=$sector['owner']?>" href="#sector-<?=$index?>-<?=$y?>-<?=$x?>"
-                                                    aria-label="<?=e($sector['name'].' · '.CONQUEST_OWNERS[$sector['owner']])?>"
-                                                    title="<?=e($sector['name'].' · '.CONQUEST_OWNERS[$sector['owner']])?>">
-                                                    <strong><?=e($sector['name'])?></strong>
-                                                    <span><?=CONQUEST_OWNERS[$sector['owner']]?></span>
-                                                </a>
-                                            <?php endif; ?></td>
-                                        <?php endforeach; ?>
-                                    </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                    </div>
+                    <?php render_conquest_map($planet, $index); ?>
                     <div class="table-scroll" tabindex="0" role="region" aria-label="<?=e($planet['name'])?> territory map">
                         <table class="conquest-map" aria-label="<?=e($planet['name'])?> territory ownership">
                             <tbody>
