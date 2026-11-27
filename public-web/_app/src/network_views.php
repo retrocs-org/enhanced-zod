@@ -3,9 +3,21 @@ declare(strict_types=1);
 if (!defined('ZODEE_INTERNAL') && PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 require_once __DIR__.'/api_catalog.php';
 function render_network_services(ZodService $service): void {
-    $servers=$service->servers();$totals=$service->totals();
-    ?><section class="shell section page-section"><?php title_block('NETWORK SERVICES','The command network.','Public multiplayer, accounts, match records and the API share this PHP website and its MariaDB backend.'); ?>
+    try {
+        $servers = $service->servers();
+        $totals = $service->totals();
+    } catch (PDOException $error) {
+        error_log('War Room statistics unavailable ['.$error->getCode().']');
+        $servers = $totals = null;
+    }
+    ?><section class="shell section page-section"><?php title_block('MULTIPLAYER HUB','The War Room','Find a game, follow public battles, and see who holds territory in Planetary Conquest.'); ?>
+    <article class="panel panel-pad war-room-mode">
+        <div><h2>Planetary Conquest</h2><p>See the current season’s planetary maps, sector owners, and faction standings.</p></div>
+        <a class="button button-primary" href="/war-room/conquest">View Planetary Conquest</a>
+    </article>
+    <?php if ($totals !== null): ?>
     <div class="stat-grid"><?php foreach([['PUBLIC SERVERS',count($servers)],['PLAYERS ONLINE',array_sum(array_column($servers,'players'))],['REGISTERED COMMANDERS',$totals['accounts']],['RECORDED BATTLES',$totals['matches']]] as [$label,$value]): ?><div class="stat-card"><span class="micro"><?=e($label)?></span><strong><?=number($value)?></strong></div><?php endforeach ?></div>
+    <?php endif ?>
     <div class="info-grid">
     <?php foreach([
         ['Server directory','Live lobbies, player counts, connection addresses and join tickets. Listings expire after 90 seconds without a heartbeat.','/servers','Browse servers'],
@@ -14,7 +26,7 @@ function render_network_services(ZodService $service): void {
         ['Battle records','Public-server results power commander profiles, leaderboards and map statistics. Private matches are not uploaded.','/statistics','Network statistics'],
         ['Commander leaderboard','See public match records and find commanders by their victories, units destroyed and captured territory.','/leaderboard','View leaderboard'],
     ] as [$title,$description,$href,$label]): ?><article class="panel panel-pad"><h2><?=e($title)?></h2><p><?=e($description)?></p><a class="button" href="<?=e($href)?>"><?=e($label)?></a></article><?php endforeach ?>
-    </div><section class="section"><div class="section-heading"><h2>On the network now.</h2><a class="text-link" href="/servers">Full server directory</a></div><div class="panel"><?php server_table($servers); ?></div></section>
+    </div><section class="section"><div class="section-heading"><h2>On the network now.</h2><a class="text-link" href="/servers">Full server directory</a></div><div class="panel"><?php if ($servers === null): ?><p class="panel-pad">Live server listings are temporarily unavailable.</p><?php else: server_table($servers); endif ?></div></section>
     <div class="panel panel-pad"><h2>Hosting a server?</h2><p>The dedicated-server agent announces account-owned public servers to this website. Sign in on the dedicated host with --login, then manage administrators under My servers. Accounts and statistics stay in MariaDB; game clients never connect to the database.</p><div class="button-row"><a class="button" href="/guide#hosting">Hosting guide</a><a class="text-link" href="/leaderboard">Commander leaderboard</a></div></div></section><?php
 }
 function render_api_browser(): void {

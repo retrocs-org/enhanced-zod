@@ -86,3 +86,18 @@ textarea { width: 100%; max-width: 100%; min-height: 8rem; font: inherit; color:
 textarea:focus-visible,summary:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:4px}main:focus{outline:none}.server-health dd{overflow-wrap:anywhere}#server-health,#server-access,#server-players,#server-presets,#server-history{scroll-margin-top:2rem}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
 code,dd{overflow-wrap:anywhere}nav[aria-label="Server dashboard sections"]{flex-wrap:wrap;margin-bottom:1.5rem}
+
+.conquest-planet{margin-top:2.5rem}
+.conquest-control{display:flex;flex-wrap:wrap;gap:.75rem;padding:0;list-style:none}
+.conquest-control li{display:grid;grid-template-columns:1fr auto;align-items:center;gap:.35rem .85rem;flex:1 1 12rem;padding:.75rem;border-left:3px solid var(--owner-color);background:#202c34}
+.conquest-control meter{width:100%;accent-color:var(--owner-color)}
+.conquest-red{--owner-color:#ff977d;--sector-bg:#5a302f}
+.conquest-blue{--owner-color:#96c9ff;--sector-bg:#264766}
+.conquest-neutral{--owner-color:#c7ced3;--sector-bg:#35414a}
+.conquest-map{border-collapse:separate;border-spacing:.35rem;table-layout:fixed;width:max-content}
+.conquest-map td{width:8rem;padding:.6rem;vertical-align:top;border:1px solid var(--owner-color);border-radius:.25rem;background:var(--sector-bg);color:#fff;overflow-wrap:anywhere}
+.conquest-map strong,.conquest-map span{display:block}
+.conquest-map span{font-size:.85rem;color:var(--owner-color)}
+.conquest-map .conquest-void{border:0;background:transparent}
+.war-room-mode{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1.5rem}
+.war-room-mode h2,.war-room-mode p{margin:0}

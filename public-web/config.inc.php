@@ -21,5 +21,6 @@ return [
     'ZOD_DEV_HTTP' => '0', // Set to '1' only for local HTTP development.
     'ZOD_TRUSTED_PROXIES' => '', // Comma-separated trusted proxy IPs/CIDRs.
     'ZOD_CREATION_QUOTA_MB' => '128', // Per-author creation storage, in MiB.
+    'ZOD_CONQUEST_SNAPSHOT' => '', // Optional absolute path to public season snapshot JSON.
     'ZOD_DOWNLOADS_FILE' => '', // Optional absolute path to release-download JSON.
 ];

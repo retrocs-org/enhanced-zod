@@ -116,3 +116,38 @@ current administrator roles for in-game enforcement. Private/LAN hosting stays o
 ### Server availability (schema 008)
 
 Before serving this version, run `php _app/bin/migrate.php` from the installed document root. It creates the live availability table idempotently. Update the dedicated-server agent and native engine together to publish free player slots, spectator and bot counts, difficulty and speed. Older agents remain accepted; their missing details are shown as unknown rather than guessed. No live deployment is performed by the local tests.
+
+## Planetary Conquest season map
+
+The War Room multiplayer hub is at `/index.php/war-room`. Its Planetary
+Conquest page is at `/index.php/war-room/conquest`. With clean URLs enabled,
+omit `/index.php`.
+Set `ZOD_CONQUEST_SNAPSHOT` in the installed config to an absolute path to a
+JSON file outside the document root, readable by PHP. Publish updates by
+atomically replacing the file. The page shows the supplied timestamp and
+computes control percentages from the sector ownership in each planet.
+With no valid snapshot, it shows that no map is available.
+
+The website reads snapshots only. Planetary Conquest gameplay and authoritative
+season storage are still proposed. An operator can supply a snapshot in this
+format when season data becomes available:
+
+```json
+{
+  "season": "Season name",
+  "updated_at": "2026-11-27T12:00:00Z",
+  "planets": [
+    {
+      "name": "Planet name",
+      "rows": [
+        [{"name": "North Crater", "owner": "red"}, null],
+        [{"name": "Central Ridge", "owner": "blue"}, {"name": "South Basin", "owner": "neutral"}]
+      ]
+    }
+  ]
+}
+```
+
+Each planet has one rectangular grid. Use `null` for gaps. Owners are `red`,
+`blue`, or `neutral`. A snapshot can contain up to eight planets, with up to
+12 rows and 12 columns per planet. Gaps do not count toward control percentages.
