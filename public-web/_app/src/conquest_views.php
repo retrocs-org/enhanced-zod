@@ -73,11 +73,14 @@ function conquest_preview_planets(): array {
     ];
     $planets = [];
     foreach ($regions as $biome => $names) {
-        $owners = ['red', 'neutral', 'red', 'red', 'neutral', 'blue', 'neutral', 'red', 'blue', 'blue', 'neutral', 'blue'];
+        $last = count($names) - 1;
+        $owners = array_fill(0, count($names), 'neutral');
+        $owners[0] = 'red';
+        $owners[$last] = 'blue';
         $sectors = array_map(static fn(string $name, string $owner): array =>
             ['name' => $name, 'owner' => $owner], $names, $owners);
         $sectors[0]['start'] = 'red';
-        $sectors[count($sectors) - 1]['start'] = 'blue';
+        $sectors[$last]['start'] = 'blue';
         $rows = [];
         $sectorIndex = 0;
         foreach ($layouts[$biome] as $layoutRow) {
@@ -158,7 +161,7 @@ function render_conquest_map(array $planet): void {
                         conquest_map_point($planet['name'], 'corner', $x, $y + 1), conquest_map_point($planet['name'], 'vertical', $x, $y),
                     ]);
                     $owner = CONQUEST_OWNERS[$sector['owner']];
-                    $start = isset($sector['start']) ? CONQUEST_OWNERS[$sector['start']].' start' : '';
+                    $start = isset($sector['start']) ? CONQUEST_OWNERS[$sector['start']].' HQ' : '';
                     $status = $start !== '' ? ($sector['start'] === $sector['owner'] ? $start : $owner.' · '.$start) :
                         ($sector['owner'] === 'neutral' ? 'Neutral · AI' : $owner);
                     $description = $sector['name'].' · '.$status;
@@ -200,7 +203,7 @@ function render_conquest(): void {
         <h1>Planetary Conquest</h1>
         <h2 id="territory">Territory</h2>
         <?php if ($season === null): ?>
-            <p>No live season has been published. Select a planet below to explore a preview with example ownership.</p>
+            <p>No live season has been published. Select a planet below to preview the start of a season.</p>
         <?php else: ?>
             <p class="page-description">
                 <?=e($season['season'])?> · Updated
