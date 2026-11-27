@@ -129,7 +129,7 @@ JSON file outside the document root, readable by PHP. Publish updates by
 atomically replacing the file. The page shows the supplied timestamp and
 computes control percentages from sector ownership. Each atlas card shows the
 faction shares for that planet and opens a map with every sector and its owner.
-With no valid snapshot, it shows that no map is available.
+Without a valid snapshot, the atlas opens clearly labeled preview maps with example ownership.
 
 The website reads snapshots only. Planetary Conquest gameplay and authoritative
 season storage are still proposed. An operator can supply a snapshot in this

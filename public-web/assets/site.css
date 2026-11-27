@@ -120,11 +120,12 @@ code,dd{overflow-wrap:anywhere}nav[aria-label="Server dashboard sections"]{flex-
 .biome-arctic{--p-light:#d7f4ff;--p-mid:#74a4c0;--p-dark:#345377}
 .biome-jungle{--p-light:#9dcc72;--p-mid:#407c57;--p-dark:#1c4544}
 .biome-city{--p-light:#daccc2;--p-mid:#71788a;--p-dark:#3c405a}
-.conquest-globe-map{width:min(100%,30rem);margin:1.5rem auto}
-.conquest-globe-map table{width:70%;height:70%;table-layout:fixed;border-collapse:separate;border-spacing:2px;background:transparent}
-.conquest-globe-map td{position:relative;padding:0;border:0;background:transparent}
-.conquest-globe-map a{position:absolute;inset:0;display:block;border:1px solid var(--owner-color);background:var(--sector-bg);border-radius:.15rem}
-.conquest-globe-map a:hover,.conquest-globe-map a:focus-visible{z-index:1;background:var(--owner-color)}
+.conquest-region-map{margin:1.5rem 0;border:1px solid var(--line);border-radius:.45rem;background:radial-gradient(ellipse at 25% 30%,var(--p-light,#90b2be),transparent 55%),repeating-linear-gradient(155deg,var(--p-mid,#476879) 0 10%,var(--p-dark,#202d42) 19%,var(--p-mid,#476879) 30%)}
+.conquest-region-map table{width:100%;min-width:30rem;table-layout:fixed;border-collapse:separate;border-spacing:.3rem;background:transparent}
+.conquest-region-map td{padding:0;border:0;background:transparent}
+.conquest-region-map a{display:grid;place-content:center;min-height:4.25rem;height:100%;padding:.35rem;text-align:center;overflow-wrap:anywhere;border:1px solid var(--owner-color);background:var(--sector-bg);border-radius:.25rem;color:#fff}
+.conquest-region-map a:hover,.conquest-region-map a:focus-visible{outline:2px solid var(--owner-color);outline-offset:-3px}
+.conquest-region-map a span{font-size:.8rem;color:var(--owner-color)}
 .conquest [id],#battle-history{scroll-margin-top:8rem}
 .conquest-map td:target{outline:2px solid var(--owner-color);outline-offset:-3px}
 
