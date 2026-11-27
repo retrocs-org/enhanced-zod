@@ -12,6 +12,7 @@ elseif (str_starts_with($path, '/index.php/')) $path = substr($path, strlen('/in
 $path = rtrim($path, '/') ?: '/';
 $method=$_SERVER['REQUEST_METHOD']??'GET';$api=str_starts_with($path,'/api/')||in_array($path,['/matches','/healthz'],true);
 $service=new ZodService();
+$outputLevel=ob_get_level();
 try {
     if ($api) {
         if (!in_array($method,['GET','HEAD'],true)) require_origin();
@@ -114,10 +115,14 @@ try {
     require __DIR__.'/_app/src/views.php';
     render_page($path,$service);
 } catch(ApiError $e) {
+    // Discard partial page output before rendering the error response.
+    while (ob_get_level()>$outputLevel) ob_end_clean();
     if ($api) json_response(['error'=>$e->getMessage()],$e->status);
     if ($method==='POST' && str_starts_with($path,'/account/')) {header('Location: '.route_url($path==='/account/contact'?'/community':'/account').'?error='.rawurlencode($e->getMessage()).(isset($returnCode)&&is_string($returnCode)&&preg_match('/\A[A-F0-9]{12}\z/D',$returnCode)?'&connect='.$returnCode:'').(isset($returnServer)&&is_string($returnServer)&&preg_match('/\A[A-F0-9]{12}\z/D',$returnServer)?'&server_connect='.$returnServer:''),true,303);exit;}
     http_response_code($e->status);require_once __DIR__.'/_app/src/views.php';render_error($e->status,$e->getMessage());
 } catch(Throwable $e) {
+    // Discard partial page output before rendering the error response.
+    while (ob_get_level()>$outputLevel) ob_end_clean();
     error_log('Zod web request failed: '.$e::class.' ['.$e->getCode().']');
     if ($api) json_response(['error'=>'Service temporarily unavailable. Please retry shortly.'],503);
     http_response_code(503);require_once __DIR__.'/_app/src/views.php';render_error(503,'The service is temporarily unavailable. Please try again shortly.');
