@@ -63,15 +63,31 @@ function conquest_preview_planets(): array {
         'jungle' => ['Canopy Ridge', 'River Delta', 'Fern Basin', 'Mangrove Bay', 'Floodplain', 'Green Pass', 'Orchid Vale', 'Mossbank', 'Vine Bridge', 'Kapok Grove', 'Lagoon Reach', 'Rain Hollow'],
         'city' => ['North District', 'Rail Yard', 'Docklands', 'Market Ward', 'Power Station', 'South Gate', 'Civic Center', 'Foundry Row', 'Old Quarter', 'Canal Locks', 'Transit Hub', 'East Heights'],
     ];
+    $layouts = [
+        'desert' => ['.xxx..', 'xxxxxx', '..xxx.'],
+        'volcanic' => ['xxxx', 'x..x', 'x..x', 'xxxx'],
+        'arctic' => ['xx.', 'xx.', 'xxx', 'xxx', '.xx'],
+        'jungle' => ['...xx', '..xxx', '.xxxx', 'xxx..'],
+        'city' => ['xxxx', 'xxxx', 'xxxx'],
+    ];
     $planets = [];
     foreach ($regions as $biome => $names) {
         $owners = ['red', 'red', 'neutral', 'blue', 'red', 'neutral', 'neutral', 'blue', 'blue', 'red', 'blue', 'neutral'];
         $sectors = array_map(static fn(string $name, string $owner): array =>
             ['name' => $name, 'owner' => $owner], $names, $owners);
+        $rows = [];
+        $sectorIndex = 0;
+        foreach ($layouts[$biome] as $layoutRow) {
+            $row = [];
+            foreach (str_split($layoutRow) as $cell) {
+                $row[] = $cell === 'x' ? $sectors[$sectorIndex++] : null;
+            }
+            $rows[] = $row;
+        }
         $planets[] = [
             'name' => CONQUEST_BIOMES[$biome].' world',
             'biome' => $biome,
-            'rows' => [[null, ...array_slice($sectors, 0, 4)], array_slice($sectors, 4, 5), [...array_slice($sectors, 9), null, null]],
+            'rows' => $rows,
             'counts' => array_count_values($owners),
         ];
     }
@@ -107,9 +123,9 @@ function conquest_control_bar(array $counts): void {
     <?php
 }
 
-function conquest_map_point(string $type, int $x, int $y): string {
+function conquest_map_point(string $planet, string $type, int $x, int $y): string {
     // Neighbors use the same corners and edge midpoints.
-    $hash = crc32("$type:$x:$y");
+    $hash = crc32("$planet:$type:$x:$y");
     $dx = ($hash % 41) - 20;
     $dy = (intdiv($hash, 41) % 37) - 18;
     return (32 + 160 * $x + ($type === 'horizontal' ? 80 : 0) + $dx).','.
@@ -133,10 +149,10 @@ function render_conquest_map(array $planet): void {
                 <?php foreach ($row as $x => $sector):
                     if ($sector === null) continue;
                     $points = implode(' ', [
-                        conquest_map_point('corner', $x, $y), conquest_map_point('horizontal', $x, $y),
-                        conquest_map_point('corner', $x + 1, $y), conquest_map_point('vertical', $x + 1, $y),
-                        conquest_map_point('corner', $x + 1, $y + 1), conquest_map_point('horizontal', $x, $y + 1),
-                        conquest_map_point('corner', $x, $y + 1), conquest_map_point('vertical', $x, $y),
+                        conquest_map_point($planet['name'], 'corner', $x, $y), conquest_map_point($planet['name'], 'horizontal', $x, $y),
+                        conquest_map_point($planet['name'], 'corner', $x + 1, $y), conquest_map_point($planet['name'], 'vertical', $x + 1, $y),
+                        conquest_map_point($planet['name'], 'corner', $x + 1, $y + 1), conquest_map_point($planet['name'], 'horizontal', $x, $y + 1),
+                        conquest_map_point($planet['name'], 'corner', $x, $y + 1), conquest_map_point($planet['name'], 'vertical', $x, $y),
                     ]);
                     $owner = CONQUEST_OWNERS[$sector['owner']];
                     $description = $sector['name'].' · '.$owner;
