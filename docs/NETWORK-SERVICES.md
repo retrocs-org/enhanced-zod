@@ -35,7 +35,7 @@ JavaScript; the join-ticket dialog uses a small same-origin script.
 `public-web/config.inc.php` contains database host, port, name, user, password
 (or password-file path), socket, public URL, development HTTP, trusted proxies
 and download-manifest settings. Edit the deployed copy at
-`/srv/www/vhosts/zodee.retrocs.org/config.inc.php`. The refresh script preserves
+`/srv/www/vhosts/enhanced-zod.retrocs.org/config.inc.php`. The refresh script preserves
 that copy and checks its PHP syntax before replacing the website.
 
 The repository copy has the correct private database host and website URL,
@@ -49,7 +49,7 @@ The same configuration is loaded by the API, website and CLI administration.
 After configuration, initialize tables with:
 
 ```sh
-cd /srv/www/vhosts/zodee.retrocs.org
+cd /srv/www/vhosts/enhanced-zod.retrocs.org
 php _app/bin/migrate.php
 ```
 
@@ -324,7 +324,7 @@ startup, native listing parsing, result upload, service outages and private gues
 
 ## Production site
 
-Canonical URL: `https://zodee.retrocs.org` (`ZOD_PUBLIC_URL`).
+Canonical URL: `https://enhanced-zod.retrocs.org` (`ZOD_PUBLIC_URL`).
 Web host: `sth-ts-web003.kladhest.se`; database host: `sth-ts-dbs001.kladhest.se`.
 Existing MariaDB database/user names remain independently configurable through
 `ZOD_DB_NAME` and `ZOD_DB_USER`; the project rename does not migrate database accounts.
@@ -337,7 +337,7 @@ or other game media is committed with the website.
 
 ## Deploying the repository website
 
-Copy `public-web/.` directly into `/srv/www/vhosts/zodee.retrocs.org/`, including
+Copy `public-web/.` directly into `/srv/www/vhosts/enhanced-zod.retrocs.org/`, including
 its dotfiles and `_app/` directory. The real `index.php` begins with `<?php` and
 loads the application from `__DIR__.'/_app/'`. No wrapper, external release
 directory or sibling repository files are used.
@@ -345,26 +345,27 @@ directory or sibling repository files are used.
 As root on sth-ts-web003:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/retrocs-org/zodee/main/packaging/linux/refresh-zodee.sh -o /srv/www/vhosts/refresh-zodee.sh
-sh -n /srv/www/vhosts/refresh-zodee.sh
-sh /srv/www/vhosts/refresh-zodee.sh
+curl -fsSL https://raw.githubusercontent.com/retrocs-org/enhanced-zod/main/packaging/linux/refresh-zodee.sh -o /srv/www/vhosts/refresh-enhanced-zod.sh
+sh -n /srv/www/vhosts/refresh-enhanced-zod.sh
+sh /srv/www/vhosts/refresh-enhanced-zod.sh
 ```
 
-The script stages only `public-web`, verifies the opening PHP tag and all PHP
-syntax, then replaces the vhost tree with rollback on failure. It does not modify
+The script refreshes an existing vhost with an installed `config.inc.php`. It
+locks the refresh, stages `public-web` with the live config, verifies PHP syntax,
+and replaces the vhost tree with rollback if installation fails. It does not modify
 databases, credentials or existing legacy `.zodee-application` releases.
 
 Apache must execute PHP, use `DirectoryIndex index.php`, route application URLs
 through `FallbackResource /index.php`, and deny HTTP access to `_app/`:
 
 ```apache
-<Directory /srv/www/vhosts/zodee.retrocs.org>
+<Directory /srv/www/vhosts/enhanced-zod.retrocs.org>
     Options -Indexes -MultiViews
     DirectoryIndex index.php
     FallbackResource /index.php
     Require all granted
 </Directory>
-<Directory /srv/www/vhosts/zodee.retrocs.org/_app>
+<Directory /srv/www/vhosts/enhanced-zod.retrocs.org/_app>
     Require all denied
 </Directory>
 SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
@@ -379,44 +380,53 @@ vhost PHP version is 8.4 or newer and PDO MySQL/mbstring are installed.
 The network overview is `/network`; the API browser is `/api-browser` (`/api` is
 an alias). `/api/catalog` provides the endpoint reference as JSON.
 
-## Database host setup for zodee.retrocs.org
+## Database host setup for enhanced-zod.retrocs.org
 
 On `sth-ts-dbs001.kladhest.se` (`172.16.1.121`), run as the administrator whose
-`.my.cnf` contains the existing MariaDB administrator login. No `-p` is needed:
+`.my.cnf` contains the MariaDB administrator login:
 
 ```sh
-ZODEE_DB_PASSWORD=$(openssl rand -hex 32)
+ZOD_NEW_DB_PASSWORD=$(openssl rand -hex 32)
 mariadb <<SQL
-CREATE DATABASE IF NOT EXISTS zodee CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'zodee'@'172.16.1.133' IDENTIFIED BY '$ZODEE_DB_PASSWORD';
-GRANT ALL PRIVILEGES ON zodee.* TO 'zodee'@'172.16.1.133';
-SHOW GRANTS FOR 'zodee'@'172.16.1.133';
+CREATE DATABASE IF NOT EXISTS \`enhanced-zod\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'enhanced-zod'@'172.16.1.133' IDENTIFIED BY '$ZOD_NEW_DB_PASSWORD';
+GRANT ALL PRIVILEGES ON \`enhanced-zod\`.* TO 'enhanced-zod'@'172.16.1.133';
+SHOW GRANTS FOR 'enhanced-zod'@'172.16.1.133';
 SQL
-printf 'Save this application password securely: %s\n' "$ZODEE_DB_PASSWORD"
-unset ZODEE_DB_PASSWORD
 ```
 
-This account accepts connections from `sth-ts-web003` (`172.16.1.133`) and only
-has privileges on `zodee`. CREATE USER/GRANT take effect immediately; no FLUSH
-PRIVILEGES is needed. If the account already exists, retain its password or use
-ALTER USER explicitly rather than recreating it.
-
-Allow TCP 3306 from `172.16.1.133` to `172.16.1.121`; MariaDB must listen on that
-private interface. Configure these values for both PHP-FPM/Apache and CLI:
+If the SQL succeeds, save the generated application password securely:
 
 ```sh
-export ZOD_DB_HOST=172.16.1.121 ZOD_DB_PORT=3306
-export ZOD_DB_NAME=zodee ZOD_DB_USER=zodee
-export ZOD_DB_PASSWORD_FILE=/etc/zodee/db-password
-export ZOD_PUBLIC_URL=https://zodee.retrocs.org
-php /srv/www/vhosts/zodee.retrocs.org/_app/bin/migrate.php
+printf '%s\n' "$ZOD_NEW_DB_PASSWORD"
+unset ZOD_NEW_DB_PASSWORD
 ```
 
-Create `/etc/zodee/db-password` on the webserver with the generated application
-password, readable by PHP's service account (`wwwrun`) but not other users.
-Shell exports configure the migration command only; set the same variables in
-the web service's persistent environment or Apache vhost before serving requests.
-The administrator's `.my.cnf` remains only on the database host.
+If the account already exists, keep its existing password. Allow connections
+from the web server (`172.16.1.133`) to `172.16.1.121:3306`.
+
+On the web server, put the application password in `/etc/zodee/db-password`,
+readable by `wwwrun`, and set the following in the installed `config.inc.php`:
+
+```php
+'ZOD_DB_HOST' => '172.16.1.121',
+'ZOD_DB_PORT' => '3306',
+'ZOD_DB_NAME' => 'enhanced-zod',
+'ZOD_DB_USER' => 'enhanced-zod',
+'ZOD_DB_PASSWORD' => '',
+'ZOD_DB_PASSWORD_FILE' => '/etc/zodee/db-password',
+'ZOD_DB_SOCKET' => '',
+'ZOD_PUBLIC_URL' => 'https://enhanced-zod.retrocs.org',
+```
+
+Run the schema import from the installed `public-web` tree. PHP runs as the
+`wwwrun` OS user and connects using the configured MariaDB application account.
+
+```sh
+cd /srv/www/vhosts/enhanced-zod.retrocs.org
+runuser -u wwwrun -- php _app/bin/migrate.php
+curl -fsS https://enhanced-zod.retrocs.org/index.php/healthz
+```
 
 ## Apache returns 404 for Network, Leaderboard or API
 
