@@ -100,7 +100,7 @@ function conquest_preview_planets(): array {
     return $planets;
 }
 
-function conquest_control_bar(array $counts): void {
+function conquest_control_bar(array $counts, bool $showPercentages = true): void {
     $total = array_sum($counts);
     $owners = ['red', 'neutral', 'blue'];
     $labels = [];
@@ -114,15 +114,19 @@ function conquest_control_bar(array $counts): void {
     ?>
     <span class="conquest-control-bar" role="img" aria-label="<?=e($description)?>" title="<?=e($description)?>">
         <svg viewBox="0 0 <?=$total?> 1" preserveAspectRatio="none" aria-hidden="true">
-            <rect class="conquest-red" width="<?=$counts['red']?>" height="1"/>
-            <rect class="conquest-neutral" x="<?=$counts['red']?>" width="<?=$counts['neutral']?>" height="1"/>
-            <rect class="conquest-blue" x="<?=$total - $counts['blue']?>" width="<?=$counts['blue']?>" height="1"/>
+            <?php $offset = 0; foreach ($owners as $owner): ?>
+                <rect class="conquest-<?=$owner?>" x="<?=$offset?>" width="<?=$counts[$owner]?>" height="1">
+                    <title><?=e(CONQUEST_OWNERS[$owner].' '.$percentages[$owner])?></title>
+                </rect>
+            <?php $offset += $counts[$owner]; endforeach; ?>
         </svg>
-        <span class="conquest-control-percentages" aria-hidden="true">
-            <?php foreach ($owners as $owner): ?>
-                <span class="conquest-<?=$owner?>"><?=$percentages[$owner]?></span>
-            <?php endforeach; ?>
-        </span>
+        <?php if ($showPercentages): ?>
+            <span class="conquest-control-percentages" aria-hidden="true">
+                <?php foreach ($owners as $owner): ?>
+                    <span class="conquest-<?=$owner?>"><?=$percentages[$owner]?></span>
+                <?php endforeach; ?>
+            </span>
+        <?php endif; ?>
     </span>
     <?php
 }
@@ -187,7 +191,7 @@ function render_conquest(): void {
     $season = conquest_snapshot(env_value('ZOD_CONQUEST_SNAPSHOT'));
     $planets = $season['planets'] ?? conquest_preview_planets();
     $seasonCounts = array_fill_keys(array_keys(CONQUEST_OWNERS), 0);
-    foreach ($season['planets'] ?? [] as $planet) {
+    foreach ($planets as $planet) {
         foreach ($planet['counts'] as $owner => $count) $seasonCounts[$owner] += $count;
     }
     $seasonTotal = array_sum($seasonCounts);
@@ -207,20 +211,12 @@ function render_conquest(): void {
                 <?=e($season['season'])?> · Updated
                 <time datetime="<?=e($season['updated_at'])?>"><?=e(stamp($season['updated_at']))?></time>
             </p>
-            <section aria-labelledby="conquest-standings">
-                <h2 id="conquest-standings">Season standings</h2>
-                <p><?=number(count($season['planets']))?> planets · <?=number($seasonTotal)?> sectors</p>
-                <ul class="conquest-control" aria-label="Season control">
-                    <?php foreach (CONQUEST_OWNERS as $owner => $label): $count = $seasonCounts[$owner]; ?>
-                        <li class="conquest-<?=$owner?>"><strong><?=$label?></strong>
-                            <span><?=number($count)?> / <?=number($seasonTotal)?> sectors</span>
-                            <meter min="0" max="<?=$seasonTotal?>" value="<?=$count?>" aria-label="<?=$label?> season sectors"></meter>
-                            <span><?=round(100 * $count / $seasonTotal, 1)?>%</span>
-                        </li>
-                    <?php endforeach; ?>
-                </ul>
-            </section>
         <?php endif; ?>
+        <section class="conquest-overview" aria-labelledby="conquest-standings">
+            <h3 id="conquest-standings">All-planet control</h3>
+            <p><?=number(count($planets))?> planets · <?=number($seasonTotal)?> territories</p>
+            <?php conquest_control_bar($seasonCounts); ?>
+        </section>
         <nav aria-label="<?=$season === null ? 'Preview planets' : 'Season planets'?>">
                 <ul class="conquest-atlas conquest-atlas-season">
                     <?php foreach ($planets as $index => $planet): ?>
@@ -228,7 +224,7 @@ function render_conquest(): void {
                             <a href="?planet=<?=$index + 1?>#planet-map" <?=$selectedIndex === $index ? 'aria-current="true"' : ''?>>
                                 <span class="conquest-globe biome-<?=$planet['biome']?>" aria-hidden="true"></span>
                                 <strong><?=e($planet['name'])?></strong>
-                                <?php conquest_control_bar($planet['counts']); ?>
+                                <?php conquest_control_bar($planet['counts'], false); ?>
                             </a>
                         </li>
                     <?php endforeach; ?>
@@ -236,11 +232,14 @@ function render_conquest(): void {
             </nav>
             <?php if ($selectedPlanet !== null): ?>
                 <section class="conquest-planet conquest-selected-map" id="planet-map" aria-label="<?=e($selectedPlanet['name'])?> map">
-                    <ul class="conquest-map-score" aria-label="Territories by owner">
-                        <?php foreach (['red', 'blue', 'neutral'] as $owner): ?>
-                            <li class="conquest-<?=$owner?>"><?=CONQUEST_OWNERS[$owner]?> <strong><?=number($selectedPlanet['counts'][$owner])?></strong></li>
-                        <?php endforeach; ?>
-                    </ul>
+                    <div class="conquest-map-summary">
+                        <?php conquest_control_bar($selectedPlanet['counts']); ?>
+                        <ul class="conquest-map-score" aria-label="Territories by owner">
+                            <?php foreach (['red', 'blue', 'neutral'] as $owner): ?>
+                                <li class="conquest-<?=$owner?>"><?=CONQUEST_OWNERS[$owner]?> <strong><?=number($selectedPlanet['counts'][$owner])?></strong></li>
+                            <?php endforeach; ?>
+                        </ul>
+                    </div>
                     <?php render_conquest_map($selectedPlanet); ?>
                 </section>
             <?php else: ?>

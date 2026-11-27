@@ -88,9 +88,6 @@ textarea:focus-visible,summary:focus-visible,[tabindex]:focus-visible{outline:2p
 code,dd{overflow-wrap:anywhere}nav[aria-label="Server dashboard sections"]{flex-wrap:wrap;margin-bottom:1.5rem}
 
 .conquest-planet{margin-top:2.5rem}
-.conquest-control{display:flex;flex-wrap:wrap;gap:.75rem;padding:0;list-style:none}
-.conquest-control li{display:grid;grid-template-columns:1fr auto;align-items:center;gap:.35rem .85rem;flex:1 1 12rem;padding:.75rem;border-left:3px solid var(--owner-color);background:#202c34}
-.conquest-control meter{width:100%;accent-color:var(--owner-color)}
 .conquest-red{--owner-color:#ff977d;--sector-bg:#5a302f}
 .conquest-blue{--owner-color:#96c9ff;--sector-bg:#264766}
 .conquest-neutral{--owner-color:#c7ced3;--sector-bg:#35414a}
@@ -116,8 +113,11 @@ code,dd{overflow-wrap:anywhere}nav[aria-label="Server dashboard sections"]{flex-
 .biome-jungle{--p-light:#9dcc72;--p-mid:#407c57;--p-dark:#1c4544}
 .biome-city{--p-light:#daccc2;--p-mid:#71788a;--p-dark:#3c405a}
 .conquest{--conquest-map-width:54rem}
+.conquest-overview{max-width:var(--conquest-map-width)}
 .conquest-selected-map{width:100%;max-width:var(--conquest-map-width);margin:1.75rem 0 0}
-.conquest-map-score{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:.5rem;list-style:none;margin:0 0 .75rem;padding:0}
+.conquest-map-summary{display:flex;align-items:center;flex-wrap:wrap;gap:.5rem .75rem;margin-bottom:.75rem}
+.conquest-map-summary .conquest-control-bar{flex:1 1 14rem}
+.conquest-map-score{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:.5rem;list-style:none;margin:0;margin-inline-start:auto;padding:0}
 .conquest-map-score li{border:1px solid var(--line);border-radius:.35rem;padding:.25rem .65rem;background:#17212a;color:var(--owner-color)}
 .conquest-map-score strong{margin-inline-start:.3rem}
 .conquest-region-map{margin:0;border:1px solid var(--line);border-radius:.45rem;background:linear-gradient(#b1ced217 1px,transparent 1px),linear-gradient(90deg,#b1ced217 1px,transparent 1px),radial-gradient(ellipse at 42% 42%,var(--p-dark,#202d42),#111b22 80%);background-size:2rem 2rem,2rem 2rem,100% 100%}
