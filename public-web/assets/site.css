@@ -94,11 +94,6 @@ code,dd{overflow-wrap:anywhere}nav[aria-label="Server dashboard sections"]{flex-
 .conquest-red{--owner-color:#ff977d;--sector-bg:#5a302f}
 .conquest-blue{--owner-color:#96c9ff;--sector-bg:#264766}
 .conquest-neutral{--owner-color:#c7ced3;--sector-bg:#35414a}
-.conquest-map{border-collapse:separate;border-spacing:.35rem;table-layout:fixed;width:max-content}
-.conquest-map td{width:8rem;padding:.6rem;vertical-align:top;border:1px solid var(--owner-color);border-radius:.25rem;background:var(--sector-bg);color:#fff;overflow-wrap:anywhere}
-.conquest-map strong,.conquest-map span{display:block}
-.conquest-map span{font-size:.85rem;color:var(--owner-color)}
-.conquest-map .conquest-void{border:0;background:transparent}
 .war-room-mode{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:1rem;margin-bottom:1.5rem}
 .war-room-mode h2,.war-room-mode p{margin:0}
 
@@ -120,9 +115,10 @@ code,dd{overflow-wrap:anywhere}nav[aria-label="Server dashboard sections"]{flex-
 .biome-arctic{--p-light:#d7f4ff;--p-mid:#74a4c0;--p-dark:#345377}
 .biome-jungle{--p-light:#9dcc72;--p-mid:#407c57;--p-dark:#1c4544}
 .biome-city{--p-light:#daccc2;--p-mid:#71788a;--p-dark:#3c405a}
-.conquest-region-map{margin:1.5rem 0;border:1px solid var(--line);border-radius:.45rem;background:linear-gradient(#b1ced217 1px,transparent 1px),linear-gradient(90deg,#b1ced217 1px,transparent 1px),radial-gradient(ellipse at 42% 42%,var(--p-dark,#202d42),#111b22 80%);background-size:2rem 2rem,2rem 2rem,100% 100%}
+.conquest-selected-map{max-width:46rem;margin:1.25rem auto 0}
+.conquest-region-map{margin:0;border:1px solid var(--line);border-radius:.45rem;background:linear-gradient(#b1ced217 1px,transparent 1px),linear-gradient(90deg,#b1ced217 1px,transparent 1px),radial-gradient(ellipse at 42% 42%,var(--p-dark,#202d42),#111b22 80%);background-size:2rem 2rem,2rem 2rem,100% 100%}
 .conquest-regions{display:block;width:100%;min-width:24rem;max-width:100%;margin:auto}
-.conquest-regions-dense{min-width:65rem}
+.conquest-regions-dense{min-width:57rem}
 .conquest-regions a{cursor:pointer}
 .conquest-region-shape{fill:var(--sector-bg);stroke:#121d25;stroke-width:3;stroke-linejoin:round}
 .conquest-region-contours{fill:url(#conquest-contours);pointer-events:none}
@@ -131,15 +127,12 @@ code,dd{overflow-wrap:anywhere}nav[aria-label="Server dashboard sections"]{flex-
 .conquest-regions text{text-anchor:middle;pointer-events:none}
 .conquest-region-name{fill:#fff;font-size:11px;font-weight:700}
 .conquest-region-owner{fill:var(--owner-color);font-size:10px}
-.conquest-regions a:hover .conquest-region-shape,.conquest-regions a:focus-visible .conquest-region-shape{stroke:var(--owner-color);stroke-width:4}
+.conquest-regions a:hover .conquest-region-shape,.conquest-regions a:focus-visible .conquest-region-shape,.conquest-regions a:target .conquest-region-shape{stroke:var(--owner-color);stroke-width:4}
 .conquest [id],#battle-history{scroll-margin-top:8rem}
-.conquest-map td:target{outline:2px solid var(--owner-color);outline-offset:-3px}
 
 .conquest-atlas-season li{width:10rem}
 .conquest-atlas-season a{width:100%;height:100%;align-content:start;padding:.75rem;border:1px solid var(--line);border-radius:.35rem;background:#202c34}
 .conquest-atlas-season a:hover,.conquest-atlas-season a[aria-current=true]{border-color:var(--accent)}
-.conquest-atlas-control{display:grid;gap:.25rem;width:100%;font-size:.78rem}
-.conquest-control-labels{display:flex;justify-content:space-between;gap:.25rem}
-.conquest-control-bar{display:block;width:100%;height:.45rem;border-radius:99px;overflow:hidden;background:var(--line)}
+.conquest-control-bar{display:block;width:100%;height:1.2rem;border-radius:99px;overflow:hidden;background:var(--line)}
 .conquest-control-bar rect{fill:var(--owner-color)}
-.conquest-atlas-control span{color:var(--owner-color)}
+.conquest-control-bar text{text-anchor:middle;fill:#101820;font-size:11px;font-weight:700}

@@ -57,21 +57,21 @@ function conquest_snapshot(string $file): ?array {
 
 function conquest_preview_planets(): array {
     $regions = [
-        'desert' => ['Dune Sea', 'Salt Flats', 'Red Mesa', 'Dry Basin', 'Canyon Gate', 'Sun Ridge'],
-        'volcanic' => ['Ash Field', 'Caldera Rim', 'Lava Flats', 'Basalt Reach', 'Ember Pass', 'Cinder Ridge'],
-        'arctic' => ['Ice Shelf', 'Frost Basin', 'Snow Pass', 'Glacier Edge', 'Frozen Lake', 'White Ridge'],
-        'jungle' => ['Canopy Ridge', 'River Delta', 'Fern Basin', 'Mangrove Bay', 'Floodplain', 'Green Pass'],
-        'city' => ['North District', 'Rail Yard', 'Docklands', 'Market Ward', 'Power Station', 'South Gate'],
+        'desert' => ['Dune Sea', 'Salt Flats', 'Red Mesa', 'Dry Basin', 'Canyon Gate', 'Sun Ridge', 'Sand Gate', 'Dust Hollow', 'Copper Wash', 'Wadi Crossing', 'Spice Dunes', 'Stone Arch'],
+        'volcanic' => ['Ash Field', 'Caldera Rim', 'Lava Flats', 'Basalt Reach', 'Ember Pass', 'Cinder Ridge', 'Obsidian Bank', 'Sulfur Run', 'Crater Gate', 'Fumarole Field', 'Magma Shelf', 'Black Summit'],
+        'arctic' => ['Ice Shelf', 'Frost Basin', 'Snow Pass', 'Glacier Edge', 'Frozen Lake', 'White Ridge', 'Aurora Point', 'Icefall', 'Drift Valley', 'Polar Flats', 'Shiver Coast', 'Blue Glacier'],
+        'jungle' => ['Canopy Ridge', 'River Delta', 'Fern Basin', 'Mangrove Bay', 'Floodplain', 'Green Pass', 'Orchid Vale', 'Mossbank', 'Vine Bridge', 'Kapok Grove', 'Lagoon Reach', 'Rain Hollow'],
+        'city' => ['North District', 'Rail Yard', 'Docklands', 'Market Ward', 'Power Station', 'South Gate', 'Civic Center', 'Foundry Row', 'Old Quarter', 'Canal Locks', 'Transit Hub', 'East Heights'],
     ];
     $planets = [];
     foreach ($regions as $biome => $names) {
-        $owners = ['red', 'red', 'neutral', 'blue', 'blue', 'neutral'];
+        $owners = ['red', 'red', 'neutral', 'blue', 'red', 'neutral', 'neutral', 'blue', 'blue', 'red', 'blue', 'neutral'];
         $sectors = array_map(static fn(string $name, string $owner): array =>
             ['name' => $name, 'owner' => $owner], $names, $owners);
         $planets[] = [
             'name' => CONQUEST_BIOMES[$biome].' world',
             'biome' => $biome,
-            'rows' => [[null, $sectors[0], $sectors[1]], [$sectors[2], $sectors[3], $sectors[4]], [null, $sectors[5], null]],
+            'rows' => [[null, ...array_slice($sectors, 0, 4)], array_slice($sectors, 4, 5), [...array_slice($sectors, 9), null, null]],
             'counts' => array_count_values($owners),
         ];
     }
@@ -80,22 +80,30 @@ function conquest_preview_planets(): array {
 
 function conquest_control_bar(array $counts): void {
     $total = array_sum($counts);
-    $red = round(100 * $counts['red'] / $total, 1);
-    $blue = round(100 * $counts['blue'] / $total, 1);
-    $neutral = round(100 * $counts['neutral'] / $total, 1);
+    $segments = [];
+    $labels = [];
+    $offset = 0;
+    foreach (['red', 'neutral', 'blue'] as $owner) {
+        $count = $counts[$owner];
+        $percent = round(100 * $count / $total, 1);
+        $labels[] = CONQUEST_OWNERS[$owner].' '.$percent.'%';
+        if ($count === 0) continue;
+        $segments[] = [
+            'owner' => $owner, 'percent' => $percent,
+            'start' => 100 * $offset / $total, 'width' => 100 * $count / $total,
+        ];
+        $offset += $count;
+    }
     ?>
-    <span class="conquest-atlas-control">
-        <span class="conquest-control-labels">
-            <span class="conquest-red">Red <?=$red?>%</span>
-            <span class="conquest-blue">Blue <?=$blue?>%</span>
-        </span>
-        <svg class="conquest-control-bar" viewBox="0 0 <?=$total?> 1" preserveAspectRatio="none" aria-hidden="true">
-            <rect class="conquest-red" width="<?=$counts['red']?>" height="1"/>
-            <rect class="conquest-neutral" x="<?=$counts['red']?>" width="<?=$counts['neutral']?>" height="1"/>
-            <rect class="conquest-blue" x="<?=$total - $counts['blue']?>" width="<?=$counts['blue']?>" height="1"/>
-        </svg>
-        <?php if ($counts['neutral'] > 0): ?><span class="conquest-neutral">Unclaimed <?=$neutral?>%</span><?php endif; ?>
-    </span>
+    <svg class="conquest-control-bar" role="img" aria-label="<?=e(implode(', ', $labels))?>">
+        <title><?=e(implode(', ', $labels))?></title>
+        <?php foreach ($segments as $segment): ?>
+            <rect class="conquest-<?=$segment['owner']?>" x="<?=$segment['start']?>%" width="<?=$segment['width']?>%" height="100%"/>
+            <svg x="<?=$segment['start']?>%" width="<?=$segment['width']?>%" height="100%" viewBox="0 0 40 20">
+                <text x="20" y="14"><?=$segment['percent']?>%</text>
+            </svg>
+        <?php endforeach; ?>
+    </svg>
     <?php
 }
 
@@ -131,13 +139,15 @@ function render_conquest_map(array $planet, int $index): void {
                         conquest_map_point('corner', $x, $y + 1), conquest_map_point('vertical', $x, $y),
                     ]);
                     $owner = CONQUEST_OWNERS[$sector['owner']];
+                    $description = $sector['name'].' · '.$owner;
+                    if (isset($sector['map'])) $description .= ' · Battle map: '.$sector['map'];
                     $label = mb_strimwidth($sector['name'], 0, 17, '…', 'UTF-8');
                     $cx = 112 + 160 * $x;
                     $cy = 87 + 114 * $y;
                     ?>
-                    <a class="conquest-<?=$sector['owner']?>" href="#sector-<?=$index?>-<?=$y?>-<?=$x?>"
-                        aria-label="<?=e($sector['name'].' · '.$owner)?>">
-                        <title><?=e($sector['name'].' · '.$owner)?></title>
+                    <a class="conquest-<?=$sector['owner']?>" id="sector-<?=$index?>-<?=$y?>-<?=$x?>" href="#sector-<?=$index?>-<?=$y?>-<?=$x?>"
+                        aria-label="<?=e($description)?>">
+                        <title><?=e($description)?></title>
                         <polygon class="conquest-region-shape" points="<?=$points?>"/>
                         <polygon class="conquest-region-contours" points="<?=$points?>"/>
                         <rect class="conquest-region-label" x="<?=$cx - 64?>" y="<?=$cy - 20?>" width="128" height="42" rx="5"/>
@@ -202,53 +212,9 @@ function render_conquest(): void {
                     <?php endforeach; ?>
                 </ul>
             </nav>
-            <?php if ($selectedPlanet !== null):
-                $planet = $selectedPlanet;
-                $index = $selectedIndex;
-                $total = array_sum($planet['counts']);
-                $fullControl = array_search($total, $planet['counts'], true);
-                $control = match ($fullControl) {
-                    'red', 'blue' => CONQUEST_OWNERS[$fullControl].' controls all sectors',
-                    'neutral' => 'Unclaimed',
-                    default => 'Split control',
-                };
-            ?>
-                <section class="conquest-planet" id="planet-map" aria-labelledby="conquest-selected-planet">
-                    <h3 id="conquest-selected-planet"><?=e($planet['name'])?></h3>
-                    <?php if ($season === null): ?><p>Preview map · Example ownership</p><?php endif; ?>
-                    <?php if ($planet['biome'] !== ''): ?><p><?=CONQUEST_BIOMES[$planet['biome']]?> terrain</p><?php endif; ?>
-                    <p><?=e($control)?> · <?=number($total - $planet['counts']['neutral'])?> of <?=number($total)?> sectors held (<?=round(100 * ($total - $planet['counts']['neutral']) / $total, 1)?>%)</p>
-                    <ul class="conquest-control" aria-label="Planet control">
-                        <?php foreach (CONQUEST_OWNERS as $owner => $label): $count = $planet['counts'][$owner]; ?>
-                            <li class="conquest-<?=$owner?>"><strong><?=$label?></strong>
-                                <span><?=number($count)?> / <?=number($total)?> sectors</span>
-                                <meter min="0" max="<?=$total?>" value="<?=$count?>" aria-label="<?=$label?> sectors"></meter>
-                                <span><?=round(100 * $count / $total, 1)?>%</span>
-                            </li>
-                        <?php endforeach; ?>
-                    </ul>
-                    <?php render_conquest_map($planet, $index); ?>
-                    <div class="table-scroll" tabindex="0" role="region" aria-label="<?=e($planet['name'])?> territory map">
-                        <table class="conquest-map" aria-label="<?=e($planet['name'])?> territory ownership">
-                            <tbody>
-                                <?php foreach ($planet['rows'] as $y => $row): ?>
-                                    <tr>
-                                        <?php foreach ($row as $x => $sector): ?>
-                                            <?php if ($sector === null): ?>
-                                                <td class="conquest-void"></td>
-                                            <?php else: ?>
-                                                <td class="conquest-<?=$sector['owner']?>" id="sector-<?=$index?>-<?=$y?>-<?=$x?>">
-                                                    <strong><?=e($sector['name'])?></strong>
-                                                    <span><?=CONQUEST_OWNERS[$sector['owner']]?></span>
-                                                    <?php if (isset($sector['map'])): ?><small>Battle map: <?=e($sector['map'])?></small><?php endif; ?>
-                                                </td>
-                                            <?php endif; ?>
-                                        <?php endforeach; ?>
-                                    </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                    </div>
+            <?php if ($selectedPlanet !== null): ?>
+                <section class="conquest-planet conquest-selected-map" id="planet-map" aria-label="<?=e($selectedPlanet['name'])?> map">
+                    <?php render_conquest_map($selectedPlanet, $selectedIndex); ?>
                 </section>
             <?php else: ?>
                 <p>Select a planet to see its territory map and sector owners.</p>

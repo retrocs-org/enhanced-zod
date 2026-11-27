@@ -86,10 +86,6 @@ try {
         require_once __DIR__.'/_app/src/views.php';page_header('connect',$service->currentAccount());echo '<section class="shell section"><h1>Connection approved</h1><p>Return to your game. It will receive a one-use ticket and connect automatically.</p></section>';page_footer();exit;
     }
     if($method==='GET'&&preg_match('~^/creations/(image|download)/([a-f0-9]{64})$~',$path,$asset))$service->creationFile($asset[2],$asset[1]==='image');
-    if($method==='POST'&&$path==='/creations/submit'){
-        require_csrf();$data=$_POST;unset($data['csrf']);$result=$service->submitCreation($data,$_FILES);
-        header('Location: '.$result['preview'],true,303);exit;
-    }
     if ($method==='POST' && str_starts_with($path,'/account/')) {
         require_csrf();
         $data=$_POST;unset($data['csrf']);$returnCode=$data['return_to']??'';$returnServer=$data['server_return_to']??'';unset($data['return_to'],$data['server_return_to']);
@@ -109,7 +105,7 @@ try {
         }
         if(preg_match('/\A[A-F0-9]{12}\z/D',is_string($returnServer)?$returnServer:'')){header('Location: '.route_url($path==='/account/login'?'/server-auth':'/account').'?'.($path==='/account/login'?'code=':'server_connect=').$returnServer,true,303);exit;}
         if(preg_match('/\A[A-F0-9]{12}\z/D',is_string($returnCode)?$returnCode:'')){header('Location: '.route_url($path==='/account/login'?'/connect':'/account').'?'.($path==='/account/login'?'code=':'connect=').$returnCode,true,303);exit;}
-        header('Location: '.route_url($path==='/account/contact'?'/community':'/account').'?message='.rawurlencode($message),true,303);exit;
+        header('Location: '.route_url('/account').'?message='.rawurlencode($message),true,303);exit;
     }
     if ($method!=='GET' && $method!=='HEAD') fail(405,'Method not allowed.');
     require __DIR__.'/_app/src/views.php';
@@ -118,7 +114,7 @@ try {
     // Discard partial page output before rendering the error response.
     while (ob_get_level()>$outputLevel) ob_end_clean();
     if ($api) json_response(['error'=>$e->getMessage()],$e->status);
-    if ($method==='POST' && str_starts_with($path,'/account/')) {header('Location: '.route_url($path==='/account/contact'?'/community':'/account').'?error='.rawurlencode($e->getMessage()).(isset($returnCode)&&is_string($returnCode)&&preg_match('/\A[A-F0-9]{12}\z/D',$returnCode)?'&connect='.$returnCode:'').(isset($returnServer)&&is_string($returnServer)&&preg_match('/\A[A-F0-9]{12}\z/D',$returnServer)?'&server_connect='.$returnServer:''),true,303);exit;}
+    if ($method==='POST' && str_starts_with($path,'/account/')) {header('Location: '.route_url('/account').'?error='.rawurlencode($e->getMessage()).(isset($returnCode)&&is_string($returnCode)&&preg_match('/\A[A-F0-9]{12}\z/D',$returnCode)?'&connect='.$returnCode:'').(isset($returnServer)&&is_string($returnServer)&&preg_match('/\A[A-F0-9]{12}\z/D',$returnServer)?'&server_connect='.$returnServer:''),true,303);exit;}
     http_response_code($e->status);require_once __DIR__.'/_app/src/views.php';render_error($e->status,$e->getMessage());
 } catch(Throwable $e) {
     // Discard partial page output before rendering the error response.
