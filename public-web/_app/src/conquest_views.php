@@ -2,6 +2,8 @@
 declare(strict_types=1);
 if (!defined('ZODEE_INTERNAL') && PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 
+require_once __DIR__.'/conquest_rules.php';
+
 const CONQUEST_BIOMES = ['desert' => 'Desert', 'volcanic' => 'Volcanic', 'arctic' => 'Arctic', 'jungle' => 'Jungle', 'city' => 'City'];
 const CONQUEST_OWNERS = ['red' => 'Red', 'blue' => 'Blue', 'neutral' => 'Neutral'];
 
@@ -46,6 +48,8 @@ function conquest_snapshot(string $file): ?array {
                 if (!is_string($owner) || !isset($counts[$owner])) return null;
                 if (isset($sector['map']) && !conquest_name($sector['map'])) return null;
                 if (isset($sector['start']) && !in_array($sector['start'], ['red', 'blue'], true)) return null;
+                $points = $sector['control_points'] ?? 3;
+                if (!is_int($points) || $points < 1 || $points > 3) return null;
                 $counts[$owner]++;
             }
         }
@@ -113,13 +117,6 @@ function conquest_control_bar(array $counts, bool $showPercentages = true): void
     $description = implode(', ', $labels);
     ?>
     <span class="conquest-control-bar" role="img" aria-label="<?=e($description)?>" title="<?=e($description)?>">
-        <svg class="conquest-control-proportions" viewBox="0 0 <?=$total?> 1" preserveAspectRatio="none" aria-hidden="true">
-            <?php $offset = 0; foreach ($owners as $owner): ?>
-                <rect class="conquest-<?=$owner?>" x="<?=$offset?>" width="<?=$counts[$owner]?>" height="1">
-                    <title><?=e(CONQUEST_OWNERS[$owner].' '.$percentages[$owner])?></title>
-                </rect>
-            <?php $offset += $counts[$owner]; endforeach; ?>
-        </svg>
         <?php if ($showPercentages): ?>
             <svg class="conquest-control-percentages" aria-hidden="true">
                 <?php
@@ -132,6 +129,14 @@ function conquest_control_bar(array $counts, bool $showPercentages = true): void
                     <rect class="conquest-<?=$owner?>" x="<?=$offset?>%" width="<?=$width?>%" height="100%"/>
                     <text x="<?=$offset + $width / 2?>%" y="50%"><?=$percentages[$owner]?></text>
                 <?php $offset += $width; endforeach; ?>
+            </svg>
+        <?php else: ?>
+            <svg class="conquest-control-proportions" viewBox="0 0 <?=$total?> 1" preserveAspectRatio="none" aria-hidden="true">
+                <?php $offset = 0; foreach ($owners as $owner): ?>
+                    <rect class="conquest-<?=$owner?>" x="<?=$offset?>" width="<?=$counts[$owner]?>" height="1">
+                        <title><?=e(CONQUEST_OWNERS[$owner].' '.$percentages[$owner])?></title>
+                    </rect>
+                <?php $offset += $counts[$owner]; endforeach; ?>
             </svg>
         <?php endif; ?>
     </span>
@@ -175,13 +180,22 @@ function render_conquest_map(array $planet): void {
                         ($sector['owner'] === 'neutral' ? 'Neutral · AI' : $owner);
                     $description = $sector['name'].' · '.$status;
                     if (isset($sector['map'])) $description .= ' · Battle map: '.$sector['map'];
+                    $attackers = conquest_attackers($planet['rows'], $x, $y);
+                    if ($attackers !== []) {
+                        $description .= ' · Attackable by '.implode(' and ', array_map(
+                            static fn(string $faction): string => CONQUEST_OWNERS[$faction], $attackers
+                        ));
+                    }
+                    if (isset($sector['control_points'])) {
+                        $description .= ' · '.$sector['control_points'].' of 3 control points';
+                    }
                     $label = mb_strimwidth($sector['name'], 0, 17, '…', 'UTF-8');
                     $cx = 112 + 160 * $x;
                     $cy = 87 + 114 * $y;
                     ?>
                     <g class="conquest-<?=$sector['owner']?>" role="img" aria-label="<?=e($description)?>">
                         <title><?=e($description)?></title>
-                        <polygon class="conquest-region-shape" points="<?=$points?>"/>
+                        <polygon class="conquest-region-shape<?=$attackers !== [] ? ' conquest-region-front' : ''?>" points="<?=$points?>"/>
                         <polygon class="conquest-region-contours" points="<?=$points?>"/>
                         <rect class="conquest-region-label" x="<?=$cx - 64?>" y="<?=$cy - 20?>" width="128" height="42" rx="5"/>
                         <text class="conquest-region-name" x="<?=$cx?>" y="<?=$cy - 2?>"><?=e($label)?></text>
@@ -248,6 +262,7 @@ function render_conquest(): void {
                         </ul>
                     </div>
                     <?php render_conquest_map($selectedPlanet); ?>
+                    <p class="small dim">Dashed borders mark sectors that a neighboring faction can attack. Hover over a sector for details.</p>
                 </section>
             <?php else: ?>
                 <p>Select a planet to see its territory map and sector owners.</p>
@@ -257,12 +272,14 @@ function render_conquest(): void {
             <h2 id="conquest-rules">Proposed mode rules</h2>
             <p>Red and Blue start in opposite corners. Launch an attack from a sector
                 your faction owns, and choose a neighboring enemy or Neutral sector.
-                Neighboring sectors share a border. Neutral sectors are defended by AI.</p>
+                Neighboring sectors share a border. Each sector has its own battle map.
+                Queue to face the opposing faction or fight an AI defender in a Neutral sector.</p>
             <p>An attacker win removes one of a sector’s three control points, a defender
                 win restores one, and a draw leaves control unchanged. Ownership transfers
-                at zero control points.</p>
+                at zero control points, opening new attack routes from the captured sector.</p>
             <p>Capturing the opposing capital ends the season. Otherwise, the faction
-                holding the most sectors at the deadline wins.</p>
+                holding the most sectors at the deadline wins. The next season resets territories
+                to the two starting HQs and Neutral sectors.</p>
         </section>
     </section>
     <?php

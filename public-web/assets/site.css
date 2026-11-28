@@ -124,6 +124,7 @@ code,dd{overflow-wrap:anywhere}nav[aria-label="Server dashboard sections"]{flex-
 .conquest-regions{display:block;width:100%;min-width:24rem;max-width:100%;margin:auto}
 .conquest-regions-dense{min-width:57rem}
 .conquest-region-shape{fill:var(--sector-bg);stroke:#121d25;stroke-width:3;stroke-linejoin:round}
+.conquest-region-front{stroke:#efcf8c;stroke-dasharray:6 4}
 .conquest-region-contours{fill:url(#conquest-contours);pointer-events:none}
 #conquest-contours path{fill:none;stroke:#fff;stroke-opacity:.16;stroke-width:1.3}
 .conquest-region-label{fill:#17212a;stroke:var(--owner-color);stroke-width:1}
@@ -144,5 +145,5 @@ code,dd{overflow-wrap:anywhere}nav[aria-label="Server dashboard sections"]{flex-
 .conquest-control-bar svg{display:block;width:100%}
 .conquest-control-proportions{height:.65rem}
 .conquest-control-bar rect{fill:var(--owner-color)}
-.conquest-control-percentages{height:1.55rem;border-top:1px solid #17212a}
+.conquest-control-percentages{height:1.55rem}
 .conquest-control-percentages text{text-anchor:middle;dominant-baseline:central;fill:#101820;font-size:.84rem;font-weight:700;font-variant-numeric:tabular-nums}

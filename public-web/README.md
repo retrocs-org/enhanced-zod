@@ -157,7 +157,7 @@ Each planet has one rectangular grid. Use `null` for gaps. Owners are `red`,
 12 rows and 12 columns per planet. Gaps do not count toward control percentages.
 Optionally set a planet's `biome` to `desert`, `volcanic`, `arctic`, `jungle`, or
 `city`, a sector's `map` to its battle map name, and a sector's `start` to
-`red` or `blue` to mark a faction starting sector. A faction controls the
+`red` or `blue` to mark a faction starting sector. Set an optional integer `control_points` from 1 to 3 to show the current defense strength. A faction controls the
 whole planet when it holds every sector.
 
 For Battle History, add an optional top-level `battles` array with up to 200
